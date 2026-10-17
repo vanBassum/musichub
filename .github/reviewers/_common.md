@@ -38,9 +38,14 @@ reads.
   severity tag: `[bug]`, `[risk]` or `[convention]`, unless your focus file defines its
   own tags. Say what is wrong, why it matters, and what the fix is. Keep it short.
 - When you're done, post **one** summary comment with `gh pr comment <PR> --body "…"`.
-  Title it `### Claude review — <your focus area>`, followed by a one-line verdict and
-  a bullet list of findings. If you found nothing, post only the title and
-  "No findings."
+  Title it `### Claude review — <your focus area>`. Immediately below the title,
+  start with **TL;DR:** followed by a one- or two-sentence PASS/FAIL verdict,
+  number of blocking findings and the most important reason or required action.
+  Then add **Details** with the actual findings and relevant evidence, including
+  any focus-specific contract verdict. Do not omit important reasoning to make
+  the TL;DR short. If there are no findings, TL;DR says PASS and Details says
+  "No findings." The TL;DR is the first substantive content, not a replacement
+  for the detailed review.
 - End the summary comment with this marker on its own line, exactly as shown, where
   `<SHA>` is the HEAD SHA from the prompt and `<N>` is how many `[bug]` and `[risk]`
   findings you reported (`[convention]` findings don't count; if your focus file
