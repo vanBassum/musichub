@@ -1,12 +1,5 @@
-import { Library, ListMusic, Music } from "lucide-react"
-
+import { mobilePages } from "@/components/mobile-pages"
 import { Button } from "@/components/ui/button"
-
-const mobilePages = [
-  { label: "Library", icon: Library },
-  { label: "Player", icon: Music },
-  { label: "Queue", icon: ListMusic },
-] as const
 
 interface MobileNavProps {
   active: number

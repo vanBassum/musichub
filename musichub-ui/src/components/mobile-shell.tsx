@@ -3,6 +3,7 @@ import { useCallback, useLayoutEffect, useRef, useState } from "react"
 
 import { FilterSidebar } from "@/components/filter-sidebar"
 import { MobileNav } from "@/components/mobile-nav"
+import { mobilePageIndex } from "@/components/mobile-pages"
 import { NowPlaying, QueueList } from "@/components/player-panel"
 import { TrackTable } from "@/components/track-table"
 import { Button } from "@/components/ui/button"
@@ -23,7 +24,9 @@ interface MobileShellProps {
   onSelect: (id: string) => void
 }
 
-const playerPage = 1
+const libraryPage = mobilePageIndex("library")
+const playerPage = mobilePageIndex("player")
+const queuePage = mobilePageIndex("queue")
 
 const pageClassName =
   "flex h-full w-full shrink-0 snap-center snap-always flex-col overflow-hidden"
@@ -81,7 +84,7 @@ export function MobileShell({
         ref={strip}
         className="flex min-h-0 flex-1 snap-x snap-mandatory [scrollbar-width:none] overflow-x-auto overflow-y-hidden overscroll-x-contain [&::-webkit-scrollbar]:hidden"
       >
-        <div inert={active !== 0} className={cn(pageClassName, "gap-3 p-3")}>
+        <div inert={active !== libraryPage} className={cn(pageClassName, "gap-3 p-3")}>
           <div className="flex items-center gap-2">
             <h1 className="text-xl font-semibold">Library</h1>
             <span className="text-muted-foreground">
@@ -119,12 +122,12 @@ export function MobileShell({
         </div>
         <section
           aria-label="Player"
-          inert={active !== 1}
+          inert={active !== playerPage}
           className={cn(pageClassName, "overflow-y-auto")}
         >
           <NowPlaying current={current} large />
         </section>
-        <div inert={active !== 2} className={cn(pageClassName, "p-3")}>
+        <div inert={active !== queuePage} className={cn(pageClassName, "p-3")}>
           <div className="flex min-h-0 flex-1 flex-col rounded-xl border bg-card">
             <QueueList queue={queue} nowPlayingId={nowPlayingId} />
           </div>
