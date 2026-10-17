@@ -140,9 +140,19 @@ new_scenario short-sha
 drop_comments ui; comment "<!-- claude-review: ui sha=${SHA:0:7} blocking=0 -->"
 expect_refusal "a verdict with a short SHA doesn't count" "No verdict from ui"
 
-new_scenario contradictory
+new_scenario newer-pass
+drop_comments smells
 comment "$(marker smells 1)"
-expect_refusal "contradicting verdicts refuse" "Contradictory verdicts from smells"
+comment "$(marker smells 0)"
+expect_merge "newer approval replaces old blocking verdict on same SHA"
+
+new_scenario newer-block
+comment "$(marker smells 1)"
+expect_refusal "newer blocking verdict supersedes old approval" "smells reported 1 blocking"
+
+new_scenario newer-malformed
+comment "<!-- claude-review: smells sha=$SHA blocking=none -->"
+expect_refusal "malformed newest verdict refuses" "Malformed verdict from smells"
 
 new_scenario forged-by-user
 drop_comments api; comment "$(marker api 0)" vanBassum User
