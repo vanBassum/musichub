@@ -35,4 +35,30 @@ return 404), every other path falls back to `index.html` for client-side routing
 Product understanding lives in the separate repo
 [musichub-understanding](https://github.com/vanBassum/musichub-understanding),
 cloned next to this repo. Open `../musichub.code-workspace` to get both.
-Claude treats it as read-only (`.claude/settings.json`).
+Claude treats it as read-only (`.claude/settings.json`, `.claude/hooks/guard.js`).
+
+## How changes reach `main`
+
+Never push to `main`. GitHub can't protect it on this plan, so each clone guards it
+with a local hook. Turn it on once per clone:
+
+```bash
+git config core.hooksPath .githooks   # refuses pushes to main
+```
+
+1. Branch from an up-to-date `main` (`feature/…`, `fix/…`, `docs/…`, `ci/…`), push
+   it, and open a pull request to `main`.
+2. The build and four Claude reviewers (api, ui, understanding, smells) run on every
+   push. Each reviewer posts its findings and a verdict for the exact commit.
+3. When the build passes and no reviewer reports a blocking finding, the PR is
+   squash-merged automatically. A PR that changes `.github/`, `.githooks/` or
+   `.claude/`, or carries the `no-automerge` label, is merged by hand.
+
+The `autopilot` label on an issue lets Claude analyse, build and open the PR by
+itself; `autopilot:analysis-only` together with it asks for an investigation report
+only.
+
+Every push to `main` publishes `ghcr.io/vanbassum/musichub:sha-<12 hex>` (and the
+moving `:main`). Environments pin a `sha-…` tag; there are no release tags.
+
+The full rules, also for Claude sessions, are in [CLAUDE.md](CLAUDE.md).

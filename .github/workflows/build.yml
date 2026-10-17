@@ -1,0 +1,158 @@
+name: Build
+
+# Every push to main publishes one immutable image, tagged with the commit it was
+# built from: ghcr.io/vanbassum/musichub:sha-<12 hex>. An environment pins such a
+# tag; deploying, promoting and rolling back are all "change that tag", never a
+# rebuild. `main` is a moving alias for the newest build of main; nothing should pin
+# it. There are no release tags and no release branches.
+#
+# A pull request runs the same checks and builds the same image without publishing
+# it, so a broken Dockerfile is caught before it reaches main. The merge gate
+# (.github/scripts/review-gate.sh) waits for the check named `build` on the PR's
+# head commit: keep the job id `build`. It only succeeds when `test` and
+# `guard-tests` did.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  IMAGE: ghcr.io/vanbassum/musichub
+
+jobs:
+  # The fail-closed merge gate of claude-review.yml and the autopilot state machine
+  # (both against a fake gh), the Claude action settings in the workflows, and the
+  # Claude guard in .claude/hooks/.
+  guard-tests:
+    runs-on: [self-hosted, strato]
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      # The self-hosted runner's system node may be too old for guard.js.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: bash .github/scripts/review-gate.test.sh
+      - run: bash .github/scripts/autopilot.test.sh
+      - run: bash .github/scripts/workflows.test.sh
+      - run: node .claude/hooks/guard.test.js
+
+  # The API and the UI, the same way autopilot validates its own work.
+  test:
+    runs-on: [self-hosted, strato]
+    # A hung restore or build must not hold the runner for GitHub's 6-hour default.
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Restore
+        run: |
+          dotnet restore MusicHub.slnx
+          corepack enable
+          corepack prepare pnpm@10.28.1 --activate
+          pnpm --dir musichub-ui install --frozen-lockfile
+      - name: Build the API
+        run: dotnet build MusicHub.slnx --configuration Release --no-restore
+      - name: Lint the UI
+        run: pnpm --dir musichub-ui lint
+      - name: Build the UI
+        run: pnpm --dir musichub-ui build
+      # There is no test project yet. Add "dotnet test" and "pnpm test" steps
+      # together with the first tests.
+
+  build:
+    needs: [guard-tests, test]
+    runs-on: [self-hosted, strato]
+    timeout-minutes: 30
+    # A newer push to the same ref supersedes a build still running.
+    concurrency:
+      group: build-${{ github.ref }}
+      cancel-in-progress: true
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      # Build identity baked into the image: the commit date and the same
+      # 12-character SHA the tag carries.
+      - name: Compute build identity
+        id: build_info
+        run: |
+          commit=$(git rev-parse --short=12 HEAD)
+          echo "version=$(git log -1 --format=%cd --date=short)" >> "$GITHUB_OUTPUT"
+          echo "commit=$commit" >> "$GITHUB_OUTPUT"
+          echo "tag=sha-$commit" >> "$GITHUB_OUTPUT"
+
+      - name: Decide whether to publish
+        id: publish
+        run: |
+          if [ "$GITHUB_EVENT_NAME" != "pull_request" ] && [ "$GITHUB_REF" = "refs/heads/main" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        if: steps.publish.outputs.enabled == 'true'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # A sha tag is written once. Re-running the workflow for a commit that is
+      # already published must not swap the image under a pin that an environment
+      # may already be running.
+      - name: Refuse to overwrite an existing sha tag
+        id: exists
+        if: steps.publish.outputs.enabled == 'true'
+        run: |
+          if docker buildx imagetools inspect "$IMAGE:${{ steps.build_info.outputs.tag }}" >/dev/null 2>&1; then
+            echo "$IMAGE:${{ steps.build_info.outputs.tag }} already exists; not rebuilding it."
+            echo "found=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "found=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Compute image labels
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE }}
+
+      - name: Build (and publish on main)
+        if: steps.exists.outputs.found != 'true'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: ${{ steps.publish.outputs.enabled == 'true' }}
+          tags: |
+            ${{ env.IMAGE }}:${{ steps.build_info.outputs.tag }}
+            ${{ env.IMAGE }}:main
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            APP_VERSION=${{ steps.build_info.outputs.version }}
+            APP_COMMIT=${{ steps.build_info.outputs.commit }}
+
+      - name: Summary
+        if: steps.publish.outputs.enabled == 'true'
+        run: |
+          {
+            echo "### $IMAGE:${{ steps.build_info.outputs.tag }}"
+            echo
+            echo "Deploy it by pinning \`$IMAGE:${{ steps.build_info.outputs.tag }}\` in the environment."
+          } >> "$GITHUB_STEP_SUMMARY"

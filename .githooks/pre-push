@@ -1,0 +1,14 @@
+#!/bin/sh
+# Refuses every push to main: all work reaches main through a pull request (see
+# "Git workflow" in CLAUDE.md). GitHub can't protect main on this plan, so this
+# hook is the guard on each machine. Enable it once per clone with
+#   git config core.hooksPath .githooks
+# Claude sessions enable it automatically (.claude/settings.json). Tags, such as
+# releases, are not affected.
+while read -r local_ref local_sha remote_ref remote_sha; do
+  if [ "$remote_ref" = "refs/heads/main" ]; then
+    echo "pre-push: refusing to push to main. Push a branch and open a PR instead (see CLAUDE.md)." >&2
+    exit 1
+  fi
+done
+exit 0

@@ -39,4 +39,11 @@ EXPOSE 8080
 COPY --from=api-build /app/publish .
 COPY --from=ui-build /ui/dist ./wwwroot
 
+# Build identity, set by .github/workflows/build.yml (commit date and 12-character
+# SHA). Defaults so a local `docker build` without the CI args still runs.
+ARG APP_VERSION=dev
+ARG APP_COMMIT=unknown
+ENV APP_VERSION=$APP_VERSION \
+    APP_COMMIT=$APP_COMMIT
+
 ENTRYPOINT ["dotnet", "MusicHub.Api.dll"]
