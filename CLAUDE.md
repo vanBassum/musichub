@@ -120,7 +120,7 @@ To Do ─label─▶ Analysis ─ready─▶ Build ─PR─▶ Merge ─merged�
   when the understanding supports them and the issue is clear, with acceptance
   criteria for the care they need. Never autonomous: irreversible data loss,
   widening what an audience can see, a security change whose rule the understanding
-  doesn't state, a new or upgraded NuGet or npm package, and changes to
+  doesn't state, an unjustified or unsafe NuGet or npm dependency, and changes to
   `.github/`, `.githooks/`, `.claude/`. Persistence and authentication don't exist
   yet; introducing them is an architecture decision for the understanding first.
   A missing official shadcn/ui component is no reason to reject: the analysis
@@ -135,7 +135,11 @@ To Do ─label─▶ Analysis ─ready─▶ Build ─PR─▶ Merge ─merged�
   policy, since an unattended run can't approve anything. Claude may edit and write
   files, move them with `git mv` and delete them with `git rm`, commit, and run
   `dotnet restore`/`dotnet build` and `pnpm --dir musichub-ui lint|typecheck|build|format`.
-  It gets no other shell commands, no package installs, no network and no push.
+  It gets no other shell commands, no package-install commands, no network and no push.
+  A necessary, reviewed NuGet dependency may be added to the project file and
+  restored with `dotnet restore`. npm dependencies are permitted by policy too,
+  but the current restricted build cannot update `pnpm-lock.yaml`; analysis must
+  block an npm addition until a safe lockfile-update mechanism is available.
   `.github/scripts/workflows.test.sh` pins the build's and the fix round's lists,
   and a stop comment names any tool calls the permissions refused. The job then
   checks a clean tree, `dotnet build` and the UI's lint and build itself. Before
