@@ -303,6 +303,20 @@ claude '{"limit_status":"allowed_warning","limit_type":"seven_day","limit_utiliz
 exits "runs fine" 0 start
 out "a weekly warning starts nothing either" "go=false"
 said "and names the weekly limit" "for the seven-day limit at 50%"
+said "and names the label that overrides it" "autopilot:ignore-claude-warning"
+
+CASE=claude-warning-ignored; new_scenario $CASE
+echo '[{"name":"autopilot"},{"name":"autopilot:ignore-claude-warning"}]' >"$SCENARIO/issues_12_labels.json"
+claude '{"limit_status":"allowed_warning","limit_type":"seven_day","limit_utilization":0.79}'
+exits "runs fine" 0 start
+out "autopilot:ignore-claude-warning starts despite a warning" "go=true"
+said "and says it ignored it" "at 79%; ignored (\`autopilot:ignore-claude-warning\`)"
+
+CASE=claude-rejected-not-ignored; new_scenario $CASE
+echo '[{"name":"autopilot"},{"name":"autopilot:ignore-claude-warning"}]' >"$SCENARIO/issues_12_labels.json"
+claude '{"limit_status":"rejected","limit_type":"seven_day"}'
+exits "runs fine" 0 start
+out "the label doesn't override a rejection" "go=false"
 
 CASE=claude-rejected; new_scenario $CASE
 claude '{"limit_status":"rejected","limit_type":"five_hour"}'
@@ -502,6 +516,12 @@ said "says so" "The issue was admitted, but nothing is built: Claude reports usa
 said "back to To Do" "$(marker todo)"
 called "removes the label" "--remove-label autopilot"
 [ "$(grep -c -- '- analysis: 5 turns' "$SCENARIO/comments")" = 1 ] && ok "lists the usage once" || no "lists the usage once"
+
+CASE=decide-claude-warning-ignored; new_scenario $CASE; state 555 analysis; ready_analysis
+echo '[{"name":"autopilot"},{"name":"autopilot:ignore-claude-warning"}]' >"$SCENARIO/issues_12_labels.json"
+echo '{"turns":5,"limit_status":"allowed_warning","limit_type":"seven_day","limit_utilization":0.76}' >"$SCENARIO/work/usage-analysis.json"
+exits "runs fine" 0 decide
+out "with autopilot:ignore-claude-warning a warning still builds" "build=true"
 
 CASE=decide-claude-allowed; new_scenario $CASE; state 555 analysis; ready_analysis
 echo '{"turns":5,"limit_status":"allowed"}' >"$SCENARIO/work/usage-analysis.json"
@@ -1122,6 +1142,12 @@ exits "runs fine" 0 fix-start
 out "a high-usage warning fixes nothing" "go=false"
 said "says so" "Claude reports usage status \`allowed_warning\`"
 said "back to To Do" "$(marker todo 42)"
+
+CASE=fix-start-claude-warning-ignored; new_scenario $CASE; in_fix
+echo '[{"name":"autopilot"},{"name":"autopilot:ignore-claude-warning"}]' >"$SCENARIO/issues_12_labels.json"
+claude '{"limit_status":"allowed_warning","limit_type":"five_hour","limit_utilization":0.92}'
+exits "runs fine" 0 fix-start
+out "with autopilot:ignore-claude-warning a warning still fixes" "go=true"
 
 CASE=fix-start-claude-api-key; new_scenario $CASE; in_fix; rm -f "$SCENARIO/work/claude-status.json"
 CLAUDE_AUTH_ENV=api-key exits "runs fine" 0 fix-start

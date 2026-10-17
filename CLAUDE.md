@@ -193,7 +193,9 @@ is no Actions budget.
   one-line Claude Code probe (Haiku, no tools) reads that status. Autopilot starts
   only on `allowed`, builds only if the analysis run still reported `allowed`, and
   starts a fix round only after a fresh probe reports `allowed`. A warning, a
-  rejection, extra-usage credit or no status at all stops it. Each run is also
+  rejection, extra-usage credit or no status at all stops it. The label
+  `autopilot:ignore-claude-warning` on the issue lets a warning through (not a
+  rejection). Each run is also
   capped by `--max-turns` and its job timeout, against runaways. Each comment shows
   the turns, tokens and estimated cost the runs measured (also per reviewer); those
   are measurements, not the remaining allowance. Setting the secret

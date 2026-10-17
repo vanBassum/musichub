@@ -85,6 +85,8 @@ defuse() { local t; t=$(sed 's/<!--/\&lt;!--/g'); printf '%s\n' "${t:0:60000}"; 
 labels_of() { gh api "$API/issues/$1/labels" --paginate --jq '.[].name'; }
 has_label() { local l; l=$(labels_of "$ISSUE") || fail "Could not read the labels of issue #$ISSUE."; grep -qx "${1:-autopilot}" <<<"$l"; }
 INVESTIGATION_LABEL=autopilot:analysis-only
+# On the issue: Claude's `allowed_warning` doesn't stop autopilot (rejected still does).
+IGNORE_WARNING_LABEL=autopilot:ignore-claude-warning
 
 # The newest state marker on issue $1, as "run stage pr", or nothing. Callers
 # capture it first (st=$(state_of N)) so that a failed API call stops the script.
@@ -235,7 +237,8 @@ claude_status() {
   return 0
 }
 # claude_gate <file>: before an attempt, with the status of a fresh probe. Anything
-# but an explicit `allowed` refuses (CLAUDE_REASON). With AUTOPILOT_CLAUDE_AUTH
+# but an explicit `allowed` refuses (CLAUDE_REASON), except `allowed_warning` on an
+# issue with $IGNORE_WARNING_LABEL. With AUTOPILOT_CLAUDE_AUTH
 # `api-key`, analysis and build don't use the subscription, so there is no status.
 claude_gate() {
   CLAUDE_REASON="" CLAUDE_SUMMARY=""
@@ -246,7 +249,9 @@ claude_gate() {
   claude_status "${1:-}"
   case $CLAUDE_STATUS in
     allowed) CLAUDE_SUMMARY="$CLAUDE_STATUS_TEXT." ;;
-    allowed_warning | rejected | overage) CLAUDE_REASON="$CLAUDE_STATUS_TEXT, so autopilot leaves the subscription to interactive use until it is back to \`allowed\`"; return 1 ;;
+    allowed_warning) if has_label "$IGNORE_WARNING_LABEL"; then CLAUDE_SUMMARY="$CLAUDE_STATUS_TEXT; ignored (\`$IGNORE_WARNING_LABEL\`)."; return 0; fi
+      CLAUDE_REASON="$CLAUDE_STATUS_TEXT, so autopilot leaves the subscription to interactive use until it is back to \`allowed\` (or add \`$IGNORE_WARNING_LABEL\`)"; return 1 ;;
+    rejected | overage) CLAUDE_REASON="$CLAUDE_STATUS_TEXT, so autopilot leaves the subscription to interactive use until it is back to \`allowed\`"; return 1 ;;
     *) CLAUDE_REASON="Claude's usage status could not be read (the probe run reported none), so autopilot doesn't start"; return 1 ;;
   esac
 }
@@ -404,6 +409,7 @@ cmd_decide() {
   if [ "$class" = ready ] && [ "$MODE" = full ] && [ "${AUTOPILOT_CLAUDE_AUTH:-subscription}" != api-key ]; then
     # The analysis run's own status: a build is the expensive part.
     claude_status "$WORK/usage-analysis.json"
+    [ "$CLAUDE_STATUS" = allowed_warning ] && has_label "$IGNORE_WARNING_LABEL" && CLAUDE_STATUS=allowed
     case $CLAUDE_STATUS in
       allowed_warning | rejected | overage)
         stopped analysis "$body
