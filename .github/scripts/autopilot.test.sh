@@ -23,9 +23,8 @@ cat >"$WORK/bin/gh" <<'EOF'
 if [ "$1" = api ]; then
   endpoint=$2; filter=.; shift 2
   [ "$endpoint" = graphql ] && echo "[$GH_TOKEN] graphql $*" >>"$SCENARIO/calls"
-  case $endpoint in users/* | user)
-    [ "$GH_TOKEN" = billing ] || { echo "HTTP 403: Resource not accessible by integration" >&2; exit 1; } ;;
-  esac
+  # The board token has only the `project` scope: it can't read the private repo.
+  [ "$endpoint" != graphql ] && [ "$GH_TOKEN" = board ] && { echo "HTTP 404: Not Found ($endpoint)" >&2; exit 1; }
   while [ $# -gt 0 ]; do case $1 in --jq) filter=$2; shift 2 ;; *) shift ;; esac; done
   name=${endpoint%%\?*}; name=${name#repos/*/*/}; name=${name//\//_}
   name=$(sed -E 's/^commits_[0-9a-f]+_/commits_/' <<<"$name")
@@ -63,9 +62,6 @@ new_scenario() {
   echo '[]' >"$SCENARIO/issues_12_comments.json"
   echo '{"permission":"admin"}' >"$SCENARIO/collaborators_vanBassum_permission.json"
   echo '{"permission":"read"}' >"$SCENARIO/collaborators_stranger_permission.json"
-  echo '{"login":"vanBassum","plan":{"name":"free"}}' >"$SCENARIO/user.json"
-  usage 100
-  echo '{"workflow_runs":[{"id":555,"status":"in_progress"}]}' >"$SCENARIO/actions_workflows_autopilot.yml_runs.json"
   claude '{"limit_status":"allowed","limit_type":"five_hour","limit_resets_at":1791895800,"limit_overage":false}'
   cat >"$SCENARIO/graphql.json" <<'JSON'
 {"data":{"addProjectV2ItemById":{"item":{"id":"ITEM"}},"node":{"field":{"id":"FIELD","options":[
@@ -80,20 +76,6 @@ state() {
   jq --arg b "x <!-- autopilot: issue=12 run=$1 stage=$2 pr=${3:--} -->" --arg l "${4:-github-actions[bot]}" --arg t "${5:-Bot}" \
     '. + [{body: $b, user: {login: $l, type: $t}}]' "$SCENARIO/issues_12_comments.json" >"$SCENARIO/c.tmp" \
     && mv "$SCENARIO/c.tmp" "$SCENARIO/issues_12_comments.json"
-}
-# usage <linux minutes> [windows minutes]: the account's Actions usage report.
-usage() {
-  jq -n --argjson l "$1" --argjson w "${2:-0}" '{usageItems: [
-    {product: "actions", sku: "Actions Linux", unitType: "Minutes", quantity: $l, pricePerUnit: 0.006, grossAmount: ($l * 0.006)},
-    {product: "actions", sku: "Actions Windows", unitType: "Minutes", quantity: $w, pricePerUnit: 0.010, grossAmount: ($w * 0.010)},
-    {product: "actions", sku: "Actions storage", unitType: "GigabyteHours", quantity: 99999, pricePerUnit: 0.0003, grossAmount: 30},
-    {product: "packages", sku: "Packages data transfer", unitType: "Minutes", quantity: 99999, pricePerUnit: 1, grossAmount: 99999}]}' \
-    >"$SCENARIO/users_vanBassum_settings_billing_usage.json"
-}
-# running <n>: n other autopilot runs in progress besides this one (555).
-running() {
-  jq -n --argjson n "$1" '{workflow_runs: ([{id: 555, status: "in_progress"}] + [range($n) | {id: (600 + .), status: "queued"}]
-    + [{id: 700, status: "completed"}])}' >"$SCENARIO/actions_workflows_autopilot.yml_runs.json"
 }
 # claude <json>: the usage status the Claude probe reported (work/claude-status.json).
 claude() { printf '%s\n' "$1" >"$SCENARIO/work/claude-status.json"; }
@@ -137,7 +119,7 @@ build_repo() {
 run_ap() {
   ( cd "${CWD:-$SCENARIO}" && env GITHUB_REPOSITORY=vanBassum/musichub GITHUB_RUN_ID=${RUN:-555} \
       ISSUE=12 SENDER="$SENDER_ENV" PIPELINE_MODE="$MODE_ENV" MODE="$MODE_ENV" \
-      GH_TOKEN=gha AUTOPILOT_PROJECT_ID=${PROJECT_ENV-PVT_test} AUTOPILOT_TOKEN="$TOKEN_ENV" AUTOPILOT_BOARD_TOKEN="${BOARD_ENV-board}" AUTOPILOT_BILLING_TOKEN="${BILLING_ENV-billing}" AUTOPILOT_DIR="$SCENARIO/work" \
+      GH_TOKEN=gha AUTOPILOT_PROJECT_ID=${PROJECT_ENV-PVT_test} AUTOPILOT_TOKEN="$TOKEN_ENV" AUTOPILOT_BOARD_TOKEN="${BOARD_ENV-board}" AUTOPILOT_DIR="$SCENARIO/work" \
       AUTOPILOT_REMOTE="$SCENARIO/remote.git" GITHUB_OUTPUT="$SCENARIO/output" \
       ANALYSIS_RESULT=${ANALYSIS_RESULT:-success} BUILD_RESULT=${BUILD_RESULT:-success} INVESTIGATION=${INVESTIGATION_ENV:-false} \
       PR=${PR_ENV:-42} SHA=${SHA_ENV:-1111111111111111111111111111111111111111} HEAD_REF=${REF_ENV:-autopilot/issue-12-r555} \
@@ -214,6 +196,7 @@ said "records stage analysis" "$(marker analysis)"
 called "moves the card to Analysis with the board token" "[board] graphql"
 not_called "and never with the PAT" "[pat] graphql"
 called "picks the Analysis option" "o=opt-analysis"
+said "reports Claude's usage status" "Claude reports usage status \`allowed\` for the five-hour limit"
 called "comments with GITHUB_TOKEN" "[gha] issue comment 12"
 out "is a change, not an investigation" "investigation=false"
 
@@ -293,99 +276,6 @@ out "goes on" "go=true"
 not_called "and leaves the board alone" "graphql"
 unset BOARD_ENV
 
-# --- start: GitHub Actions budget --------------------------------------------------
-# Defaults: 2000 included minutes (plan free), 50% -> 1000; lag 60, 150 per attempt.
-CASE=budget-ok; new_scenario $CASE
-exits "runs fine" 0 start
-out "100 minutes used goes on" "go=true"
-said "and reports the budget" "Actions this month: 100 of 2000 included minutes used (5%)"
-said "and Claude's usage status" "Claude reports usage status \`allowed\` for the five-hour limit"
-
-CASE=budget-used-up; new_scenario $CASE; usage 800
-exits "runs fine" 0 start
-out "800 used + 60 lag + 150 reserved > 1000 does not go on" "go=false"
-said "says the budget is used up" "the Actions budget is used up"
-said "with the numbers" "800 of 2000 included minutes used"
-not_said "starts no attempt" "<!-- autopilot:"
-called "removes the label" "--remove-label autopilot"
-called "keeps the card in To Do" "o=opt-todo"
-
-CASE=budget-edge; new_scenario $CASE; usage 790
-exits "runs fine" 0 start
-out "exactly at the limit still goes on" "go=true"
-
-CASE=budget-concurrent; new_scenario $CASE; usage 500; running 2
-exits "runs fine" 0 start
-out "two running attempts reserve their minutes too" "go=false"
-said "and say so" "2 other running attempt(s)"
-
-CASE=budget-windows; new_scenario $CASE; usage 100 450
-exits "runs fine" 0 start
-out "Windows minutes count at their price (450 -> 750)" "go=false"
-
-CASE=budget-ignores-storage; new_scenario $CASE
-exits "runs fine" 0 start
-out "storage and other products don't count as minutes" "go=true"
-
-CASE=budget-threshold; new_scenario $CASE
-AUTOPILOT_ACTIONS_LIMIT_PCT=10 exits "runs fine" 0 start
-out "the threshold is configurable" "go=false"
-
-CASE=budget-included-override; new_scenario $CASE; usage 1500
-echo '{"login":"vanBassum"}' >"$SCENARIO/user.json"
-AUTOPILOT_ACTIONS_INCLUDED_MINUTES=4000 exits "runs fine" 0 start
-out "AUTOPILOT_ACTIONS_INCLUDED_MINUTES replaces the plan's allowance" "go=true"
-
-CASE=budget-pro-plan; new_scenario $CASE; usage 1200
-echo '{"login":"vanBassum","plan":{"name":"pro"}}' >"$SCENARIO/user.json"
-exits "runs fine" 0 start
-out "a pro plan has 3000 minutes" "go=true"
-
-CASE=budget-unknown-plan; new_scenario $CASE
-echo '{"login":"vanBassum","plan":{"name":"mystery"}}' >"$SCENARIO/user.json"
-exits "runs fine" 0 start
-out "an unknown plan fails closed" "go=false"
-said "and says what to set" "AUTOPILOT_ACTIONS_INCLUDED_MINUTES"
-
-CASE=budget-plan-of-another-user; new_scenario $CASE
-echo '{"login":"someone-else","plan":{"name":"pro"}}' >"$SCENARIO/user.json"
-exits "runs fine" 0 start
-out "a token of another user fails closed" "go=false"
-said "and says whose token it must be" "is AUTOPILOT_PAT a token of vanBassum?"
-
-CASE=budget-usage-unreadable; new_scenario $CASE
-touch "$SCENARIO/users_vanBassum_settings_billing_usage.fail"
-exits "runs fine" 0 start
-out "unreadable usage fails closed" "go=false"
-said "and says so" "Actions usage could not be read"
-
-CASE=budget-usage-shape; new_scenario $CASE
-echo '{"something":"else"}' >"$SCENARIO/users_vanBassum_settings_billing_usage.json"
-exits "runs fine" 0 start
-out "an unexpected usage report fails closed" "go=false"
-
-CASE=budget-runs-unreadable; new_scenario $CASE
-touch "$SCENARIO/actions_workflows_autopilot.yml_runs.fail"
-exits "runs fine" 0 start
-out "unlisted running attempts fail closed" "go=false"
-
-CASE=budget-no-billing-token; new_scenario $CASE
-BILLING_ENV="" exits "runs fine" 0 start
-out "no billing token fails closed" "go=false"
-said "and says so" "no billing token"
-
-CASE=budget-wrong-token; new_scenario $CASE
-BILLING_ENV=gha exits "runs fine" 0 start
-out "billing is read with the billing token only" "go=false"
-
-CASE=budget-bad-setting; new_scenario $CASE
-AUTOPILOT_ACTIONS_LIMIT_PCT=half exits "runs fine" 0 start
-out "a malformed setting fails closed" "go=false"
-
-CASE=budget-off-mode-first; new_scenario $CASE; MODE_ENV=off; usage 99999
-exits "runs fine" 0 start
-said "mode off is reported before the budget" "switched off"
-
 # --- precheck --------------------------------------------------------------------
 CASE=precheck-ok; new_scenario $CASE; rm -f "$SCENARIO/work/claude-status.json"
 exits "runs fine" 0 precheck
@@ -397,11 +287,6 @@ CASE=precheck-off; new_scenario $CASE; MODE_ENV=off
 exits "runs fine" 0 precheck
 out "mode off stops before the Claude probe" "ok=false"
 said "and says so" "switched off"
-
-CASE=precheck-budget; new_scenario $CASE; usage 950
-exits "runs fine" 0 precheck
-out "a used-up Actions budget stops before the Claude probe" "ok=false"
-said "and says so" "the Actions budget is used up"
 
 # --- start: Claude's usage status --------------------------------------------------
 CASE=claude-warning; new_scenario $CASE
@@ -1218,12 +1103,6 @@ CASE=fix-precheck-mode; new_scenario $CASE; MODE_ENV=analysis-only; in_fix
 exits "runs fine" 0 fix-precheck
 out "only in full mode" "ok=false"
 said "says so" "not \`full\`, so the fix round doesn't run"
-
-CASE=fix-precheck-budget; new_scenario $CASE; in_fix; usage 950
-exits "runs fine" 0 fix-precheck
-out "a used-up Actions budget stops before the Claude probe" "ok=false"
-said "says so" "the Actions budget is used up"
-said "back to To Do" "$(marker todo 42)"
 
 CASE=fix-start-ok; new_scenario $CASE; in_fix
 exits "runs fine" 0 fix-start

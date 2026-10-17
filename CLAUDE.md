@@ -180,19 +180,13 @@ Only people with write access can start it (and, if the repository variable
 is `off` (default), `analysis-only` or `full`. Setting it back to `off` stops a
 running attempt at its next step and keeps its PR from merging.
 
-**Budgets**, the only limits on how much autopilot takes on (there is no cap on the
+**Budget**, the only limit on how much autopilot takes on (there is no cap on the
 number of issues); a refusal comments why, removes the label and leaves the issue
 in To Do. Running reviews and merges are never affected. A fix round is Claude work,
-so both budgets are checked again before it; a refusal there stops the attempt.
+so the budget is checked again before it; a refusal there stops the attempt. Every
+job runs on the self-hosted runner, which uses no GitHub Actions minutes, so there
+is no Actions budget.
 
-- *GitHub Actions*: vanBassum's usage this month (all repositories of the account
-  share the allowance) plus `AUTOPILOT_ACTIONS_LAG_MINUTES` (60) for not-yet-reported
-  usage plus `AUTOPILOT_ATTEMPT_RESERVE_MINUTES` (150) for this and every running
-  attempt must stay within `AUTOPILOT_ACTIONS_LIMIT_PCT` (50) of the included
-  minutes. Usage comes from the user billing usage API, in Linux-equivalent minutes;
-  jobs on the self-hosted runner use none. No API reports the allowance, so it comes
-  from the plan (free 2000, pro 3000) unless `AUTOPILOT_ACTIONS_INCLUDED_MINUTES` is
-  set. Unreadable data refuses.
 - *Claude*: the subscription's session and weekly usage can't be read as a number.
   Claude Code reports a status (its `rate_limit_event`) and warns, with a percentage,
   only when usage is high for that point in the window. Before an attempt, a
@@ -208,9 +202,8 @@ so both budgets are checked again before it; a refusal there stops the attempt.
 
 **Tokens**: `AUTOPILOT_PAT` (secret) is a fine-grained personal access token of
 vanBassum. The repository belongs to a user, so a GitHub App token can't reach the
-board or the billing usage. It is passed only to the shell steps that need it: push
-the branch and open the PR, merge a PR that passed the gate, or read the billing
-usage. A fine-grained token can't reach a user's project either, so the card is
+board. It is passed only to the shell steps that need it: push the branch and open
+the PR, or merge a PR that passed the gate. A fine-grained token can't reach a user's project either, so the card is
 moved with `AUTOPILOT_BOARD_TOKEN` (secret), a classic token with only the
 `project` scope. It is needed because a PR opened or merged with `GITHUB_TOKEN`
 starts no workflows (a merge would never be built or published). Claude never runs
