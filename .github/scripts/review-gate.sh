@@ -32,20 +32,23 @@ bot_comments() {
     --jq '.[] | select(.user.login == "github-actions[bot]" and .user.type == "Bot") | .body'
 }
 
-# The blocking count one reviewer reported for $SHA. Every marker of that reviewer
-# for $SHA must be well-formed and all must agree; none at all means no verdict.
-# Markers for other commits are stale and ignored.
+# Each reviewer may post a new verdict for the same SHA after a full rerun.
+# GitHub returns issue comments oldest-first. Use only the newest bot-authored
+# comment containing this reviewer's exact-SHA marker. A malformed newest
+# verdict fails closed; a new run cannot silently reuse an older approval.
 verdict_from() {
-  local comments=$1 reviewer=$2 markers malformed counts
+  local comments=$1 reviewer=$2 markers latest
   [[ $reviewer =~ ^[a-z][a-z-]*$ ]] || fail "Bad reviewer name '$reviewer'."
   markers=$(grep -oE '<!--[^>]*claude-review[^>]*-->' <<<"$comments" \
     | grep -F "$SHA" | grep -E "claude-review:[[:space:]]*$reviewer([[:space:]]|-->)" || true)
   [ -n "$markers" ] || fail "No verdict from $reviewer for $SHA."
-  malformed=$(grep -vxE "<!-- claude-review: $reviewer sha=$SHA blocking=(0|[1-9][0-9]{0,3}) -->" <<<"$markers" || true)
-  [ -z "$malformed" ] || fail "Malformed verdict from $reviewer for $SHA: $malformed"
-  counts=$(sed -E 's/.*blocking=([0-9]+) -->$/\1/' <<<"$markers" | sort -u)
-  [ "$(wc -l <<<"$counts")" -eq 1 ] || fail "Contradictory verdicts from $reviewer for $SHA: $(tr '\n' ' ' <<<"$counts")"
-  echo "$counts"
+  latest=$(tail -n 1 <<<"$markers")
+  [[ $latest =~ ^\<\!--\ claude-review:\ $reviewer\ sha=$SHA\ blocking=([0-9]+)\ --\>$ ]] \
+    || fail "Malformed verdict from $reviewer for $SHA: $latest"
+  local count="${BASH_REMATCH[1]}"
+  [[ $count =~ ^(0|[1-9][0-9]{0,3})$ ]] \
+    || fail "Malformed verdict from $reviewer for $SHA: $latest"
+  echo "$count"
 }
 
 refuse_if_labelled() {
