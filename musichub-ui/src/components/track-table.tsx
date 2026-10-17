@@ -21,6 +21,8 @@ interface TrackTableProps {
   selectedId: string | null
   nowPlayingId: string
   onSelect: (id: string) => void
+  // The mobile Library page has its own header with the Filters button.
+  showHeader?: boolean
 }
 
 export function TrackTable({
@@ -28,40 +30,44 @@ export function TrackTable({
   selectedId,
   nowPlayingId,
   onSelect,
+  showHeader = true,
 }: TrackTableProps) {
   return (
     <section
-      aria-labelledby="library-heading"
+      aria-labelledby={showHeader ? "library-heading" : undefined}
+      aria-label={showHeader ? undefined : "Library tracks"}
       className="flex min-h-0 min-w-0 flex-col rounded-xl border bg-card"
     >
-      <div className="flex flex-wrap items-center gap-3 p-4">
-        <h1 id="library-heading" className="text-xl font-semibold">
-          Library
-        </h1>
-        <span className="text-lg text-muted-foreground">
-          {tracks.length} tracks
-        </span>
-        <div className="ml-auto flex items-center gap-2">
-          <Button
-            variant="outline"
-            size="icon-lg"
-            disabled
-            aria-label="Change view"
-            title="Not available yet"
-          >
-            <LayoutList />
-          </Button>
-          <Button
-            variant="outline"
-            size="lg"
-            disabled
-            title="Not available yet"
-          >
-            <ArrowDownUp data-icon="inline-start" />
-            Sort: Artist
-          </Button>
+      {showHeader && (
+        <div className="flex flex-wrap items-center gap-3 p-4">
+          <h1 id="library-heading" className="text-xl font-semibold">
+            Library
+          </h1>
+          <span className="text-lg text-muted-foreground">
+            {tracks.length} tracks
+          </span>
+          <div className="ml-auto flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="icon-lg"
+              disabled
+              aria-label="Change view"
+              title="Not available yet"
+            >
+              <LayoutList />
+            </Button>
+            <Button
+              variant="outline"
+              size="lg"
+              disabled
+              title="Not available yet"
+            >
+              <ArrowDownUp data-icon="inline-start" />
+              Sort: Artist
+            </Button>
+          </div>
         </div>
-      </div>
+      )}
       <div className="min-h-0 flex-1 overflow-auto">
         <Table className="min-w-[48rem] text-sm">
           <TableHeader className="sticky top-0 z-10 bg-card">
