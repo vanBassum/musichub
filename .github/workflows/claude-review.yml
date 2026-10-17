@@ -22,7 +22,7 @@ name: Claude PR review
 # fine-grained token of the repository's owner: a push made with GITHUB_TOKEN starts
 # no workflows, so main would never be built or get its image. The autopilot job
 # moves the issue's card on the board (a user's project) with AUTOPILOT_BOARD_TOKEN,
-# a classic token with only the `project` scope.
+# a classic token with the `project` and `repo` scopes.
 
 on:
   pull_request_target:

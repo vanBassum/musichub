@@ -50,8 +50,8 @@ name: Autopilot
 # labels and state markers are written by plain shell jobs with the workflow's
 # GITHUB_TOKEN. AUTOPILOT_PAT, a fine-grained token of the repository's owner, is
 # passed only to the shell steps that need it: push the branch and open the PR.
-# AUTOPILOT_BOARD_TOKEN, a classic token with only the
-# `project` scope, moves the board card: the repository belongs to a user, and
+# AUTOPILOT_BOARD_TOKEN, a classic token with the `project` and
+# `repo` scopes, moves the board card: the repository belongs to a user, and
 # neither a GitHub App token nor a fine-grained token can reach a user's project. A branch or PR made with
 # GITHUB_TOKEN would start no workflows (the reviewers and the build check would
 # never run). Claude's commits travel from the build job to the publish job as a git
