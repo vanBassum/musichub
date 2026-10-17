@@ -20,8 +20,9 @@ name: Claude PR review
 # (it uses the Claude subscription, so no API key is needed). Comments are posted
 # with the workflow's own GITHUB_TOKEN. PRs are merged with AUTOPILOT_PAT, a
 # fine-grained token of the repository's owner: a push made with GITHUB_TOKEN starts
-# no workflows, so main would never be built or get its image. The autopilot job uses
-# the same token to move the issue's card on the board (a user's project).
+# no workflows, so main would never be built or get its image. The autopilot job
+# moves the issue's card on the board (a user's project) with AUTOPILOT_BOARD_TOKEN,
+# a classic token with only the `project` scope.
 
 on:
   pull_request_target:
@@ -241,8 +242,8 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # Moves the board card.
-          AUTOPILOT_TOKEN: ${{ secrets.AUTOPILOT_PAT }}
           AUTOPILOT_PROJECT_ID: ${{ vars.AUTOPILOT_PROJECT_ID }}
+          AUTOPILOT_BOARD_TOKEN: ${{ secrets.AUTOPILOT_BOARD_TOKEN }}
           AUTOPILOT_DIR: ${{ runner.temp }}/autopilot
           PR: ${{ github.event.pull_request.number }}
           SHA: ${{ github.event.pull_request.head.sha }}

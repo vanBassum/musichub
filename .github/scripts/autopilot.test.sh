@@ -137,7 +137,7 @@ build_repo() {
 run_ap() {
   ( cd "${CWD:-$SCENARIO}" && env GITHUB_REPOSITORY=vanBassum/musichub GITHUB_RUN_ID=${RUN:-555} \
       ISSUE=12 SENDER="$SENDER_ENV" PIPELINE_MODE="$MODE_ENV" MODE="$MODE_ENV" \
-      GH_TOKEN=gha AUTOPILOT_PROJECT_ID=${PROJECT_ENV-PVT_test} AUTOPILOT_TOKEN="$TOKEN_ENV" AUTOPILOT_BILLING_TOKEN="${BILLING_ENV-billing}" AUTOPILOT_DIR="$SCENARIO/work" \
+      GH_TOKEN=gha AUTOPILOT_PROJECT_ID=${PROJECT_ENV-PVT_test} AUTOPILOT_TOKEN="$TOKEN_ENV" AUTOPILOT_BOARD_TOKEN="${BOARD_ENV-board}" AUTOPILOT_BILLING_TOKEN="${BILLING_ENV-billing}" AUTOPILOT_DIR="$SCENARIO/work" \
       AUTOPILOT_REMOTE="$SCENARIO/remote.git" GITHUB_OUTPUT="$SCENARIO/output" \
       ANALYSIS_RESULT=${ANALYSIS_RESULT:-success} BUILD_RESULT=${BUILD_RESULT:-success} INVESTIGATION=${INVESTIGATION_ENV:-false} \
       PR=${PR_ENV:-42} SHA=${SHA_ENV:-1111111111111111111111111111111111111111} HEAD_REF=${REF_ENV:-autopilot/issue-12-r555} \
@@ -211,7 +211,8 @@ CASE=start-full; new_scenario $CASE
 exits "runs fine" 0 start
 out "goes on" "go=true"
 said "records stage analysis" "$(marker analysis)"
-called "moves the card to Analysis with the PAT" "[pat] graphql"
+called "moves the card to Analysis with the board token" "[board] graphql"
+not_called "and never with the PAT" "[pat] graphql"
 called "picks the Analysis option" "o=opt-analysis"
 called "comments with GITHUB_TOKEN" "[gha] issue comment 12"
 out "is a change, not an investigation" "investigation=false"
@@ -285,6 +286,12 @@ out "goes on" "go=true"
 not_called "and leaves the board alone" "graphql"
 grep -qF "AUTOPILOT_PROJECT_ID is not set" "$SCENARIO/out" && ok "says the board is not set" || no "says the board is not set"
 unset PROJECT_ENV
+
+CASE=start-no-board-token; new_scenario $CASE; BOARD_ENV=""
+exits "no AUTOPILOT_BOARD_TOKEN is only a warning" 0 start
+out "goes on" "go=true"
+not_called "and leaves the board alone" "graphql"
+unset BOARD_ENV
 
 # --- start: GitHub Actions budget --------------------------------------------------
 # Defaults: 2000 included minutes (plan free), 50% -> 1000; lag 60, 150 per attempt.

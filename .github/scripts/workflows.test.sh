@@ -59,7 +59,8 @@ claude_bots() { claude_step_setting allowed_bots "$@"; }
 
 # claude_jobs_with_write [<permission>] <workflow>...: prints "<file>:<job>" for every
 # job that runs claude-code-action and also has a write permission (given one, that
-# write permission), mints a GitHub App token or references AUTOPILOT_PAT. Autopilot
+# write permission), mints a GitHub App token or references AUTOPILOT_PAT or
+# AUTOPILOT_BOARD_TOKEN. Autopilot
 # runs Claude only in read-only jobs; shell jobs do the writing.
 claude_jobs_with_write() {
   local perm='[A-Za-z0-9_-]+'
@@ -76,7 +77,7 @@ claude_jobs_with_write() {
     job != "" && inperm && ind > 4 && $0 ~ ("^ *" perm ":[[:space:]]*write") { write = 1 }
     job != "" && /uses:[[:space:]]*anthropics\/claude-code-action@/ { claude = 1 }
     job != "" && /uses:[[:space:]]*actions\/create-github-app-token@/ { app = 1 }
-    job != "" && /secrets\.AUTOPILOT_PAT/ { app = 1 }
+    job != "" && /secrets\.AUTOPILOT_(PAT|BOARD_TOKEN)/ { app = 1 }
     END { flush() }
   ' "$@"
 }
