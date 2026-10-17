@@ -75,7 +75,11 @@ jobs:
           path: understanding
           ssh-key: ${{ secrets.UNDERSTANDING_DEPLOY_KEY }}
           persist-credentials: false
-          fetch-depth: 1
+          fetch-depth: 0
+
+      - name: Assemble unprojected accepted logs
+        if: matrix.reviewer == 'understanding'
+        run: bash .github/scripts/understanding-pending-logs.sh understanding understanding-pending-logs.md
 
       - name: Remember understanding revision
         if: matrix.reviewer == 'understanding'
@@ -101,6 +105,7 @@ jobs:
             FOCUS AREA: ${{ matrix.reviewer }}
             HEAD SHA: ${{ github.event.pull_request.head.sha }}
             UNDERSTANDING SHA: ${{ steps.understanding.outputs.sha }}
+            PENDING ACCEPTED LOGS: understanding-pending-logs.md
 
             Review this pull request. First read .github/reviewers/_common.md (the
             shared rules), then .github/reviewers/${{ matrix.reviewer }}.md (your
