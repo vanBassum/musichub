@@ -168,6 +168,13 @@ jobs:
           persist-credentials: false
           fetch-depth: 1
 
+      # The images attached to the issue, for Claude's Read tool: Claude itself gets
+      # no network access. Not uploaded as an artifact. See issue-images.sh.
+      - name: Download the issue's images
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: bash .github/scripts/issue-images.sh "${{ github.repository }}" "${{ github.event.issue.number }}" "${{ runner.temp }}/autopilot/images"
+
       # The analysis (or the investigation report) is Claude's FINAL MESSAGE, read
       # from the action's execution log, so this step needs no write access at all.
       - name: Claude analysis
@@ -186,12 +193,14 @@ jobs:
           prompt: |
             REPO: ${{ github.repository }}
             ISSUE: ${{ github.event.issue.number }}
+            IMAGES_DIR: ${{ runner.temp }}/autopilot/images
 
             Read .github/autopilot/${{ needs.start.outputs.investigation == 'true' && 'investigation' || 'analysis' }}.md and follow it exactly. The current
             musichub understanding is checked out read-only at understanding/.
           claude_args: |
             --max-turns ${{ needs.start.outputs.investigation == 'true' && '100' || '60' }}
             --add-dir understanding
+            --add-dir ${{ runner.temp }}/autopilot/images
             --allowedTools "Read,Grep,Glob,Bash(gh issue view:*),Bash(gh issue list:*),Bash(gh pr list:*),Bash(gh pr view:*),Bash(git log:*),Bash(git show:*)"
 
       - name: Keep the analysis and its usage
@@ -293,6 +302,11 @@ jobs:
           corepack enable
           corepack prepare pnpm@10.28.1 --activate
           pnpm --dir musichub-ui install --frozen-lockfile
+      # Into WORK_DIR, fresh: see the analysis job.
+      - name: Download the issue's images
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: bash .github/scripts/issue-images.sh "${{ github.repository }}" "${{ github.event.issue.number }}" "${{ runner.temp }}/autopilot/images"
 
       - name: Claude build
         id: claude

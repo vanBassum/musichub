@@ -155,6 +155,11 @@ jobs:
         with:
           name: autopilot-fix-findings
           path: ${{ runner.temp }}/autopilot
+      # Into WORK_DIR, with the script from main: see autopilot.yml's analysis job.
+      - name: Download the issue's images
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: bash trusted/.github/scripts/issue-images.sh "${{ github.repository }}" "${{ needs.start.outputs.issue }}" "${{ runner.temp }}/autopilot/images"
       - name: Prepare the workspace
         run: |
           # Kept outside the working tree, which Claude is about to change.

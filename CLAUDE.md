@@ -156,6 +156,13 @@ To Do ─label─▶ Analysis ─ready─▶ Build ─PR─▶ Merge ─merged�
   review or a failed fix stops the attempt: the PR gets `no-automerge` and is kept
   for investigation. No retries. Adding the label again starts a new attempt, which
   supersedes the old one.
+- **Images**: analysis, build and fix see the images attached to the issue and its
+  comments. Before Claude runs, `.github/scripts/issue-images.sh` downloads them
+  with the job's read-only `GITHUB_TOKEN` (through the signed URLs in the API's
+  rendered HTML) to a directory outside the checkout, with an `index.md` saying
+  where each one is. Claude looks at them with Read and gets no network access for
+  it. Only GitHub's own attachment hosts are fetched; an external image is listed,
+  not downloaded.
 - Moving a card on the board starts nothing. Issues without the label stay manual.
 
 **Investigations: `autopilot:analysis-only`.** An issue that carries this label as
