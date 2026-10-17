@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using MusicHub.Api.Data;
+using MusicHub.Api.Metadata;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -14,6 +15,8 @@ builder.Services.AddOpenApi();
 builder.Services.Configure<DatabaseOptions>(builder.Configuration.GetSection(DatabaseOptions.SectionName));
 builder.Services.AddDbContext<MusicHubDbContext>((sp, options) =>
     options.UseNpgsql(sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<DatabaseOptions>>().Value.BuildConnectionString()));
+
+builder.Services.AddAudioMetadata();
 
 builder.Services.AddHealthChecks()
     .AddCheck<DatabaseHealthCheck>("database", tags: ["ready"]);
