@@ -26,9 +26,9 @@ env:
   IMAGE: ghcr.io/vanbassum/musichub
 
 jobs:
-  # The fail-closed merge gate of claude-review.yml and the autopilot state machine
-  # (both against a fake gh), the Claude action settings in the workflows, and the
-  # Claude guard in .claude/hooks/.
+  # The fail-closed merge gate of claude-review.yml, the autopilot state machine and
+  # autopilot's download of issue images (against a fake gh), the Claude action
+  # settings in the workflows, and the Claude guard in .claude/hooks/.
   guard-tests:
     runs-on: [self-hosted, strato]
     timeout-minutes: 10
@@ -40,6 +40,7 @@ jobs:
           node-version: '22'
       - run: bash .github/scripts/review-gate.test.sh
       - run: bash .github/scripts/autopilot.test.sh
+      - run: bash .github/scripts/issue-images.test.sh
       - run: bash .github/scripts/workflows.test.sh
       - run: node .claude/hooks/guard.test.js
 
