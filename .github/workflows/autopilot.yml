@@ -308,8 +308,20 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: bash .github/scripts/issue-images.sh "${{ github.repository }}" "${{ github.event.issue.number }}" "${{ runner.temp }}/autopilot/images"
 
+      # The shadcn/ui components the analysis admitted (its `Components:` line),
+      # added with the official CLI and committed before Claude starts: Claude's run
+      # has no network and no package commands. The script refuses, as a BLOCKED
+      # result, a component that needs a new package or writes outside
+      # components/ui; Claude then doesn't run and publish stops the attempt.
+      - name: Add the admitted shadcn/ui components
+        id: components
+        run: |
+          bash .github/scripts/shadcn-components.sh ${{ runner.temp }}/autopilot/analysis.md ${{ runner.temp }}/autopilot/result.md
+          if [ -e ${{ runner.temp }}/autopilot/result.md ]; then echo "refused=true" >>"$GITHUB_OUTPUT"; fi
+
       - name: Claude build
         id: claude
+        if: steps.components.outputs.refused != 'true'
         uses: anthropics/claude-code-action@v1
         with:
           anthropic_api_key: ${{ secrets.AUTOPILOT_ANTHROPIC_API_KEY }}

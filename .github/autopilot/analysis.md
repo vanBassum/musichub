@@ -112,10 +112,18 @@ Answer each question with evidence (a projection section, a file, an issue):
      whose rule the understanding doesn't state. That is a missing decision
      (`needs-design`), not a detail to fill in.
    - *Dependencies*: adding, removing or upgrading a NuGet or npm package
-     (`*.csproj` `PackageReference`, `package.json`, `pnpm-lock.yaml`), or adding a
-     shadcn/ui component that isn't in `musichub-ui/src/components/ui/` yet. The
-     build has no command to install or generate them; a human adds the
-     dependency or the component first, in its own PR.
+     (`*.csproj` `PackageReference`, `package.json`, `pnpm-lock.yaml`). The build
+     has no command to install them; Bas approves the package and a human adds
+     it first, in its own PR.
+
+   A missing shadcn/ui component is not a dependency and no reason to reject. When
+   the work needs an official component that isn't in
+   `musichub-ui/src/components/ui/` yet, name it on the `Components:` line of your
+   answer (see 3). The workflow adds it with the shadcn CLI before the build
+   starts, and refuses it, stopping the attempt, if it needs an npm package that
+   `musichub-ui/package.json` doesn't have. Name only components of the official
+   registry, by their plain name (`table`, `checkbox`), and only ones the admitted
+   scope uses.
    - *The pipeline itself*: anything under `.github/`, `.githooks/` or `.claude/`.
      The merge gate never merges those, and they need Bas.
    - *The understanding*: a change that needs musichub-understanding to change
@@ -152,6 +160,8 @@ and the never-autonomous rules you checked and why none applies (or which does).
 For `ready` only:
 **Admitted scope**: numbered steps a builder can follow without re-investigating,
 with the files (`path`) involved. This is ALL the build step may do.
+Components: the official shadcn/ui components to add before the build, comma
+separated (`table, checkbox`), or `none`. One line, in exactly this form.
 **Acceptance criteria**: checkable statements; a reviewer reads these.
 **Out of scope**: what this deliberately does not do.
 

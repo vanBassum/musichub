@@ -15,9 +15,15 @@ Look for:
 - **Forked markup instead of a shared component.** Hand-written buttons, inputs,
   dialogs, menus, cards, tables or other controls where a component in
   `src/components/ui/` already exists. If the component can't do what the PR needs,
-  the fix is to extend or wrap it, not to copy its markup. A component that is not
-  there yet is added with the shadcn CLI in its own PR, not hand-written in a
-  feature (`[risk]` when a PR hand-writes one into `components/ui/`).
+  the fix is to extend or wrap it, not to copy its markup. Reusable app-specific
+  components outside `components/ui/` are fine.
+- **New shadcn/ui components.** A feature PR may add the official shadcn/ui
+  components it uses, in the same PR, generated with the shadcn CLI and committed
+  as generated (formatting aside). Check that each one is used, and that the PR
+  doesn't hand-write a substitute for an official component (`[risk]` when a PR
+  hand-writes one into `components/ui/`). A new or upgraded npm package
+  (`package.json`, `pnpm-lock.yaml`) is a separate decision: `[risk]` unless the PR
+  says Bas approved it.
 - **Edits to generated components.** Changes inside `src/components/ui/` that
   change behaviour for every caller, without the PR saying so.
 - **Styling.** Tailwind utilities and the theme tokens from `src/index.css`.
