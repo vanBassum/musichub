@@ -111,10 +111,27 @@ Answer each question with evidence (a projection section, a file, an issue):
    - *Security without a rule*: an authorization, authentication or access change
      whose rule the understanding doesn't state. That is a missing decision
      (`needs-design`), not a detail to fill in.
-   - *Dependencies*: adding, removing or upgrading a NuGet or npm package
-     (`*.csproj` `PackageReference`, `package.json`, `pnpm-lock.yaml`). The build
-     has no command to install them; Bas approves the package and a human adds
-     it first, in its own PR.
+   - *Unjustified or unsafe dependencies*: a new package that is unrelated to
+     the approved issue, duplicates existing functionality without a reason,
+     introduces an unapproved service or security boundary, or has a known
+     material security/licensing concern. Do not infer approval for a new
+     product capability from permission to add its implementation packages.
+
+   **Dependencies that are permitted autonomously:** a necessary, maintained
+   NuGet package directly implementing a capability explicitly accepted in
+   understanding and requested by the issue (for example the PostgreSQL EF Core
+   provider or an S3-compatible storage SDK). A package is not a separate
+   product decision. Name its package ID and purpose under Risk; require the
+   builder to pin a compatible version, update the project file, and let CI
+   restore/build it. The API reviewer checks necessity, version compatibility,
+   security and scope. Do not block merely because the issue contains an older
+   sentence asking for a separate human-authored package PR: policy is here.
+
+   For npm dependencies, require the existing lockfile to remain consistent and
+   the CI workflow to be able to install them. If the current restricted build
+   cannot generate/update the lockfile, classify blocked for that **execution
+   limitation**, not because all packages require human approval. Existing
+   official shadcn components remain governed by the component rule below.
 
    A missing shadcn/ui component is not a dependency and no reason to reject. When
    the work needs an official component that isn't in
@@ -127,11 +144,21 @@ Answer each question with evidence (a projection section, a file, an issue):
    - *The pipeline itself*: anything under `.github/`, `.githooks/` or `.claude/`.
      The merge gate never merges those, and they need Bas.
    - *The understanding*: a change that needs musichub-understanding to change
-     first.
+     first. An accepted, merged decision log is evidence of a settled decision
+     even if the generated projection has not caught up; report that lag, do
+     not invent a contradiction or block solely for projection lag.
 
    Say which rule applies, and for a careful-review kind, which criteria cover it.
    For a never-autonomous change, **What would make it ready** is a human-authored
    PR (plus the decision, if one is missing), not a rewording of the issue.
+
+For an issue that leaves an infrastructure-only implementation choice open,
+choose a simple conventional approach and make it an explicit admitted
+acceptance criterion, provided the accepted understanding allows that choice.
+For PostgreSQL migration setup, prefer a separate explicit `--migrate` command
+that applies EF Core migrations and exits, with normal startup never migrating,
+and an empty initial migration if useful. A stack-facing invocation must be
+documented. Escalate genuinely durable unresolved product decisions.
 
 Only `ready` if every answer is clean. When several rejections apply, report all
 of them and classify by the first that applies: `blocked` (CONTRADICTED, never
@@ -140,9 +167,20 @@ autonomous with the decision made, or waiting on something), `needs-design`,
 
 ## 3. Answer
 
+**Keep the public issue comment concise.** The first two lines must remain
+the exact machine-readable heading and classification shown below. Immediately
+after those lines, add a **TL;DR** of at most three short lines: decisive
+reason and next action. For ready
+issues, provide only the scoped build instructions and testable criteria
+needed by the builder; for blocked issues, give only the concrete blocker(s)
+and smallest unblock action. Do not repeat the issue, inventory every policy
+rule that does not apply, narrate the investigation, or dump token accounting
+in the analysis body. Preserve the machine-readable `Classification:` and
+`Components:` lines, and any automation markers required by the workflow.
+
 Your final message is Markdown. Its first line is exactly `## Autopilot analysis`,
 its second line exactly `Classification: <ready|needs-design|too-large|blocked>`,
-and it contains no other `Classification:` line. Then, briefly:
+and it contains no other `Classification:` line. Then, briefly (omit nonessential sections when they add no information):
 
 ```text
 ## Autopilot analysis

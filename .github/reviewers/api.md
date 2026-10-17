@@ -47,3 +47,14 @@ Look for:
   migration, an edited existing migration, a migration whose `Up()` does more than
   the PR describes or drops, alters or deletes existing data (`[risk]`), and a
   `Down()` that doesn't reverse it.
+
+## Dependency review
+
+Necessary NuGet packages for an explicitly approved capability may be added in
+its implementation PR; a separate human-authored dependency PR is not required.
+Check the package's actual purpose, compatible pinned version, supported source,
+transitive exposure, and whether an existing dependency already provides the
+functionality. Flag unnecessary, suspicious, unmaintained or incompatible
+packages as [risk], not the mere presence of a new PackageReference. For EF Core,
+check runtime/provider/design package compatibility and that migrations never
+run during normal application startup.
