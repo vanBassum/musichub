@@ -2,25 +2,25 @@ import { useState } from "react"
 
 import { AppHeader } from "@/components/app-header"
 import { FilterSidebar } from "@/components/filter-sidebar"
-import { TrackDetails } from "@/components/track-details"
+import { PlayerPanel } from "@/components/player-panel"
 import { TrackTable } from "@/components/track-table"
-import { mockTracks } from "@/data/mock-tracks"
+import { mockNowPlayingId, mockQueue, mockTracks } from "@/data/mock-tracks"
 
 export function App() {
   const [selectedId, setSelectedId] = useState<string | null>(null)
-  const selected = mockTracks.find((track) => track.id === selectedId) ?? null
 
   return (
-    <div className="flex min-h-svh flex-col md:h-svh">
+    <div className="flex min-h-svh flex-col lg:h-svh">
       <AppHeader />
-      <main className="flex min-h-0 flex-1 flex-col md:flex-row">
-        <FilterSidebar />
+      <main className="grid min-h-0 flex-1 gap-4 p-4 lg:grid-cols-[15rem_minmax(0,1fr)_20rem] xl:grid-cols-[17rem_minmax(0,1fr)_24rem]">
+        <FilterSidebar tracks={mockTracks} />
         <TrackTable
           tracks={mockTracks}
           selectedId={selectedId}
+          nowPlayingId={mockNowPlayingId}
           onSelect={setSelectedId}
         />
-        <TrackDetails track={selected} />
+        <PlayerPanel queue={mockQueue} nowPlayingId={mockNowPlayingId} />
       </main>
     </div>
   )
