@@ -1,0 +1,8 @@
+# .NET
+bin/
+obj/
+.vs/
+*.user
+
+# Claude (personal settings)
+.claude/settings.local.json

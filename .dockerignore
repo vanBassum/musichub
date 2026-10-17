@@ -1,0 +1,9 @@
+**/node_modules
+**/dist
+**/bin
+**/obj
+**/.vs
+**/.vscode
+**/*.user
+.git
+.claude

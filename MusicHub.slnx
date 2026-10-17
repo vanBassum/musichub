@@ -1,0 +1,5 @@
+<Solution>
+  <Folder Name="/musichub-api/">
+    <Project Path="musichub-api/MusicHub.Api.csproj" />
+  </Folder>
+</Solution>

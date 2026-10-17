@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "deny": [
+      "Edit(//c/Workspace/musichub-understanding/**)",
+      "Write(//c/Workspace/musichub-understanding/**)",
+      "NotebookEdit(//c/Workspace/musichub-understanding/**)"
+    ]
+  }
+}
