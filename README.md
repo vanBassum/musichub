@@ -30,6 +30,45 @@ Or `docker compose up --build`.
 Routing in the container: `/api/*` goes to the controllers (unknown API routes
 return 404), every other path falls back to `index.html` for client-side routing.
 
+## Database
+
+The API uses PostgreSQL through EF Core. Configure it with these keys (environment
+variables, or the `Database` section of the configuration); no credentials live in
+`appsettings*.json`:
+
+| Key | Meaning |
+| --- | --- |
+| `Database__Host` | PostgreSQL host |
+| `Database__Port` | Port (default `5432`) |
+| `Database__Database` | Database name |
+| `Database__Username` | User |
+| `Database__Password` | Password |
+
+The API starts without a reachable database (or without these keys); the readiness
+check then reports unhealthy.
+
+**Migrations** are a separate step. Normal startup never migrates. Run the migration
+once per deployment, with the same `Database__*` environment, and it exits when done
+(non-zero on failure, without printing connection details):
+
+```bash
+docker run --rm -e Database__Host=… -e Database__Database=… -e Database__Username=… -e Database__Password=… <image> --migrate
+dotnet MusicHub.Api.dll --migrate   # without Docker
+```
+
+**Health endpoints** (anonymous, JSON body with `status` and per-check `name`/`status`,
+no details):
+
+| Route | Runs | Result |
+| --- | --- | --- |
+| `/health/live` | no checks | always 200 `Healthy` |
+| `/health/ready` | the database check | 200, or 503 when the database is unreachable |
+| `/health` | all checks | 200, or 503 when the database is unreachable |
+
+The stack's liveness and restart check must use `/health/live`; `/health/ready` and
+`/health` are for routing and monitoring only, so a database outage doesn't restart
+the API.
+
 ## Understanding
 
 Product understanding lives in the separate repo
