@@ -8,7 +8,7 @@ contracts, not suggestions.
 ## Contracts
 
 Start with `understanding/README.md`; it lists the projections that exist (for
-example a mental model, a feature catalogue, architecture, security, design). After
+example a mental model, a feature catalogue, architecture, security). After
 reading the PR and diff, read the ones the change touches:
 
 - the **mental model**: product concepts, ownership, relationships and invariants;
@@ -16,8 +16,6 @@ reading the PR and diff, read the ones the change touches:
   behaviour. This is not a backlog;
 - the **architecture**: durable technical boundaries and responsibility ownership;
 - the **security**: musichub-specific security requirements and trust boundaries;
-- the **design**: durable UI/UX rules; consult it when the PR changes what a user
-  sees or how they interact.
 
 A projection that doesn't exist yet establishes nothing: whatever the PR would need
 it to say is UNDOCUMENTED.
@@ -51,7 +49,10 @@ improve the understanding; do not choose silently between them.
 
 Do not require ordinary implementation details such as method names, local
 refactors, component structure, styling with no semantic change, or library usage
-to be documented unless they establish a durable boundary or behaviour. Introducing
+to be documented unless they establish a durable boundary or behaviour.
+Visual layout, styling and UI composition are governed by the implementation issue
+and ordinary UI review, not by an understanding design projection. Changes to
+user-visible product behaviour remain subject to the features and model contracts. Introducing
 persistence (a database, an ORM, file storage), authentication, a background service
 or an external integration is an architectural boundary, not a detail.
 

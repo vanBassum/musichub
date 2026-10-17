@@ -23,8 +23,7 @@ database and no authentication yet.
 1. `CLAUDE.md` and `README.md`, then the README of the part the issue touches
    (`musichub-ui/README.md`).
 2. `understanding/README.md`, then every projection it lists that the issue touches
-   (for example a mental model, a feature catalogue, architecture, security,
-   design). They are the contract: what musichub is meant to do. Don't read
+   (for example a mental model, a feature catalogue, architecture, security). They are the contract: what musichub is meant to do. Don't read
    `understanding/logs/` to overrule a projection. A projection that doesn't exist
    yet establishes nothing: what it would have to say is UNDOCUMENTED.
 3. `.github/reviewers/understanding.md`, the sections "Classify durable changes" and
@@ -44,7 +43,11 @@ Answer each question with evidence (a projection section, a file, an issue):
 
 1. **Understanding**: classify every durable change the issue asks for. Anything
    CONTRADICTED → `blocked`. Anything UNDOCUMENTED → `needs-design`. Missing
-   understanding is never permission to decide it yourself.
+   understanding is never permission to decide durable product behaviour yourself.
+   Visual layout, styling and component composition alone do not require an
+   understanding design projection; judge them against the issue's reference and
+   acceptance criteria. User-visible behaviour still requires the relevant
+   feature or model contract.
 2. **Scope**: is it one small, coherent change that can be built and reviewed on
    its own? Judge the conceptual scope and the uncertainty, not a line count.
    Several independent changes, or a whole feature → `too-large`.
