@@ -66,12 +66,13 @@ jobs:
           pnpm --dir musichub-ui install --frozen-lockfile
       - name: Build the API
         run: dotnet build MusicHub.slnx --configuration Release --no-restore
+      - name: Test the API
+        run: dotnet test MusicHub.slnx --configuration Release --no-build --no-restore
       - name: Lint the UI
         run: pnpm --dir musichub-ui lint
       - name: Build the UI
         run: pnpm --dir musichub-ui build
-      # There is no test project yet. Add "dotnet test" and "pnpm test" steps
-      # together with the first tests.
+      # Add a pnpm test step when the UI gains its first automated tests.
 
   # The check the merge gate waits for: green only when both kinds of tests are.
   build:
