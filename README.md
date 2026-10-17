@@ -30,6 +30,32 @@ Or `docker compose up --build`.
 Routing in the container: `/api/*` goes to the controllers (unknown API routes
 return 404), every other path falls back to `index.html` for client-side routing.
 
+## File storage
+
+Files live in an S3-compatible store (MinIO). The API reaches it through `IFileStorage`
+(`musichub-api/Storage/`): `PutAsync`, `OpenReadAsync`, `ExistsAsync` and `DeleteAsync`,
+all async with a `CancellationToken`. Configure it with these environment variables
+(the `FileStorage` configuration section):
+
+| Key | Example |
+| --- | --- |
+| `FileStorage__Endpoint` | `http://minio:9000` (absolute http(s) URL) |
+| `FileStorage__Bucket` | `musichub` |
+| `FileStorage__AccessKey` | the access key of the stack's service account |
+| `FileStorage__SecretKey` | the secret key of that account |
+
+The stack provisions the bucket and the credentials; the API creates neither. The keys
+are checked when storage is first used, not at startup, so the app also starts without
+them; a missing or invalid key then fails with an error naming it (never its value).
+
+- Reading a missing key throws `FileNotFoundException`; the caller disposes the returned stream.
+- Deleting a missing key succeeds.
+- `PutAsync` streams the content and does not dispose the stream it is given.
+
+To verify it, a consumer or test injects `IFileStorage` and does a put, exists, get and
+delete round trip against a throwaway bucket. Never use production data or the NAS
+source collection for that.
+
 ## Understanding
 
 Product understanding lives in the separate repo
