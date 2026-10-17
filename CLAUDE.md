@@ -208,10 +208,13 @@ so both budgets are checked again before it; a refusal there stops the attempt.
 **Tokens**: `AUTOPILOT_PAT` (secret) is a fine-grained personal access token of
 vanBassum. The repository belongs to a user, so a GitHub App token can't reach the
 board or the billing usage. It is passed only to the shell steps that need it: push
-the branch and open the PR, merge a PR that passed the gate, move the card, or read
-the billing usage. It is needed because a PR opened or merged with `GITHUB_TOKEN`
+the branch and open the PR, merge a PR that passed the gate, or read the billing
+usage. A fine-grained token can't reach a user's project either, so the card is
+moved with `AUTOPILOT_BOARD_TOKEN` (secret), a classic token with only the
+`project` scope. It is needed because a PR opened or merged with `GITHUB_TOKEN`
 starts no workflows (a merge would never be built or published). Claude never runs
-in a job that holds it; `workflows.test.sh` checks that no Claude job references it.
+in a job that holds either; `workflows.test.sh` checks that no Claude job references
+them.
 
 Claude sessions don't add or remove the `autopilot` label unless Bas asks.
 

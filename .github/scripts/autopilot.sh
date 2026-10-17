@@ -43,9 +43,10 @@
 #
 # Tokens: GH_TOKEN is the workflow's GITHUB_TOKEN (comments, labels, markers: they
 # come from github-actions[bot] and trigger nothing). AUTOPILOT_TOKEN (the
-# AUTOPILOT_PAT secret) pushes the branch, opens the PR and moves the board card: a
-# branch or PR made with GITHUB_TOKEN starts no workflows (the reviewers and the
-# build check would never run), and GITHUB_TOKEN can't reach a user's project.
+# AUTOPILOT_PAT secret) pushes the branch and opens the PR: a branch or PR made with
+# GITHUB_TOKEN starts no workflows (the reviewers and the build check would never
+# run). AUTOPILOT_BOARD_TOKEN moves the board card: neither GITHUB_TOKEN nor a
+# fine-grained token can reach a user's project.
 #
 # Tested by .github/scripts/autopilot.test.sh.
 set -euo pipefail
@@ -156,11 +157,13 @@ drop_label() { gh issue edit "$ISSUE" --repo "$R" --remove-label autopilot >/dev
 
 # board <status> [issue]: move the card of the issue (default: this one). The board
 # is the view, not the state, so a failure here is a warning, never a reason to stop.
+# AUTOPILOT_BOARD_TOKEN is a classic token with only the `project` scope: a
+# fine-grained token can't reach a project that belongs to a user.
 board() {
   local n=${2:-$ISSUE}
-  if [ -z "${AUTOPILOT_TOKEN:-}" ]; then warn "AUTOPILOT_TOKEN is not set; the card of issue #$n stays where it is."; return 0; fi
+  if [ -z "${AUTOPILOT_BOARD_TOKEN:-}" ]; then warn "AUTOPILOT_BOARD_TOKEN is not set; the card of issue #$n stays where it is."; return 0; fi
   if [ -z "$PROJECT_ID" ]; then warn "AUTOPILOT_PROJECT_ID is not set; the card of issue #$n stays where it is."; return 0; fi
-  GH_TOKEN=$AUTOPILOT_TOKEN board_move "$1" "$n" || warn "Could not move issue #$n to '$1' on the board."
+  GH_TOKEN=$AUTOPILOT_BOARD_TOKEN board_move "$1" "$n" || warn "Could not move issue #$n to '$1' on the board."
 }
 board_move() {
   local content item field option

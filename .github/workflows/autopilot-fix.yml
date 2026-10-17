@@ -83,6 +83,7 @@ jobs:
         env:
           AUTOPILOT_TOKEN: ${{ secrets.AUTOPILOT_PAT }}
           AUTOPILOT_PROJECT_ID: ${{ vars.AUTOPILOT_PROJECT_ID }}
+          AUTOPILOT_BOARD_TOKEN: ${{ secrets.AUTOPILOT_BOARD_TOKEN }}
           AUTOPILOT_BILLING_TOKEN: ${{ secrets.AUTOPILOT_PAT }}
           AUTOPILOT_DIR: ${{ runner.temp }}/autopilot
         run: bash .github/scripts/autopilot.sh fix-precheck
@@ -113,6 +114,7 @@ jobs:
         env:
           AUTOPILOT_TOKEN: ${{ secrets.AUTOPILOT_PAT }}
           AUTOPILOT_PROJECT_ID: ${{ vars.AUTOPILOT_PROJECT_ID }}
+          AUTOPILOT_BOARD_TOKEN: ${{ secrets.AUTOPILOT_BOARD_TOKEN }}
           AUTOPILOT_BILLING_TOKEN: ${{ secrets.AUTOPILOT_PAT }}
           CLAUDE_STATUS_FILE: ${{ runner.temp }}/autopilot/claude-status.json
           AUTOPILOT_DIR: ${{ runner.temp }}/autopilot
@@ -268,6 +270,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           AUTOPILOT_TOKEN: ${{ secrets.AUTOPILOT_PAT }}
           AUTOPILOT_PROJECT_ID: ${{ vars.AUTOPILOT_PROJECT_ID }}
+          AUTOPILOT_BOARD_TOKEN: ${{ secrets.AUTOPILOT_BOARD_TOKEN }}
           PR: ${{ inputs.pr }}
           SHA: ${{ inputs.sha }}
           PIPELINE_MODE: ${{ vars.PIPELINE_MODE }}
