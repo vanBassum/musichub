@@ -206,8 +206,9 @@ is no Actions budget.
 vanBassum. The repository belongs to a user, so a GitHub App token can't reach the
 board. It is passed only to the shell steps that need it: push the branch and open
 the PR, or merge a PR that passed the gate. A fine-grained token can't reach a user's project either, so the card is
-moved with `AUTOPILOT_BOARD_TOKEN` (secret), a classic token with only the
-`project` scope. It is needed because a PR opened or merged with `GITHUB_TOKEN`
+moved with `AUTOPILOT_BOARD_TOKEN` (secret), a classic token with the
+`project` and `repo` scopes (`project` alone can't add an issue of this private
+repository; set to expire, renew it then). It is needed because a PR opened or merged with `GITHUB_TOKEN`
 starts no workflows (a merge would never be built or published). Claude never runs
 in a job that holds either; `workflows.test.sh` checks that no Claude job references
 them.

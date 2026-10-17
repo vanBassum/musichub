@@ -159,9 +159,10 @@ drop_label() { gh issue edit "$ISSUE" --repo "$R" --remove-label autopilot >/dev
 
 # board <status> [issue]: move the card of the issue (default: this one). The board
 # is the view, not the state, so a failure here is a warning, never a reason to stop.
-# AUTOPILOT_BOARD_TOKEN is a classic token with only the `project` scope: a
-# fine-grained token can't reach a project that belongs to a user. That scope can't
-# read an issue of a private repository, so its node id comes from GITHUB_TOKEN.
+# AUTOPILOT_BOARD_TOKEN is a classic token with the `project` and `repo` scopes: a
+# fine-grained token can't reach a project that belongs to a user, and `project`
+# alone can't add an issue of a private repository. The node id comes from
+# GITHUB_TOKEN.
 board() {
   local n=${2:-$ISSUE} content
   if [ -z "${AUTOPILOT_BOARD_TOKEN:-}" ]; then warn "AUTOPILOT_BOARD_TOKEN is not set; the card of issue #$n stays where it is."; return 0; fi
