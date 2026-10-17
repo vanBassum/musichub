@@ -1,0 +1,398 @@
+name: Autopilot
+
+# One autonomous attempt at one issue, started by adding the `autopilot` label:
+#
+#   label added -> start -> analysis -> decide -> build -> publish   (this workflow)
+#   PR reviewed  -> automerge -> autopilot outcome                    (claude-review.yml)
+#   first review blocked -> start -> fix -> publish                  (autopilot-fix.yml)
+#                        -> PR reviewed again -> automerge -> outcome
+#
+#   board:  To Do -> Analysis -> Build -> Merge -> Done
+#                                  ^-- fix --'  (at most once per attempt)
+#           any stop or rejection -> To Do, label removed, with a comment saying why
+#
+# An issue that also carries `autopilot:analysis-only` is an investigation: the same
+# start and analysis jobs, with the investigation prompt, and `decide` ends it. It
+# posts the report as a comment on the issue and does nothing else: no issue is
+# created, the issue stays open, `autopilot` is removed and `autopilot:analysis-only`
+# stays: To Do -> Analysis -> To Do. Follow-up work is only suggested in the report;
+# a human decides which of it becomes an issue. build and publish never run for it.
+#
+# The label is the only trigger; moving a card on the board starts nothing (an
+# user's project emits no event a workflow can run on). The board follows
+# the attempt; the state itself is the newest autopilot marker comment on the issue,
+# kept by .github/scripts/autopilot.sh, which every step and the merge gate check.
+#
+# There are no retries, and at most one fix round: when the first review of the PR
+# blocks it with findings a code change can address, autopilot-fix.yml fixes exactly
+# those on the same PR and all four reviewers review it again; a second blocked
+# review stops the attempt (see autopilot.sh, "THE FIX ROUND"). One attempt, then
+# Done or back to To Do. Adding the label again starts a new attempt, which
+# supersedes any earlier one.
+#
+# PIPELINE_MODE (repository variable): off (default; the label is removed and
+# nothing runs), analysis-only (analyse, comment, back to To Do) or full. Switching
+# away from full stops a running attempt at its next step, and the merge gate then
+# refuses its PR. An investigation builds nothing, so it runs the same in
+# analysis-only and full.
+#
+# Budgets, the only limits on how much autopilot takes on (see autopilot.sh):
+# - GitHub Actions: the owner's usage this month, with a reservation for
+#   running attempts, must stay within AUTOPILOT_ACTIONS_LIMIT_PCT (default 50) of
+#   the included minutes. Checked by `precheck`, before any Claude run.
+# - Claude: a one-line probe with Claude Code reads the subscription's usage status
+#   (its rate_limit_event). Autopilot starts only while it is `allowed`, and builds
+#   only while the analysis run still reported `allowed`; a high-usage warning,
+#   a rejection or extra-usage credit stops it. Claude doesn't report a percentage
+#   below its own warning thresholds, so this is not an exact 50% line.
+# Each Claude run is also capped by --max-turns and the job timeout, against runaways.
+#
+# Tokens: Claude only ever runs in jobs whose GITHUB_TOKEN is read-only. Comments,
+# labels and state markers are written by plain shell jobs with the workflow's
+# GITHUB_TOKEN. AUTOPILOT_PAT, a fine-grained token of the repository's owner, is
+# passed only to the shell steps that need it: push the branch and open the PR, move
+# the board card, or read the billing usage. The repository belongs to a user, and a
+# GitHub App token can't reach a user's project or billing. A branch or PR made with
+# GITHUB_TOKEN would start no workflows (the reviewers and the build check would
+# never run). Claude's commits travel from the build job to the publish job as a git
+# bundle, so the job that holds the push token never runs anything Claude wrote.
+# workflows.test.sh checks that no job that runs Claude references AUTOPILOT_PAT.
+#
+# Claude authenticates with CLAUDE_CODE_OAUTH_TOKEN (the subscription), unless the
+# secret AUTOPILOT_ANTHROPIC_API_KEY is set: then analysis and build use that API
+# key instead, which a Console workspace spend limit can cap hard.
+
+on:
+  issues:
+    types: [labeled]
+
+permissions: {}
+
+# One attempt per issue at a time; a second label event waits for the first run.
+# Runs for other labels get their own group, so they can't displace a waiting one.
+concurrency:
+  group: autopilot-${{ github.event.issue.number }}-${{ github.event.label.name == 'autopilot' && 'attempt' || github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  start:
+    if: github.event.label.name == 'autopilot'
+    runs-on: [self-hosted, strato]
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: write
+      actions: read
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      ISSUE: ${{ github.event.issue.number }}
+      SENDER: ${{ github.event.sender.login }}
+      PIPELINE_MODE: ${{ vars.PIPELINE_MODE }}
+      AUTOPILOT_USERS: ${{ vars.AUTOPILOT_USERS }}
+      AUTOPILOT_ACTIONS_LIMIT_PCT: ${{ vars.AUTOPILOT_ACTIONS_LIMIT_PCT }}
+      AUTOPILOT_ACTIONS_INCLUDED_MINUTES: ${{ vars.AUTOPILOT_ACTIONS_INCLUDED_MINUTES }}
+      AUTOPILOT_ACTIONS_LAG_MINUTES: ${{ vars.AUTOPILOT_ACTIONS_LAG_MINUTES }}
+      AUTOPILOT_ATTEMPT_RESERVE_MINUTES: ${{ vars.AUTOPILOT_ATTEMPT_RESERVE_MINUTES }}
+      AUTOPILOT_CLAUDE_AUTH: ${{ secrets.AUTOPILOT_ANTHROPIC_API_KEY != '' && 'api-key' || 'subscription' }}
+    outputs:
+      go: ${{ steps.start.outputs.go }}
+      mode: ${{ steps.start.outputs.mode }}
+      investigation: ${{ steps.start.outputs.investigation }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: .github/scripts
+          persist-credentials: false
+      - id: precheck
+        env:
+          AUTOPILOT_TOKEN: ${{ secrets.AUTOPILOT_PAT }}
+          AUTOPILOT_PROJECT_ID: ${{ vars.AUTOPILOT_PROJECT_ID }}
+          AUTOPILOT_BILLING_TOKEN: ${{ secrets.AUTOPILOT_PAT }}
+          AUTOPILOT_DIR: ${{ runner.temp }}/autopilot
+        run: bash .github/scripts/autopilot.sh precheck
+
+      # The runner's system Node is too old for Claude Code.
+      - uses: actions/setup-node@v4
+        if: steps.precheck.outputs.ok == 'true' && env.AUTOPILOT_CLAUDE_AUTH == 'subscription'
+        with:
+          node-version: '22'
+
+      # One minimal Claude Code call, only to read the subscription's usage status
+      # from its rate_limit_event. Its output never contains the token.
+      - name: Probe Claude's usage status
+        if: steps.precheck.outputs.ok == 'true' && env.AUTOPILOT_CLAUDE_AUTH == 'subscription'
+        env:
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          # No GitHub token for Claude, and no tools: it can only answer.
+          GH_TOKEN: ""
+        run: |
+          mkdir -p ${{ runner.temp }}/autopilot
+          npm install --global --silent @anthropic-ai/claude-code@2.1.68 >/dev/null 2>&1 || true
+          claude -p "Reply with OK." --model haiku --max-turns 1 --tools "" --strict-mcp-config --no-session-persistence --output-format stream-json --verbose \
+            >"$RUNNER_TEMP/probe.jsonl" 2>/dev/null || true
+          bash .github/scripts/claude-usage.sh "$RUNNER_TEMP/probe.jsonl" >${{ runner.temp }}/autopilot/claude-status.json \
+            || rm -f ${{ runner.temp }}/autopilot/claude-status.json
+          cat ${{ runner.temp }}/autopilot/claude-status.json 2>/dev/null || echo "The probe reported no usage status."
+
+      - id: start
+        if: steps.precheck.outputs.ok == 'true'
+        env:
+          AUTOPILOT_TOKEN: ${{ secrets.AUTOPILOT_PAT }}
+          AUTOPILOT_PROJECT_ID: ${{ vars.AUTOPILOT_PROJECT_ID }}
+          AUTOPILOT_BILLING_TOKEN: ${{ secrets.AUTOPILOT_PAT }}
+          CLAUDE_STATUS_FILE: ${{ runner.temp }}/autopilot/claude-status.json
+          AUTOPILOT_DIR: ${{ runner.temp }}/autopilot
+        run: bash .github/scripts/autopilot.sh start
+
+  analysis:
+    needs: start
+    if: needs.start.outputs.go == 'true'
+    runs-on: [self-hosted, strato]
+    # An investigation reads more of the code than an admission check does.
+    timeout-minutes: ${{ needs.start.outputs.investigation == 'true' && 45 || 30 }}
+    permissions:
+      contents: read
+      issues: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          persist-credentials: false
+          fetch-depth: 50
+
+      - name: Check out the musichub understanding (read-only)
+        uses: actions/checkout@v4
+        with:
+          repository: vanBassum/musichub-understanding
+          ref: main
+          path: understanding
+          ssh-key: ${{ secrets.UNDERSTANDING_DEPLOY_KEY }}
+          persist-credentials: false
+          fetch-depth: 1
+
+      # The analysis (or the investigation report) is Claude's FINAL MESSAGE, read
+      # from the action's execution log, so this step needs no write access at all.
+      - name: Claude analysis
+        id: claude
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.AUTOPILOT_ANTHROPIC_API_KEY }}
+          claude_code_oauth_token: ${{ secrets.AUTOPILOT_ANTHROPIC_API_KEY == '' && secrets.CLAUDE_CODE_OAUTH_TOKEN || '' }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          # Never buffer inline comments. The action's buffer is one fixed file,
+          # /tmp/inline-comments-buffer.jsonl, that it never empties; on the shared
+          # self-hosted runner every later job (also a concurrent one) would post
+          # what is in it to its own PR, or fail on an issue that has none.
+          # See .github/scripts/workflows.test.sh.
+          classify_inline_comments: "false"
+          prompt: |
+            REPO: ${{ github.repository }}
+            ISSUE: ${{ github.event.issue.number }}
+
+            Read .github/autopilot/${{ needs.start.outputs.investigation == 'true' && 'investigation' || 'analysis' }}.md and follow it exactly. The current
+            musichub understanding is checked out read-only at understanding/.
+          claude_args: |
+            --max-turns ${{ needs.start.outputs.investigation == 'true' && '100' || '60' }}
+            --add-dir understanding
+            --allowedTools "Read,Grep,Glob,Bash(gh issue view:*),Bash(gh issue list:*),Bash(gh pr list:*),Bash(gh pr view:*),Bash(git log:*),Bash(git show:*)"
+
+      - name: Keep the analysis and its usage
+        if: always()
+        env:
+          EXEC: ${{ steps.claude.outputs.execution_file }}
+        run: |
+          mkdir -p ${{ runner.temp }}/autopilot
+          if [ -f "$EXEC" ]; then
+            jq -r '[.[] | select(.type == "result")] | last | .result // empty' "$EXEC" \
+              | sed -n -E '/^## Autopilot (analysis|investigation)/,$p' >${{ runner.temp }}/autopilot/analysis.md
+            bash .github/scripts/claude-usage.sh "$EXEC" >${{ runner.temp }}/autopilot/usage-analysis.json || rm -f ${{ runner.temp }}/autopilot/usage-analysis.json
+          fi
+          touch ${{ runner.temp }}/autopilot/analysis.md
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: autopilot-analysis
+          path: |
+            ${{ runner.temp }}/autopilot/analysis.md
+            ${{ runner.temp }}/autopilot/usage-analysis.json
+          if-no-files-found: ignore
+          retention-days: 14
+
+  decide:
+    needs: [start, analysis]
+    if: always() && needs.start.outputs.go == 'true'
+    runs-on: [self-hosted, strato]
+    timeout-minutes: 5
+    # issues: write only to comment on this issue and change its labels. GitHub has
+    # no narrower permission, so the script holds the line: it has no command that
+    # creates an issue, and an investigation closes none (autopilot.test.sh checks
+    # both); AUTOPILOT_PAT here only moves the board card.
+    permissions:
+      contents: read
+      issues: write
+    outputs:
+      build: ${{ steps.decide.outputs.build }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: .github/scripts
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          name: autopilot-analysis
+          path: ${{ runner.temp }}/autopilot
+      - id: decide
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          AUTOPILOT_TOKEN: ${{ secrets.AUTOPILOT_PAT }}
+          AUTOPILOT_PROJECT_ID: ${{ vars.AUTOPILOT_PROJECT_ID }}
+          ISSUE: ${{ github.event.issue.number }}
+          # Builds only if the mode was full at the start and still is.
+          MODE: ${{ needs.start.outputs.mode == 'full' && vars.PIPELINE_MODE == 'full' && 'full' || 'analysis-only' }}
+          # An investigation: never builds; posts its report unless the mode is now off.
+          INVESTIGATION: ${{ needs.start.outputs.investigation }}
+          PIPELINE_MODE: ${{ vars.PIPELINE_MODE }}
+          AUTOPILOT_CLAUDE_AUTH: ${{ secrets.AUTOPILOT_ANTHROPIC_API_KEY != '' && 'api-key' || 'subscription' }}
+          ANALYSIS_RESULT: ${{ needs.analysis.result }}
+          AUTOPILOT_DIR: ${{ runner.temp }}/autopilot
+        run: bash .github/scripts/autopilot.sh decide
+
+  build:
+    needs: decide
+    if: needs.decide.outputs.build == 'true'
+    runs-on: [self-hosted, strato]
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      issues: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          persist-credentials: false
+          fetch-depth: 50
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/download-artifact@v4
+        with:
+          name: autopilot-analysis
+          path: ${{ runner.temp }}/autopilot
+      - name: Prepare the workspace
+        run: |
+          git rev-parse HEAD >${{ runner.temp }}/autopilot/base
+          # Kept outside the working tree, which Claude is about to change.
+          cp .github/scripts/claude-usage.sh ${{ runner.temp }}/claude-usage.sh
+          git config user.name "musichub autopilot"
+          git config user.email "autopilot@musichub.invalid"
+          git switch -c autopilot-work
+          dotnet restore MusicHub.slnx
+          corepack enable
+          corepack prepare pnpm@10.28.1 --activate
+          pnpm --dir musichub-ui install --frozen-lockfile
+
+      - name: Claude build
+        id: claude
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.AUTOPILOT_ANTHROPIC_API_KEY }}
+          claude_code_oauth_token: ${{ secrets.AUTOPILOT_ANTHROPIC_API_KEY == '' && secrets.CLAUDE_CODE_OAUTH_TOKEN || '' }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          # See the analysis step: no shared inline-comment buffer.
+          classify_inline_comments: "false"
+          prompt: |
+            REPO: ${{ github.repository }}
+            ISSUE: ${{ github.event.issue.number }}
+
+            WORK_DIR: ${{ runner.temp }}/autopilot
+
+            Read .github/autopilot/build.md and follow it exactly.
+          # --allowedTools is the whole permission policy of this unattended run:
+          # anything not listed is refused, since nobody can approve it. Write and
+          # Edit create and change files; `git mv` and `git rm` move and delete them
+          # (Claude Code checks each part of a chained command, and git refuses
+          # paths outside the repository). Plain mv, rm, cp, sed -i and redirection
+          # are left out: they can reach outside the working tree, and Edit already
+          # covers in-place changes. publish checks the result regardless. Keep in
+          # sync with autopilot-fix.yml; .github/scripts/workflows.test.sh checks
+          # both lists.
+          claude_args: |
+            --max-turns 150
+            --add-dir ${{ runner.temp }}/autopilot
+            --allowedTools "Read,Write,Edit,Grep,Glob,Bash(dotnet restore:*),Bash(dotnet build:*),Bash(pnpm --dir musichub-ui lint:*),Bash(pnpm --dir musichub-ui typecheck:*),Bash(pnpm --dir musichub-ui build:*),Bash(pnpm --dir musichub-ui format:*),Bash(git add:*),Bash(git commit:*),Bash(git mv:*),Bash(git rm:*),Bash(git status:*),Bash(git diff:*),Bash(git log:*),Bash(git show:*),Bash(gh issue view:*)"
+
+      # Independent of what Claude reported: a clean tree and a clean build.
+      - name: Validate and bundle the commits
+        if: always()
+        env:
+          EXEC: ${{ steps.claude.outputs.execution_file }}
+        run: |
+          if [ -f "$EXEC" ]; then
+            bash ${{ runner.temp }}/claude-usage.sh "$EXEC" >${{ runner.temp }}/autopilot/usage-build.json || rm -f ${{ runner.temp }}/autopilot/usage-build.json
+          fi
+          base=$(cat ${{ runner.temp }}/autopilot/base)
+          if [ -n "$(git status --porcelain)" ]; then
+            echo "fail: Claude left uncommitted changes" >${{ runner.temp }}/autopilot/validation
+          elif ! dotnet build MusicHub.slnx --configuration Release; then
+            echo "fail: dotnet build MusicHub.slnx --configuration Release failed" >${{ runner.temp }}/autopilot/validation
+          elif ! pnpm --dir musichub-ui lint; then
+            echo "fail: pnpm --dir musichub-ui lint failed" >${{ runner.temp }}/autopilot/validation
+          elif ! pnpm --dir musichub-ui build; then
+            echo "fail: pnpm --dir musichub-ui build (tsc -b and vite build) failed" >${{ runner.temp }}/autopilot/validation
+          else
+            echo pass >${{ runner.temp }}/autopilot/validation
+          fi
+          if [ "$(git rev-list --count "$base..HEAD")" -gt 0 ]; then
+            git bundle create ${{ runner.temp }}/autopilot/autopilot.bundle "$base..HEAD"
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: autopilot-build
+          path: |
+            ${{ runner.temp }}/autopilot/result.md
+            ${{ runner.temp }}/autopilot/base
+            ${{ runner.temp }}/autopilot/validation
+            ${{ runner.temp }}/autopilot/autopilot.bundle
+            ${{ runner.temp }}/autopilot/usage-build.json
+          if-no-files-found: ignore
+          retention-days: 14
+
+  publish:
+    needs: [decide, build]
+    if: always() && needs.decide.outputs.build == 'true'
+    runs-on: [self-hosted, strato]
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          persist-credentials: false
+          fetch-depth: 0
+      # The build's files, and the analysis usage for the PR comment.
+      - uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          pattern: autopilot-*
+          merge-multiple: true
+          path: ${{ runner.temp }}/autopilot
+      - env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          AUTOPILOT_TOKEN: ${{ secrets.AUTOPILOT_PAT }}
+          AUTOPILOT_PROJECT_ID: ${{ vars.AUTOPILOT_PROJECT_ID }}
+          ISSUE: ${{ github.event.issue.number }}
+          PIPELINE_MODE: ${{ vars.PIPELINE_MODE }}
+          BUILD_RESULT: ${{ needs.build.result }}
+          AUTOPILOT_DIR: ${{ runner.temp }}/autopilot
+        run: bash .github/scripts/autopilot.sh publish
