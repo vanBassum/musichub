@@ -9,8 +9,8 @@ name: Autopilot fix
 #   start -> fix -> publish
 #
 #   start    the attempt is still in `fix` for this PR at this commit, the label and
-#            PIPELINE_MODE full still hold, the Actions budget and Claude's usage
-#            status allow it; collects the reviewers' findings
+#            PIPELINE_MODE full still hold, Claude's usage status allows it;
+#            collects the reviewers' findings
 #   fix      Claude fixes only those findings, on top of the reviewed commit
 #   publish  the same checks as autopilot.yml's publish, over the whole PR; moves the
 #            attempt back to `merge` and pushes the fix to the same PR branch
@@ -65,10 +65,6 @@ jobs:
       PR: ${{ inputs.pr }}
       SHA: ${{ inputs.sha }}
       PIPELINE_MODE: ${{ vars.PIPELINE_MODE }}
-      AUTOPILOT_ACTIONS_LIMIT_PCT: ${{ vars.AUTOPILOT_ACTIONS_LIMIT_PCT }}
-      AUTOPILOT_ACTIONS_INCLUDED_MINUTES: ${{ vars.AUTOPILOT_ACTIONS_INCLUDED_MINUTES }}
-      AUTOPILOT_ACTIONS_LAG_MINUTES: ${{ vars.AUTOPILOT_ACTIONS_LAG_MINUTES }}
-      AUTOPILOT_ATTEMPT_RESERVE_MINUTES: ${{ vars.AUTOPILOT_ATTEMPT_RESERVE_MINUTES }}
       AUTOPILOT_CLAUDE_AUTH: ${{ secrets.AUTOPILOT_ANTHROPIC_API_KEY != '' && 'api-key' || 'subscription' }}
     outputs:
       go: ${{ steps.start.outputs.go }}
@@ -84,7 +80,6 @@ jobs:
           AUTOPILOT_TOKEN: ${{ secrets.AUTOPILOT_PAT }}
           AUTOPILOT_PROJECT_ID: ${{ vars.AUTOPILOT_PROJECT_ID }}
           AUTOPILOT_BOARD_TOKEN: ${{ secrets.AUTOPILOT_BOARD_TOKEN }}
-          AUTOPILOT_BILLING_TOKEN: ${{ secrets.AUTOPILOT_PAT }}
           AUTOPILOT_DIR: ${{ runner.temp }}/autopilot
         run: bash .github/scripts/autopilot.sh fix-precheck
 
@@ -115,7 +110,6 @@ jobs:
           AUTOPILOT_TOKEN: ${{ secrets.AUTOPILOT_PAT }}
           AUTOPILOT_PROJECT_ID: ${{ vars.AUTOPILOT_PROJECT_ID }}
           AUTOPILOT_BOARD_TOKEN: ${{ secrets.AUTOPILOT_BOARD_TOKEN }}
-          AUTOPILOT_BILLING_TOKEN: ${{ secrets.AUTOPILOT_PAT }}
           CLAUDE_STATUS_FILE: ${{ runner.temp }}/autopilot/claude-status.json
           AUTOPILOT_DIR: ${{ runner.temp }}/autopilot
         run: bash .github/scripts/autopilot.sh fix-start

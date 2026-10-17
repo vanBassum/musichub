@@ -36,10 +36,9 @@ name: Autopilot
 # refuses its PR. An investigation builds nothing, so it runs the same in
 # analysis-only and full.
 #
-# Budgets, the only limits on how much autopilot takes on (see autopilot.sh):
-# - GitHub Actions: the owner's usage this month, with a reservation for
-#   running attempts, must stay within AUTOPILOT_ACTIONS_LIMIT_PCT (default 50) of
-#   the included minutes. Checked by `precheck`, before any Claude run.
+# The budget, the only limit on how much autopilot takes on (see autopilot.sh). Every
+# job runs on the self-hosted runner, which uses no GitHub Actions minutes, so there
+# is no Actions budget.
 # - Claude: a one-line probe with Claude Code reads the subscription's usage status
 #   (its rate_limit_event). Autopilot starts only while it is `allowed`, and builds
 #   only while the analysis run still reported `allowed`; a high-usage warning,
@@ -50,8 +49,8 @@ name: Autopilot
 # Tokens: Claude only ever runs in jobs whose GITHUB_TOKEN is read-only. Comments,
 # labels and state markers are written by plain shell jobs with the workflow's
 # GITHUB_TOKEN. AUTOPILOT_PAT, a fine-grained token of the repository's owner, is
-# passed only to the shell steps that need it: push the branch and open the PR, or
-# read the billing usage. AUTOPILOT_BOARD_TOKEN, a classic token with only the
+# passed only to the shell steps that need it: push the branch and open the PR.
+# AUTOPILOT_BOARD_TOKEN, a classic token with only the
 # `project` scope, moves the board card: the repository belongs to a user, and
 # neither a GitHub App token nor a fine-grained token can reach a user's project. A branch or PR made with
 # GITHUB_TOKEN would start no workflows (the reviewers and the build check would
@@ -91,10 +90,6 @@ jobs:
       SENDER: ${{ github.event.sender.login }}
       PIPELINE_MODE: ${{ vars.PIPELINE_MODE }}
       AUTOPILOT_USERS: ${{ vars.AUTOPILOT_USERS }}
-      AUTOPILOT_ACTIONS_LIMIT_PCT: ${{ vars.AUTOPILOT_ACTIONS_LIMIT_PCT }}
-      AUTOPILOT_ACTIONS_INCLUDED_MINUTES: ${{ vars.AUTOPILOT_ACTIONS_INCLUDED_MINUTES }}
-      AUTOPILOT_ACTIONS_LAG_MINUTES: ${{ vars.AUTOPILOT_ACTIONS_LAG_MINUTES }}
-      AUTOPILOT_ATTEMPT_RESERVE_MINUTES: ${{ vars.AUTOPILOT_ATTEMPT_RESERVE_MINUTES }}
       AUTOPILOT_CLAUDE_AUTH: ${{ secrets.AUTOPILOT_ANTHROPIC_API_KEY != '' && 'api-key' || 'subscription' }}
     outputs:
       go: ${{ steps.start.outputs.go }}
@@ -110,7 +105,6 @@ jobs:
           AUTOPILOT_TOKEN: ${{ secrets.AUTOPILOT_PAT }}
           AUTOPILOT_PROJECT_ID: ${{ vars.AUTOPILOT_PROJECT_ID }}
           AUTOPILOT_BOARD_TOKEN: ${{ secrets.AUTOPILOT_BOARD_TOKEN }}
-          AUTOPILOT_BILLING_TOKEN: ${{ secrets.AUTOPILOT_PAT }}
           AUTOPILOT_DIR: ${{ runner.temp }}/autopilot
         run: bash .github/scripts/autopilot.sh precheck
 
@@ -143,7 +137,6 @@ jobs:
           AUTOPILOT_TOKEN: ${{ secrets.AUTOPILOT_PAT }}
           AUTOPILOT_PROJECT_ID: ${{ vars.AUTOPILOT_PROJECT_ID }}
           AUTOPILOT_BOARD_TOKEN: ${{ secrets.AUTOPILOT_BOARD_TOKEN }}
-          AUTOPILOT_BILLING_TOKEN: ${{ secrets.AUTOPILOT_PAT }}
           CLAUDE_STATUS_FILE: ${{ runner.temp }}/autopilot/claude-status.json
           AUTOPILOT_DIR: ${{ runner.temp }}/autopilot
         run: bash .github/scripts/autopilot.sh start

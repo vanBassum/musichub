@@ -2,7 +2,7 @@
 # The autopilot state machine: one attempt at one issue, started by the `autopilot`
 # label (see .github/workflows/autopilot.yml and "Autopilot" in CLAUDE.md).
 #
-#   autopilot.sh precheck  the label was added: check who, the mode, the Actions budget
+#   autopilot.sh precheck  the label was added: check who, the issue and the mode
 #   autopilot.sh start     the same, plus Claude's usage status; then start the attempt
 #   autopilot.sh decide    act on Claude's analysis: build it, or back to To Do; for an
 #                          investigation: post the report on the issue, back to To Do
@@ -158,16 +158,20 @@ drop_label() { gh issue edit "$ISSUE" --repo "$R" --remove-label autopilot >/dev
 # board <status> [issue]: move the card of the issue (default: this one). The board
 # is the view, not the state, so a failure here is a warning, never a reason to stop.
 # AUTOPILOT_BOARD_TOKEN is a classic token with only the `project` scope: a
-# fine-grained token can't reach a project that belongs to a user.
+# fine-grained token can't reach a project that belongs to a user. That scope can't
+# read an issue of a private repository, so its node id comes from GITHUB_TOKEN.
 board() {
-  local n=${2:-$ISSUE}
+  local n=${2:-$ISSUE} content
   if [ -z "${AUTOPILOT_BOARD_TOKEN:-}" ]; then warn "AUTOPILOT_BOARD_TOKEN is not set; the card of issue #$n stays where it is."; return 0; fi
   if [ -z "$PROJECT_ID" ]; then warn "AUTOPILOT_PROJECT_ID is not set; the card of issue #$n stays where it is."; return 0; fi
-  GH_TOKEN=$AUTOPILOT_BOARD_TOKEN board_move "$1" "$n" || warn "Could not move issue #$n to '$1' on the board."
+  if content=$(gh api "$API/issues/$n" --jq .node_id) && [ -n "$content" ]; then
+    GH_TOKEN=$AUTOPILOT_BOARD_TOKEN board_move "$1" "$n" "$content" && return 0
+  fi
+  warn "Could not move issue #$n to '$1' on the board."
 }
+# board_move <status> <issue> <node id>, with the board token.
 board_move() {
-  local content item field option
-  content=$(gh api "$API/issues/$2" --jq .node_id) || return 1
+  local content=$3 item field option
   item=$(gh api graphql -f query='mutation($p:ID!,$c:ID!){addProjectV2ItemById(input:{projectId:$p,contentId:$c}){item{id}}}' \
     -f p="$PROJECT_ID" -f c="$content" --jq .data.addProjectV2ItemById.item.id) || return 1
   read -r field option < <(gh api graphql -f query='query($p:ID!){node(id:$p){... on ProjectV2{field(name:"Status"){... on ProjectV2SingleSelectField{id options{id name}}}}}}' \
@@ -202,60 +206,6 @@ $2
 
 $links")"
   exit 0
-}
-
-# --- budget: GitHub Actions -----------------------------------------------------
-# A new attempt is admitted only if the account's Actions usage this month (all
-# repositories of the owner share the allowance), plus a margin for usage GitHub hasn't
-# reported yet, plus a reservation for this attempt and every autopilot run still
-# going, stays within AUTOPILOT_ACTIONS_LIMIT_PCT (default 50) of the included
-# minutes. Usage is counted in Linux-equivalent minutes: the gross amount of all
-# Actions minute SKUs divided by the Linux per-minute price, so Windows and macOS
-# minutes weigh in at their price. Anything unreadable refuses (BUDGET_REASON).
-#
-# The repository belongs to a user, not an organization. AUTOPILOT_BILLING_TOKEN is
-# that user's own token (AUTOPILOT_PAT, with the Plan: read permission): only it can
-# read the user's billing usage and plan. The included minutes come from
-# AUTOPILOT_ACTIONS_INCLUDED_MINUTES or, when that is unset, from the user's plan: no
-# API reports the allowance itself. Jobs on the self-hosted runner use no minutes.
-actions_budget() {
-  local owner=${R%%/*} token=${AUTOPILOT_BILLING_TOKEN:-} pct=${AUTOPILOT_ACTIONS_LIMIT_PCT:-50}
-  local lag=${AUTOPILOT_ACTIONS_LAG_MINUTES:-60} per=${AUTOPILOT_ATTEMPT_RESERVE_MINUTES:-150}
-  local included=${AUTOPILOT_ACTIONS_INCLUDED_MINUTES:-} plan usage gross price used active reserve projected limit v
-  BUDGET_REASON="" BUDGET_SUMMARY=""
-  for v in pct lag per; do
-    [[ ${!v} =~ ^[0-9]{1,6}$ ]] || { BUDGET_REASON="a budget setting is not a whole number: '${!v}'"; return 1; }
-  done
-  [ "$pct" -le 100 ] || { BUDGET_REASON="AUTOPILOT_ACTIONS_LIMIT_PCT is above 100: '$pct'"; return 1; }
-  [ -n "$token" ] || { BUDGET_REASON="there is no billing token (is the secret AUTOPILOT_PAT set?)"; return 1; }
-  if [ -z "$included" ]; then
-    # GET /user: the plan of the token's own user, who must own the repository.
-    plan=$(GH_TOKEN=$token gh api user --jq 'if .login == "'"$owner"'" then .plan.name // "" else "" end' 2>/dev/null) || plan=""
-    case $plan in
-      free) included=2000 ;;
-      pro) included=3000 ;;
-      *) BUDGET_REASON="the plan of $owner could not be read ('${plan:-nothing}'; is AUTOPILOT_PAT a token of $owner?); set AUTOPILOT_ACTIONS_INCLUDED_MINUTES"; return 1 ;;
-    esac
-  fi
-  [[ $included =~ ^[1-9][0-9]{0,6}$ ]] || { BUDGET_REASON="AUTOPILOT_ACTIONS_INCLUDED_MINUTES is not a number: '$included'"; return 1; }
-  usage=$(GH_TOKEN=$token gh api "users/$owner/settings/billing/usage?year=$(date -u +%Y)&month=$(date -u +%-m)" \
-    --jq '[.usageItems[] | select((.product | ascii_downcase) == "actions" and (.unitType | ascii_downcase) == "minutes")]
-          | "\(map(.grossAmount) | add // 0) \([.[] | select(.sku | test("linux"; "i")) | .pricePerUnit] | max // 0.006)"' 2>/dev/null) \
-    || { BUDGET_REASON="the Actions usage could not be read for $owner (does AUTOPILOT_PAT have Plan: read?)"; return 1; }
-  read -r gross price <<<"$usage"
-  [[ ${gross:-} =~ ^[0-9]+(\.[0-9]+)?([eE][-+]?[0-9]+)?$ && ${price:-} =~ ^0*[0-9]*\.?[0-9]+$ ]] \
-    || { BUDGET_REASON="the usage report had an unexpected shape ('$usage')"; return 1; }
-  active=$(gh api "$API/actions/workflows/autopilot.yml/runs?per_page=100" \
-    --jq "[.workflow_runs[] | select(.status != \"completed\" and .id != ${GITHUB_RUN_ID:-0})] | length" 2>/dev/null) \
-    || { BUDGET_REASON="the running autopilot attempts could not be listed"; return 1; }
-  [[ $active =~ ^[0-9]+$ ]] || { BUDGET_REASON="the running autopilot attempts could not be counted"; return 1; }
-  used=$(awk -v g="$gross" -v p="$price" 'BEGIN { if (p <= 0) exit 1; printf "%d", (g / p) + 0.999 }') \
-    || { BUDGET_REASON="the Linux minute price in the usage report is zero"; return 1; }
-  reserve=$((per * (active + 1)))
-  projected=$((used + lag + reserve))
-  limit=$((included * pct / 100))
-  BUDGET_SUMMARY="Actions this month: $used of $included included minutes used ($((used * 100 / included))%); with $lag minutes for unreported usage and $reserve reserved for this attempt and $active other running attempt(s), that makes $projected of the $limit-minute limit ($pct%)."
-  [ "$projected" -le "$limit" ] || { BUDGET_REASON="the Actions budget is used up. $BUDGET_SUMMARY The included minutes reset at the start of next month"; return 1; }
 }
 
 # --- budget: Claude ---------------------------------------------------------------
@@ -335,8 +285,9 @@ authorized() {
   case $perm in admin | maintain | write) return 0 ;; *) return 1 ;; esac
 }
 
-# admit: the checks that cost nothing but API calls (who, which issue, the mode,
-# the Actions budget). On a refusal it comments, removes the label and returns 1.
+# admit: the checks that cost nothing but API calls (who, which issue, the mode).
+# Every job runs on the self-hosted runner, so there is no Actions budget. On a
+# refusal it comments, removes the label and returns 1.
 admit() {
   local mode=${PIPELINE_MODE:-off} issue_state
   has_label || { echo "The autopilot label is already gone; nothing to do."; return 1; }
@@ -354,10 +305,6 @@ admit() {
   if [ "$mode" = full ] && [ -z "${AUTOPILOT_TOKEN:-}" ]; then
     note "Autopilot can't run in \`full\` mode: it has no token to open a PR with (is the secret \`AUTOPILOT_PAT\` set?). The label is removed; nothing ran."
     drop_label; return 1
-  fi
-  if ! actions_budget; then
-    note "**Autopilot did not start:** $BUDGET_REASON. The label is removed and the issue stays in To Do; nothing ran."
-    drop_label; board "To Do"; return 1
   fi
 }
 
@@ -381,7 +328,6 @@ cmd_start() {
     note "**Autopilot did not start:** $CLAUDE_REASON. The label is removed and the issue stays in To Do; nothing ran."
     drop_label; board "To Do"; return 0
   fi
-  echo "$BUDGET_SUMMARY"
   echo "$CLAUDE_SUMMARY"
 
   st=$(state_of "$ISSUE")
@@ -408,7 +354,7 @@ This supersedes the previous attempt: its PR #$pr can no longer merge automatica
   fi
   say analysis - "$started$previous
 
-<sub>$BUDGET_SUMMARY $CLAUDE_SUMMARY</sub>"
+<sub>$CLAUDE_SUMMARY</sub>"
   if [ "${stage:-}" = merge ] || [ "${stage:-}" = fix ]; then
     gh pr edit "$pr" --repo "$R" --add-label no-automerge >/dev/null || warn "Could not label PR #$pr no-automerge (it is superseded anyway)."
   fi
@@ -731,14 +677,13 @@ fix_attempt() {
   expect_fix
 }
 
-# fix_admit: the fix round still applies to the PR as the review left it, and the
-# Actions budget allows it. Anything else stops the attempt.
+# fix_admit: the fix round still applies to the PR as the review left it. Anything
+# else stops the attempt.
 fix_admit() {
   has_label || stopped fix "The autopilot label was removed, so the fix round doesn't run." "$PR"
   [ "${PIPELINE_MODE:-off}" = full ] || stopped fix "\`PIPELINE_MODE\` is now \`${PIPELINE_MODE:-off}\`, not \`full\`, so the fix round doesn't run." "$PR"
   [ "$FIX_PSTATE" = open ] && [ "$FIX_BASE" = main ] || stopped fix "PR #$PR is $FIX_PSTATE (into $FIX_BASE), so the fix round doesn't run." "$PR"
   [ "$FIX_HEAD" = "$SHA" ] || stopped fix "PR #$PR moved on to ${FIX_HEAD:0:7} after the review of ${SHA:0:7}, so the fix round doesn't run." "$PR"
-  actions_budget || stopped fix "The fix round doesn't run: $BUDGET_REASON." "$PR"
 }
 
 # fix-precheck: before the Claude probe, so that a refused round costs no Claude usage.
@@ -758,7 +703,6 @@ cmd_fix_start() {
   fix_admit
   claude_gate "${CLAUDE_STATUS_FILE:-$WORK/claude-status.json}" || stopped fix "The fix round doesn't run: $CLAUDE_REASON." "$PR"
   collect_findings || stopped fix "The review findings for ${SHA:0:7} could not be read, so nothing was fixed." "$PR"
-  echo "$BUDGET_SUMMARY"
   echo "$CLAUDE_SUMMARY"
   output go true
   output issue "$ISSUE"
