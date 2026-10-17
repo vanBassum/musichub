@@ -26,6 +26,10 @@ reads.
 4. Before you report something, check that it isn't already handled somewhere else,
    such as a base class, middleware, a service, a shared component, or a caller that
    validates.
+5. Don't build, lint, test or run anything (`dotnet`, `pnpm`, `docker`, scripts).
+   The `build` workflow does that, not you: your tools don't allow it, and trying
+   only wastes turns. Review by reading. Whether the PR compiles is the `build`
+   check's job; don't report "might not compile" unless the code shows it plainly.
 
 ## How to report
 

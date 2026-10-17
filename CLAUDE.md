@@ -38,8 +38,9 @@ something through).
    reviewed.
 3. The PR is checked automatically:
    - `build` (`.github/workflows/build.yml`): the guard tests, `dotnet build`,
-     `pnpm lint` and `pnpm build` of the UI, and a build of the Docker image (not
-     published for a PR).
+     `pnpm lint` and `pnpm build` of the UI. The Docker image is not built for a
+     PR, only after the merge to `main`. The reviewers never build anything
+     themselves: that is the pipeline's job.
    - Four Claude reviewers (`.github/workflows/claude-review.yml`), each with its own
      instructions in `.github/reviewers/`: **api** (the .NET API, its contract,
      routing and serving, the image), **ui** (React, shadcn/ui components, styling,
