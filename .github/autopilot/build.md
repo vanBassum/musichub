@@ -25,12 +25,19 @@ concrete reviewer findings, at most once; it never finishes work you left undone
    try them. Commit in small, coherent commits (`git add` + `git commit`) with
    messages in the repo's style: a sentence saying what is now true. Do not push,
    do not open a PR; a later step does that.
-3. Dependencies are installed before you start, and you can't change them: never
-   edit a `PackageReference`, `package.json` or `pnpm-lock.yaml`. The shadcn/ui
-   components on the analysis's `Components:` line were generated and committed
-   before you started; use them as generated. Never hand-write a shadcn/ui
-   component into `components/ui/`. If the work needs a package, or a component
-   the analysis didn't name, stop (BLOCKED).
+3. Dependencies: you may add a necessary NuGet `PackageReference` when the
+   admitted scope explicitly authorizes that package and its purpose. Pin a
+   compatible version and use the allowed `dotnet restore` / `dotnet build` to
+   validate it. Do not add unrelated packages or upgrade existing dependencies
+   without an explicit admitted reason. npm dependencies are also permitted by
+   policy, but this restricted build has no package-install command and cannot
+   generate a consistent `pnpm-lock.yaml`: do not edit `package.json` or
+   `pnpm-lock.yaml` here. If the admitted scope needs a new npm package, stop
+   (BLOCKED) and report the execution limitation; do not fake a lockfile update.
+   The shadcn/ui components on the analysis's `Components:` line were generated
+   and committed before you started; use them as generated. Never hand-write a
+   shadcn/ui component into `components/ui/`. If the work needs a component the
+   analysis didn't name, stop (BLOCKED).
 4. Validate:
    - `dotnet build MusicHub.slnx --configuration Release` must succeed without new
      warnings in the code you touched;
@@ -42,8 +49,8 @@ concrete reviewer findings, at most once; it never finishes work you left undone
    CI check the PR.
 5. Stop (BLOCKED) instead of guessing when the work turns out to need something
    outside the admitted scope: a product decision the analysis didn't settle, a
-   change to the understanding, persistence, authentication, a new dependency, or
-   anything the analysis listed as out of scope. Never invent the answer.
+   change to the understanding, persistence, authentication, a dependency the admitted scope did not approve or that the restricted build
+   cannot install, or anything the analysis listed as out of scope. Never invent the answer.
 6. Hard rules. Break one and nothing is pushed:
    - never change anything under `.github/`, `.githooks/` or `.claude/`;
    - never change or remove an existing migration, and never add one whose `Up()`
