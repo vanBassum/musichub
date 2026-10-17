@@ -22,8 +22,9 @@ Look for:
   as generated (formatting aside). Check that each one is used, and that the PR
   doesn't hand-write a substitute for an official component (`[risk]` when a PR
   hand-writes one into `components/ui/`). A new or upgraded npm package
-  (`package.json`, `pnpm-lock.yaml`) is a separate decision: `[risk]` unless the PR
-  says Bas approved it.
+  (`package.json`, `pnpm-lock.yaml`) requires review for necessity, compatibility,
+  lockfile consistency and security; it is not automatically `[risk]` merely
+  because it is new. Flag unsupported, unnecessary or unreviewable packages.
 - **Edits to generated components.** Changes inside `src/components/ui/` that
   change behaviour for every caller, without the PR saying so.
 - **Styling.** Tailwind utilities and the theme tokens from `src/index.css`.
