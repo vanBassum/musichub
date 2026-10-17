@@ -40,11 +40,16 @@ fail() {
   exit 1
 }
 
+# Puts <image:sha-tag> on the host: pulled, or in tests tagged from PULL_FROM.
+fetch_image() {
+  if [ -n "$PULL_FROM" ]; then docker tag "$PULL_FROM" "$IMAGE"; else docker pull "$IMAGE"; fi
+}
+
 # Watchtower only recreates an existing container. On a fresh host, the stack
 # has to be started once by hand (see stacks/musichub-acc), and it never pulls,
 # so this job puts the image there first and then stops.
 if ! docker container inspect "$CONTAINER" >/dev/null 2>&1; then
-  if [ -n "$PULL_FROM" ]; then docker tag "$PULL_FROM" "$IMAGE"; else docker pull "$IMAGE"; fi
+  fetch_image
   docker tag "$IMAGE" "${IMAGE%:*}:main"
   fail "Container $CONTAINER does not exist. ${IMAGE%:*}:main is on the host now: start the acceptance stack there (make up stack=musichub-acc), then re-run this job"
 fi
@@ -56,7 +61,7 @@ TARGET=$(docker inspect "$CONTAINER" --format '{{.Config.Image}}')
 #    overwritten, so it is exactly this commit's build.
 docker tag "$(docker inspect "$CONTAINER" --format '{{.Image}}')" "$PIN" ||
   echo "::warning::Could not pin the image $CONTAINER runs; Watchtower may skip it"
-if [ -n "$PULL_FROM" ]; then docker tag "$PULL_FROM" "$IMAGE"; else docker pull "$IMAGE"; fi
+fetch_image
 revision=$(docker image inspect "$IMAGE" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')
 [ "$revision" = "$SHA" ] ||
   fail "$IMAGE on the host is commit '$revision', not $SHA"

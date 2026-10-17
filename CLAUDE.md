@@ -253,6 +253,13 @@ rolling back are all "change the pinned tag", never a rebuild. There are no rele
 tags and no release branches. The package is private: a server that pulls it needs
 `docker login ghcr.io` with a token that can read packages.
 
+The one exception is acceptance (https://musichub-acc.vanbassum.com, stack
+`stacks/musichub-acc` in strato-stack), which follows `:main` on purpose. After each
+main build, the `deploy-acceptance` job in `build.yml` runs
+`.github/scripts/deploy-acceptance.sh` on the strato runner. It pulls the commit's
+sha tag with the job's token, points the host's `:main` at it, and has that stack's
+Watchtower recreate the container. No registry credential lives on that host.
+
 ## Build / run notes
 
 - Targets **.NET 10** (`MusicHub.slnx`) and Node 22 with pnpm 10 (`musichub-ui/`).
