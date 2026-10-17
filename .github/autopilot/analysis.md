@@ -167,9 +167,10 @@ autonomous with the decision made, or waiting on something), `needs-design`,
 
 ## 3. Answer
 
-**Keep the public issue comment concise.** Start with a TL;DR of at most
-three short lines: classification, decisive reason and next action. Then use
-the exact machine-readable heading and classification lines below. For ready
+**Keep the public issue comment concise.** The first two lines must remain
+the exact machine-readable heading and classification shown below. Immediately
+after those lines, add a **TL;DR** of at most three short lines: decisive
+reason and next action. For ready
 issues, provide only the scoped build instructions and testable criteria
 needed by the builder; for blocked issues, give only the concrete blocker(s)
 and smallest unblock action. Do not repeat the issue, inventory every policy
