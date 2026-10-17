@@ -7,10 +7,10 @@ name: Build
 # it, except acceptance, which follows it on purpose (deploy-acceptance below). There
 # are no release tags and no release branches.
 #
-# A pull request runs the same checks and builds the same image without publishing
-# it, so a broken Dockerfile is caught before it reaches main. The merge gate
-# (.github/scripts/review-gate.sh) waits for the check named `build` on the PR's
-# head commit: keep the job id `build`. It only succeeds when `test` and
+# A pull request runs the same checks, but builds no image: the image is built only
+# for main (job `image`), so a broken Dockerfile shows up on main, not on the PR.
+# The merge gate (.github/scripts/review-gate.sh) waits for the check named `build`
+# on the PR's head commit: keep the job id `build`. It only succeeds when `test` and
 # `guard-tests` did.
 
 on:
@@ -71,13 +71,23 @@ jobs:
       # There is no test project yet. Add "dotnet test" and "pnpm test" steps
       # together with the first tests.
 
+  # The check the merge gate waits for: green only when both kinds of tests are.
   build:
     needs: [guard-tests, test]
     runs-on: [self-hosted, strato]
+    timeout-minutes: 5
+    steps:
+      - run: echo "guard-tests and test passed."
+
+  # The image, built and published only for main.
+  image:
+    needs: build
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: [self-hosted, strato]
     timeout-minutes: 30
-    # A newer push to the same ref supersedes a build still running.
+    # A newer push to main supersedes a build still running.
     concurrency:
-      group: build-${{ github.ref }}
+      group: image-${{ github.ref }}
       cancel-in-progress: true
     permissions:
       contents: read
@@ -95,20 +105,10 @@ jobs:
           echo "commit=$commit" >> "$GITHUB_OUTPUT"
           echo "tag=sha-$commit" >> "$GITHUB_OUTPUT"
 
-      - name: Decide whether to publish
-        id: publish
-        run: |
-          if [ "$GITHUB_EVENT_NAME" != "pull_request" ] && [ "$GITHUB_REF" = "refs/heads/main" ]; then
-            echo "enabled=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "enabled=false" >> "$GITHUB_OUTPUT"
-          fi
-
       - name: Set up Buildx
         uses: docker/setup-buildx-action@v3
 
       - name: Log in to GHCR
-        if: steps.publish.outputs.enabled == 'true'
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
@@ -120,7 +120,6 @@ jobs:
       # may already be running.
       - name: Refuse to overwrite an existing sha tag
         id: exists
-        if: steps.publish.outputs.enabled == 'true'
         run: |
           if docker buildx imagetools inspect "$IMAGE:${{ steps.build_info.outputs.tag }}" >/dev/null 2>&1; then
             echo "$IMAGE:${{ steps.build_info.outputs.tag }} already exists; not rebuilding it."
@@ -135,12 +134,12 @@ jobs:
         with:
           images: ${{ env.IMAGE }}
 
-      - name: Build (and publish on main)
+      - name: Build and publish
         if: steps.exists.outputs.found != 'true'
         uses: docker/build-push-action@v6
         with:
           context: .
-          push: ${{ steps.publish.outputs.enabled == 'true' }}
+          push: true
           tags: |
             ${{ env.IMAGE }}:${{ steps.build_info.outputs.tag }}
             ${{ env.IMAGE }}:main
@@ -150,7 +149,6 @@ jobs:
             APP_COMMIT=${{ steps.build_info.outputs.commit }}
 
       - name: Summary
-        if: steps.publish.outputs.enabled == 'true'
         run: |
           {
             echo "### $IMAGE:${{ steps.build_info.outputs.tag }}"
@@ -167,7 +165,7 @@ jobs:
   # affected: they keep their sha tag.
   deploy-acceptance:
     name: Deploy to acceptance
-    needs: build
+    needs: image
     if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
     # Must be our strato runner: it is on the host, and on its deploy-network.
     runs-on: [self-hosted, strato]
