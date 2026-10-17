@@ -120,12 +120,18 @@ To Do ─label─▶ Analysis ─ready─▶ Build ─PR─▶ Merge ─merged�
   when the understanding supports them and the issue is clear, with acceptance
   criteria for the care they need. Never autonomous: irreversible data loss,
   widening what an audience can see, a security change whose rule the understanding
-  doesn't state, a new or upgraded NuGet or npm package or a new shadcn/ui
-  component, and changes to `.github/`, `.githooks/`, `.claude/`. Persistence and
-  authentication don't exist yet; introducing them is an architecture decision for
-  the understanding first.
+  doesn't state, a new or upgraded NuGet or npm package, and changes to
+  `.github/`, `.githooks/`, `.claude/`. Persistence and authentication don't exist
+  yet; introducing them is an architecture decision for the understanding first.
+  A missing official shadcn/ui component is no reason to reject: the analysis
+  names it on a `Components:` line.
 - **Build** implements only the admitted scope on `autopilot/issue-<N>-r<run>` and
-  opens a PR with `Fixes #N`. Its `--allowedTools` list is its whole permission
+  opens a PR with `Fixes #N`. Before Claude starts, the workflow adds the
+  components on the `Components:` line with the shadcn CLI and commits them
+  (`.github/scripts/shadcn-components.sh`, tested by `shadcn-components.test.sh`):
+  plain official names only, and it stops the attempt when a component needs an
+  npm package `musichub-ui/package.json` doesn't have or writes outside
+  `src/components/ui/`. Claude's `--allowedTools` list is its whole permission
   policy, since an unattended run can't approve anything. Claude may edit and write
   files, move them with `git mv` and delete them with `git rm`, commit, and run
   `dotnet restore`/`dotnet build` and `pnpm --dir musichub-ui lint|typecheck|build|format`.

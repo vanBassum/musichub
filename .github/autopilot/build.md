@@ -23,9 +23,11 @@ concrete reviewer findings, at most once; it never finishes work you left undone
    messages in the repo's style: a sentence saying what is now true. Do not push,
    do not open a PR; a later step does that.
 3. Dependencies are installed before you start, and you can't change them: never
-   edit a `PackageReference`, `package.json` or `pnpm-lock.yaml`, and never
-   hand-write a shadcn/ui component that isn't in `components/ui/` yet. If the work
-   needs one, stop (BLOCKED).
+   edit a `PackageReference`, `package.json` or `pnpm-lock.yaml`. The shadcn/ui
+   components on the analysis's `Components:` line were generated and committed
+   before you started; use them as generated. Never hand-write a shadcn/ui
+   component into `components/ui/`. If the work needs a package, or a component
+   the analysis didn't name, stop (BLOCKED).
 4. Validate:
    - `dotnet build MusicHub.slnx --configuration Release` must succeed without new
      warnings in the code you touched;

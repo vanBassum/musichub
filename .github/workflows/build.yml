@@ -41,6 +41,7 @@ jobs:
       - run: bash .github/scripts/review-gate.test.sh
       - run: bash .github/scripts/autopilot.test.sh
       - run: bash .github/scripts/workflows.test.sh
+      - run: bash .github/scripts/shadcn-components.test.sh
       - run: node .claude/hooks/guard.test.js
 
   # The API and the UI, the same way autopilot validates its own work.
