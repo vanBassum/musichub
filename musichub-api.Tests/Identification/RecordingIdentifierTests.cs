@@ -59,7 +59,7 @@ public class RecordingIdentifierTests
     }
 
     [Fact]
-    public async Task Rule_based_proposes_the_tagged_identity_with_evidence()
+    public async Task Rule_based_does_not_identify_on_tags_alone()
     {
         var bytes = AudioSamples.TaggedMp3(tag =>
         {
@@ -71,12 +71,10 @@ public class RecordingIdentifierTests
 
         var result = await Resolve([]).IdentifyAsync(stream, "song.mp3", CancellationToken.None);
 
-        Assert.Equal(IdentificationStatus.Identified, result.Status);
-        Assert.Equal("A Title", result.Identity!.Title);
-        Assert.Equal(["An Artist"], result.Identity.Artists);
-        Assert.Equal("An Album", result.Identity.Album);
-        Assert.Null(result.UnresolvedReason);
-        Assert.Single(result.Evidence);
+        Assert.Equal(IdentificationStatus.Unresolved, result.Status);
+        Assert.Null(result.Identity);
+        Assert.NotNull(result.UnresolvedReason);
+        Assert.Contains(result.Evidence, e => e.Source == "file-metadata");
     }
 
     [Fact]
