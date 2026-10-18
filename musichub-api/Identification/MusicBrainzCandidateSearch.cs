@@ -119,18 +119,7 @@ public sealed class MusicBrainzCandidateSearch : ICandidateSearch
         foreach (var release in releases)
         {
             var releaseId = Text(release, "id");
-            var releaseDetails = new List<string>(details);
-            foreach (var (key, label) in new[] { ("status", "status"), ("date", "date"), ("country", "country") })
-            {
-                if (Text(release, key) is { Length: > 0 } value)
-                {
-                    releaseDetails.Add($"release {label} {value}");
-                }
-            }
-            if (release.TryGetProperty("release-group", out var group) && Text(group, "primary-type") is { Length: > 0 } type)
-            {
-                releaseDetails.Add($"release type {type}");
-            }
+            var releaseDetails = ReleaseDetails(release, details);
             yield return new EvidenceCandidate(
                 title,
                 artists,
@@ -142,6 +131,23 @@ public sealed class MusicBrainzCandidateSearch : ICandidateSearch
                     releaseId is null ? null : $"{SiteUrl}release/{releaseId}",
                     string.Join("; ", releaseDetails)));
         }
+    }
+
+    private static List<string> ReleaseDetails(JsonElement release, List<string> recordingDetails)
+    {
+        var details = new List<string>(recordingDetails);
+        foreach (var name in new[] { "status", "date", "country" })
+        {
+            if (Text(release, name) is { Length: > 0 } value)
+            {
+                details.Add($"release {name} {value}");
+            }
+        }
+        if (release.TryGetProperty("release-group", out var group) && Text(group, "primary-type") is { Length: > 0 } type)
+        {
+            details.Add($"release type {type}");
+        }
+        return details;
     }
 
     private static List<string> ArtistNames(JsonElement recording)
@@ -217,7 +223,7 @@ public sealed class MusicBrainzCandidateSearch : ICandidateSearch
         }
     }
 
-    /// <summary>One request at a time, at least <see cref="MusicBrainzOptions.MinRequestIntervalMs"/> apart.</summary>
+    /// <summary>Spaces request starts at least <see cref="MusicBrainzOptions.MinRequestIntervalMs"/> apart; a request may still be in flight when the next starts.</summary>
     private async Task WaitForTurnAsync(CancellationToken ct)
     {
         var interval = TimeSpan.FromMilliseconds(options.MinRequestIntervalMs);
