@@ -1,4 +1,5 @@
 using MusicHub.Api.Metadata;
+using static MusicHub.Api.Identification.EvidenceFormatting;
 
 namespace MusicHub.Api.Identification;
 
@@ -63,16 +64,6 @@ public sealed class RuleBasedRecordingIdentifier(
         var album = agreed.Select(c => c.Album).FirstOrDefault(a => !string.IsNullOrWhiteSpace(a));
         return IdentificationResult.Identified(new ProposedRecordingIdentity(first.Title, first.Artists, album), evidence);
     }
-
-    private static IEnumerable<IdentificationEvidence> Describe(EvidenceReport report) => report.Availability switch
-    {
-        EvidenceAvailability.Provided => report.Candidates.Select(c =>
-            new IdentificationEvidence(report.Source, $"{report.Note} Candidate {Format(c)}.")),
-        EvidenceAvailability.NothingFound => [new IdentificationEvidence(report.Source, $"Found nothing. {report.Note}")],
-        _ => [new IdentificationEvidence(report.Source, $"Unavailable. {report.Note}")],
-    };
-
-    private static string Format(EvidenceCandidate c) => $"\"{c.Title}\" by {string.Join(", ", c.Artists)}";
 
     private static string IdentityKey(EvidenceCandidate c) =>
         c.Title.Trim().ToUpperInvariant() + "\u001f" +

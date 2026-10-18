@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Options;
+using MusicHub.Api.Metadata;
 
 namespace MusicHub.Api.Identification;
 
@@ -9,7 +10,8 @@ public static class IdentificationServiceCollectionExtensions
     /// configuration. The AI strategy without a configured model fails when resolved, it never falls back silently.
     /// Needs <c>IAudioMetadataReader</c> to be registered. The candidate search and the audio fingerprint tools stay
     /// unavailable, and say so in the evidence, until an <see cref="ICandidateSearch"/> or an
-    /// <see cref="IAudioFingerprintMatcher"/> is registered.
+    /// <see cref="IAudioFingerprintMatcher"/> is registered. The AI strategy also needs an
+    /// <see cref="IIdentificationAiClient"/>; without one it leaves every file unresolved.
     /// </summary>
     public static IServiceCollection AddIdentification(this IServiceCollection services, IConfiguration configuration)
     {
@@ -30,7 +32,16 @@ public static class IdentificationServiceCollectionExtensions
                         throw new InvalidOperationException(
                             "Identification is not configured: Identification__AiModel is required when Identification__Strategy is Ai.");
                     }
-                    return new AiRecordingIdentifier(options.AiModel);
+                    if (options.AiMaxSteps < 1)
+                    {
+                        throw new InvalidOperationException("Identification__AiMaxSteps must be at least 1.");
+                    }
+                    return new AiRecordingIdentifier(
+                        options.AiModel,
+                        options.AiMaxSteps,
+                        sp.GetService<IIdentificationAiClient>(),
+                        sp.GetRequiredService<IAudioMetadataReader>(),
+                        sp.GetServices<IIdentificationEvidenceProvider>());
                 default:
                     throw new InvalidOperationException($"Unknown identification strategy {options.Strategy}.");
             }
