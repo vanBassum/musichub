@@ -94,8 +94,9 @@ public sealed class FileIngestionService(
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             logger?.LogError(ex, "Storing file {FileId} failed.", record.Id);
-            await TryMarkFailedAsync(record, UploadIntegrityFailure.StorageError, "The storage backend failed and the object could not be verified.");
-            throw new FileIngestionException(record.Id, ex);
+            var failure = new FileIngestionException(record.Id, ex);
+            await TryMarkFailedAsync(record, UploadIntegrityFailure.StorageError, failure.Detail);
+            throw failure;
         }
 
         return record;

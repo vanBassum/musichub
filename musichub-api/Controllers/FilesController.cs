@@ -62,7 +62,7 @@ public class FilesController(FileIngestionService ingestion, IOptions<FileIngest
             // Never a 2xx: the file is not stored. The record (marked Failed when possible) is in GET /api/files.
             return Problem(
                 title: "File upload failed",
-                detail: "The file could not be stored. Check its status in GET /api/files and upload it again.",
+                detail: $"{ex.Detail} Check its status in GET /api/files and upload it again.",
                 statusCode: StatusCodes.Status502BadGateway,
                 extensions: new Dictionary<string, object?> { ["fileId"] = ex.FileId, ["reason"] = UploadIntegrityFailure.StorageError.ToString() });
         }
