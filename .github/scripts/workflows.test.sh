@@ -111,8 +111,9 @@ expect_read_only "Claude and the sandbox run only in jobs without write access, 
 
 # --- which bots may start Claude ---------------------------------------------------
 # The action refuses a run started by a bot unless its step names the bot. A waiting
-# investigation is started again by the queue (autopilot-queue.yml) with
-# GITHUB_TOKEN, so it names github-actions; that is safe only while no job that runs
+# investigation is started again by the queue (autopilot-queue.yml) with the PAT, or
+# with GITHUB_TOKEN when that fails, so it names github-actions; that is safe only
+# while no job that runs
 # Claude can dispatch a workflow (actions: write, an App token or the PAT), so Claude
 # can't start Claude.
 # expect_no_dispatch <description> <want count> <workflow>...

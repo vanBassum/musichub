@@ -126,6 +126,14 @@ defuse() { local t; t=$(sed 's/<!--/\&lt;!--/g'); printf '%s\n' "${t:0:60000}"; 
 # retry_pending: this is the first attempt of the run, so a failed job gets the
 # watchdog's one retry instead of stopping the attempt.
 retry_pending() { [ "${GITHUB_RUN_ATTEMPT:-1}" -lt 2 ]; }
+# dispatch <workflow> -f <input=value>...: start a workflow on main. With the PAT
+# when there is one: a run started with GITHUB_TOKEN starts no workflow_run, so the
+# watchdog would never see it fail and its attempt would hang in its stage. Falls
+# back to GITHUB_TOKEN.
+dispatch() {
+  { [ -n "${AUTOPILOT_TOKEN:-}" ] && GH_TOKEN=$AUTOPILOT_TOKEN gh workflow run "$1" --repo "$R" --ref main "${@:2}" >/dev/null; } \
+    || gh workflow run "$1" --repo "$R" --ref main "${@:2}" >/dev/null
+}
 
 # --- reading ------------------------------------------------------------------
 labels_of() { gh api "$API/issues/$1/labels" --paginate --jq '.[].name'; }
@@ -832,7 +840,7 @@ ${verdicts:-- no verdicts found}
 
 Claude now fixes what a code change can fix, on the same PR. All four reviewers and the build check then judge the new commit and the merge gate decides as usual. [Review run]($RUN_URL)")"
     board Build
-    gh workflow run autopilot-fix.yml --repo "$R" --ref main -f pr="$PR" -f sha="$SHA" >/dev/null \
+    dispatch autopilot-fix.yml -f pr="$PR" -f sha="$SHA" \
       || stopped fix "The fix round could not be started (dispatching autopilot-fix.yml failed). Nothing was fixed." "$PR"
     return 0
   fi
@@ -1163,7 +1171,7 @@ cmd_queue() {
       --jq '.[] | select(.pull_request == null) | .number' | sort -n); do
     st=$(state_of "$n") || fail "Could not read the state of issue #$n."; read -r run stage pr <<<"$st" || true
     [ "${stage:-}" = waiting ] || continue
-    gh workflow run autopilot.yml --repo "$R" --ref main -f issue="$n" >/dev/null || fail "Could not start autopilot for issue #$n."
+    dispatch autopilot.yml -f issue="$n" || fail "Could not start autopilot for issue #$n."
     echo "Started autopilot again for issue #$n, which was waiting."
     return 0
   done
