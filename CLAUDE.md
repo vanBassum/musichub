@@ -10,9 +10,11 @@ These rules apply to everyone who works on this repo, and to every Claude sessio
 
 ### 1. Never push to `main` directly
 
-GitHub can't protect `main` here: the repository is private on a free plan. Never
-commit to `main`, never push to `main`, never force-push `main`. Each clone guards it
-locally instead:
+Never commit to `main`, never push to `main`, never force-push `main`. GitHub enforces
+it with the ruleset "Protect main" (repository settings → Rules): changes only through
+a PR, squash only, the `build` check and the four reviewer checks required, and the
+code owner's review (`.github/CODEOWNERS`: Bas owns `.github/`, `.claude/` and
+`.githooks/`). Each clone also guards it locally:
 
 - `.githooks/pre-push` refuses every push to `main`. Turn it on once per clone with
   `git config core.hooksPath .githooks` (the README says so too). Claude sessions turn
@@ -58,7 +60,11 @@ something through).
    workflow runs on `pull_request_target`: the workflow and the reviewer rules
    always come from `main`, so a PR that changes them is reviewed by the old
    versions. Drafts and PRs from forks are not reviewed.
-5. **Bas merges.** Nothing merges by itself, and Claude never merges a PR.
+5. **Merging.** A PR that Claude opened from an `autopilot` issue merges by itself
+   (GitHub's auto-merge, squash) once the ruleset is satisfied; GitHub deletes the
+   branch. Every other PR, and any PR that touches `.github/`, `.claude/` or
+   `.githooks/`, is merged by Bas. A Claude session never merges a PR and never
+   turns on auto-merge.
 
 ### After opening a PR
 
@@ -66,7 +72,8 @@ Claude sessions may commit, push the branch and open the PR without asking first
 Wait for the result with `gh pr checks <PR> --watch`, then:
 
 - **All green** (`build` and the four reviewers): tell Bas the PR is ready for his
-  merge.
+  merge. After the merge: switch to `main`, `git pull`, `git fetch --prune`, and
+  delete the local branch.
 - **Red because of a blocking finding**: fix it and push; the reviewers run again by
   themselves. At most two reasonable fix attempts.
 - **Red because a reviewer left no verdict** (error, timeout, missing marker): rerun
@@ -87,14 +94,17 @@ the self-hosted runner. Claude follows `.github/autopilot.md`.
   it on a `claude/…` branch and opens the PR. When the work needs a decision that
   the understanding or the issue doesn't make, it changes nothing and says in its
   comment what is missing, with a proposed answer. Adding the label again, or an
-  `@claude` comment, starts it again.
+  `@claude` comment, starts it again. It turns on auto-merge for the PR it opened,
+  so that PR merges once everything is green. Only a run started by the label can
+  do that.
 - **`@claude` in a comment** on an issue or a PR: Claude does what the comment asks.
   On a PR it pushes to the PR's branch, for example after "@claude fix the review
   findings". Fix rounds start this way, by a person.
-- Its PR gets the same build check and four reviewers as any other; Bas merges.
+- Its PR gets the same build check and four reviewers as any other.
 - It authenticates as the Claude GitHub App (OIDC, a short-lived token for this
-  repository), so its pushes start the build and the reviewers. Only people with
-  write access can start it; bots can't. It uses the subscription through
+  repository), so its pushes and merges start the build and the reviewers. Only
+  people with write access can start it; bots can't. It reads only the comments of
+  Bas, of itself and of the reviewers. It uses the subscription through
   `CLAUDE_CODE_OAUTH_TOKEN`.
 - Use the issue form "Work for autopilot" (`.github/ISSUE_TEMPLATE/`).
 

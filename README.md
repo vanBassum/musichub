@@ -104,8 +104,8 @@ Claude treats it as read-only (`.claude/settings.json`, `.claude/hooks/guard.js`
 
 ## How changes reach `main`
 
-Never push to `main`. GitHub can't protect it on this plan, so each clone guards it
-with a local hook. Turn it on once per clone:
+Never push to `main`; GitHub refuses it (ruleset "Protect main"). Each clone also
+guards it with a local hook. Turn it on once per clone:
 
 ```bash
 git config core.hooksPath .githooks   # refuses pushes to main
@@ -116,7 +116,10 @@ git config core.hooksPath .githooks   # refuses pushes to main
 2. The build and four Claude reviewers (api, ui, understanding, smells) run on every
    push. Each reviewer posts its findings and a verdict for the exact commit; its
    check is green only without blocking findings.
-3. Bas merges when everything is green. Nothing merges by itself.
+3. A PR that Claude opened from an `autopilot` issue merges by itself once
+   everything is green (GitHub auto-merge). Bas merges every other PR. The ruleset
+   "Protect main" enforces the checks; `.github/CODEOWNERS` keeps pipeline changes
+   with Bas.
 
 The `autopilot` label on an issue lets Claude build it and open the PR, or say which
 decision is missing. `@claude` in a comment on an issue or a PR asks Claude for
