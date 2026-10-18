@@ -131,6 +131,27 @@ public class FileIngestionServiceTests
     }
 
     [Fact]
+    public async Task IngestAsync_WhenS3Fails_StatusDetailNamesErrorCodeAndStatusButNotTheMessage()
+    {
+        using var db = CreateDb(nameof(IngestAsync_WhenS3Fails_StatusDetailNamesErrorCodeAndStatusButNotTheMessage));
+        var storage = new FakeFileStorage(onPut: _ => throw new Amazon.S3.AmazonS3Exception("secret-key leaked")
+        {
+            ErrorCode = "XAmzContentSHA256Mismatch",
+            StatusCode = System.Net.HttpStatusCode.BadRequest,
+        });
+        var service = new FileIngestionService(db, storage, new ActiveUploadTracker());
+
+        await Assert.ThrowsAsync<FileIngestionException>(() =>
+            service.IngestAsync(new MemoryStream([1, 2]), "a.mp3", null, null, CancellationToken.None));
+
+        var saved = Assert.Single(db.Files.AsNoTracking());
+        Assert.Contains("AmazonS3Exception", saved.StatusDetail);
+        Assert.Contains("XAmzContentSHA256Mismatch", saved.StatusDetail);
+        Assert.Contains("HTTP 400", saved.StatusDetail);
+        Assert.DoesNotContain("secret-key", saved.StatusDetail);
+    }
+
+    [Fact]
     public async Task IngestAsync_WhenStorageFails_PersistsFailedWithoutHashOrSize()
     {
         using var db = CreateDb(nameof(IngestAsync_WhenStorageFails_PersistsFailedWithoutHashOrSize));
