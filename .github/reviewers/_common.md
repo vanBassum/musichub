@@ -38,14 +38,6 @@ reads.
   `mcp__github_inline_comment__create_inline_comment`. Start the comment with a
   severity tag: `[bug]`, `[risk]` or `[convention]`, unless your focus file defines its
   own tags. Say what is wrong, why it matters, and what the fix is. Keep it short.
-- End every **blocking** finding (inline, or in the summary when it has no line)
-  with its key, on its own line: `<!-- finding: <your focus area>:<path>:<slug> -->`,
-  for example `<!-- finding: api:musichub-api/Program.cs:missing-404 -->`. `<path>`
-  is the file as the product repo has it, `<slug>` a few lowercase words with
-  hyphens that name the problem, not the line. Give the same problem the same key
-  each time you see it, also on a later commit: autopilot uses the key to see
-  whether a finding it reported fixed came back. A `[convention]` finding gets no
-  key.
 - When you're done, post **one** summary comment with `gh pr comment <PR> --body "…"`.
   Title it `### Claude review — <your focus area>`. Immediately below the title,
   start with **TL;DR:** followed by a one- or two-sentence PASS/FAIL verdict,
@@ -60,8 +52,6 @@ reads.
   findings you reported (`[convention]` findings don't count; if your focus file
   defines which findings block, follow that instead):
   `<!-- claude-review: <your focus area> sha=<SHA> blocking=<N> -->`.
-  The understanding reviewer's marker has one more field; its focus file says
-  which.
   The marker decides whether the PR may be merged, so don't leave out a `[bug]` or
   `[risk]` to get it through, and don't tag a finding `[risk]` unless it really
   should stop the merge.

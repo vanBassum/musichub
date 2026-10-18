@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Tests sandbox.sh against a stub docker that records every call: how the container
 # is started (isolation flags, mounts, the environment it gets) and that it is
-# removed. The image itself is tried by the jobs that use it. Needs bash and git.
+# removed. The image itself is tried by the job that uses it. Needs bash and git.
 # Run: bash .github/scripts/sandbox.test.sh
 set -uo pipefail
 
@@ -52,27 +52,25 @@ bash "$SCRIPT" prepare "$WORK/sb-shallow" "$WORK/shallow" >"$WORK/out" 2>&1 \
 
 # --- run ----------------------------------------------------------------------
 : >"$CALLS"
-CLAUDE_CODE_OAUTH_TOKEN=claude-secret SANDBOX_ISSUE=12 AUTOPILOT_TOKEN=pat-secret AUTOPILOT_BOARD_TOKEN=board-secret \
+CLAUDE_CODE_OAUTH_TOKEN=claude-secret SANDBOX_ISSUE=12 \
   GH_TOKEN=gh-secret GITHUB_TOKEN=gh-secret2 GITHUB_RUN_ID=77 GITHUB_JOB=build \
-  bash "$SCRIPT" run "$DIR" 30 bash /work/trusted/sandbox-job.sh build >"$WORK/out" 2>&1
+  bash "$SCRIPT" run "$DIR" 30 bash /work/trusted/sandbox-job.sh ci >"$WORK/out" 2>&1
 code=$?
 [ "$code" = 0 ] && ok "run passes the container's result on" || no "run passes the container's result on (exit $code)"
 main=$(grep -E '^run --rm --name sandbox-77-1-build ' "$CALLS")
 [ -n "$main" ] && ok "the container is named after the run and job" || no "the container is named after the run and job"
 for flag in "--cap-drop ALL" "--security-opt no-new-privileges" "--read-only" "--network musichub-sandbox" "--pids-limit" "--memory" "--cpus" \
             "-v $DIR:/work " "-v $DIR/in:/work/in:ro" "-v $DIR/trusted:/work/trusted:ro" "-w /work/repo" "-e HOME=/work/home" \
-            "bash /work/trusted/sandbox-job.sh build"; do
+            "bash /work/trusted/sandbox-job.sh ci"; do
   grep -qF -- "$flag" <<<"$main" && ok "the container runs with '$flag'" || no "the container runs with '$flag'"
 done
 for bad in "docker.sock" "--privileged" "--user 0" "--network host" "-v /:" "$HOME:"; do
   grep -qF -- "$bad" <<<"$main" && no "the container never gets '$bad'" || ok "the container never gets '$bad'"
 done
-grep -qF -- "-e CLAUDE_CODE_OAUTH_TOKEN" <<<"$main" && ok "it gets Claude's credential" || no "it gets Claude's credential"
-grep -qF -- "-e SANDBOX_ISSUE" <<<"$main" && ok "and the SANDBOX_ parameters" || no "and the SANDBOX_ parameters"
-for v in AUTOPILOT_TOKEN AUTOPILOT_BOARD_TOKEN GH_TOKEN GITHUB_TOKEN; do
+grep -qF -- "-e SANDBOX_ISSUE" <<<"$main" && ok "it gets the SANDBOX_ parameters" || no "it gets the SANDBOX_ parameters"
+for v in CLAUDE_CODE_OAUTH_TOKEN GH_TOKEN GITHUB_TOKEN; do
   grep -qF -- "-e $v" <<<"$main" && no "but never $v" || ok "but never $v"
 done
-grep -qF -- "-e ANTHROPIC_API_KEY" <<<"$main" && no "an unset credential is not passed" || ok "an unset credential is not passed"
 grep -qE -- '-e [A-Z_]+=' <<<"$main" | grep -v HOME && no "no value is put on the command line" || ok "no value is put on the command line"
 grep -qE '^run --rm --user 0 --network none -v .* --entrypoint chown .* -R 1654:1654 /work$' "$CALLS" \
   && ok "the directory is handed to the sandbox user first" || no "the directory is handed to the sandbox user first"

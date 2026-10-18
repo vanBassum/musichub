@@ -9,9 +9,8 @@ name: Build
 #
 # A pull request runs the same checks, but builds no image: the image is built only
 # for main (job `image`), so a broken Dockerfile shows up on main, not on the PR.
-# The merge gate (.github/scripts/review-gate.sh) waits for the check named `build`
-# on the PR's head commit: keep the job id `build`. It only succeeds when `test` and
-# `guard-tests` did.
+# The check named `build` is the one to look at before merging: it only succeeds
+# when `test` and `guard-tests` did.
 
 on:
   push:
@@ -26,12 +25,10 @@ env:
   IMAGE: ghcr.io/vanbassum/musichub
 
 jobs:
-  # The fail-closed merge gate of claude-review.yml, the autopilot state machine and
-  # autopilot's download of issue images (against a fake gh), the sandbox and the
-  # scripts autopilot's Claude adds components and packages with (against stubs),
-  # the Claude action settings in the workflows, and the Claude guard in .claude/hooks/.
-  # They run only scripts under .github/ and .claude/, which never change without
-  # Bas (the merge gate's trust boundary), so they run on the runner.
+  # The reviewers' verdict check (against a fake gh), the sandbox (against a stub
+  # docker), the Claude action settings in the workflows, and the Claude guard in
+  # .claude/hooks/. They run only scripts under .github/ and .claude/, which Bas
+  # reviews by hand, so they run on the runner.
   guard-tests:
     runs-on: [self-hosted, strato]
     timeout-minutes: 15
@@ -41,20 +38,14 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - run: bash .github/scripts/review-gate.test.sh
-      - run: bash .github/scripts/autopilot.test.sh
-      - run: bash .github/scripts/issue-images.test.sh
-      - run: bash .github/scripts/thread-markdown.test.sh
+      - run: bash .github/scripts/review-verdict.test.sh
       - run: bash .github/scripts/workflows.test.sh
-      - run: bash .github/scripts/shadcn-components.test.sh
-      - run: bash .github/scripts/add-package.test.sh
       - run: bash .github/scripts/sandbox.test.sh
       - run: node .claude/hooks/guard.test.js
 
-  # The API and the UI, the same way autopilot validates its own work: restored,
-  # built, tested and linted in the sandbox (.github/scripts/sandbox.sh), a
-  # throwaway container. This is the PR's own code, so it never runs on the runner,
-  # which holds the Docker socket and, in other jobs, the PAT.
+  # The API and the UI: restored, built, tested and linted in the sandbox
+  # (.github/scripts/sandbox.sh), a throwaway container. This is the PR's own code,
+  # so it never runs on the runner, which holds the Docker socket.
   test:
     runs-on: [self-hosted, strato]
     # A hung restore or build must not hold the runner for GitHub's 6-hour default.
