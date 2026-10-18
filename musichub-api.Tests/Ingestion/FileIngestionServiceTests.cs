@@ -95,6 +95,74 @@ public class FileIngestionServiceTests
         Assert.True(idAtUploadTime > 0);
     }
 
+    [Fact]
+    public async Task IngestAsync_OnSuccess_SetsStoredWithHashAndSize()
+    {
+        var data = new byte[] { 1, 2, 3, 4, 5 };
+        using var db = CreateDb(nameof(IngestAsync_OnSuccess_SetsStoredWithHashAndSize));
+        var service = new FileIngestionService(db, new FakeFileStorage());
+
+        var record = await service.IngestAsync(new MemoryStream(data), "a.mp3", null, CancellationToken.None);
+
+        var saved = db.Files.Single(f => f.Id == record.Id);
+        Assert.Equal(FileStatus.Stored, saved.Status);
+        Assert.NotNull(saved.ContentHash);
+        Assert.Equal(5, saved.SizeBytes);
+    }
+
+    [Fact]
+    public async Task IngestAsync_WhileStreaming_StatusIsUploadingWithoutHashOrSize()
+    {
+        using var db = CreateDb(nameof(IngestAsync_WhileStreaming_StatusIsUploadingWithoutHashOrSize));
+        FileRecord? seen = null;
+        var storage = new FakeFileStorage(onPut: key => seen = db.Files.AsNoTracking().Single(f => f.StorageKey == key));
+        var service = new FileIngestionService(db, storage);
+
+        await service.IngestAsync(new MemoryStream([1]), "a.mp3", null, CancellationToken.None);
+
+        Assert.NotNull(seen);
+        Assert.Equal(FileStatus.Uploading, seen.Status);
+        Assert.Null(seen.ContentHash);
+        Assert.Null(seen.SizeBytes);
+    }
+
+    [Fact]
+    public async Task IngestAsync_WhenStorageFails_PersistsFailedWithoutHashOrSize()
+    {
+        using var db = CreateDb(nameof(IngestAsync_WhenStorageFails_PersistsFailedWithoutHashOrSize));
+        var storage = new FakeFileStorage(onPut: _ => throw new InvalidOperationException("storage down"));
+        var service = new FileIngestionService(db, storage);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            service.IngestAsync(new MemoryStream([1, 2]), "a.mp3", null, CancellationToken.None));
+
+        var saved = Assert.Single(db.Files.AsNoTracking());
+        Assert.Equal(FileStatus.Failed, saved.Status);
+        Assert.Null(saved.ContentHash);
+        Assert.Null(saved.SizeBytes);
+    }
+
+    [Fact]
+    public async Task IngestAsync_WhenCancelled_NeverReportsStored()
+    {
+        using var db = CreateDb(nameof(IngestAsync_WhenCancelled_NeverReportsStored));
+        using var cts = new CancellationTokenSource();
+        var storage = new FakeFileStorage(onPut: _ =>
+        {
+            cts.Cancel();
+            throw new OperationCanceledException(cts.Token);
+        });
+        var service = new FileIngestionService(db, storage);
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+            service.IngestAsync(new MemoryStream([1, 2]), "a.mp3", null, cts.Token));
+
+        var saved = Assert.Single(db.Files.AsNoTracking());
+        Assert.Equal(FileStatus.Uploading, saved.Status);
+        Assert.Null(saved.ContentHash);
+        Assert.Null(saved.SizeBytes);
+    }
+
     /// <summary>Wraps a stream and makes it non-seekable, to simulate an HTTP request body.</summary>
     private sealed class NonSeekableStream(Stream inner) : Stream
     {

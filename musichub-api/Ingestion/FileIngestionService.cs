@@ -7,7 +7,8 @@ namespace MusicHub.Api.Ingestion;
 /// Stores a file in managed storage and registers a factual record.
 /// Write order: the database record is created first (with a null hash), the bytes are
 /// streamed to storage while SHA-256 is accumulated, and the hash is written back only
-/// after storage confirms success. A null hash means the write was not confirmed.
+/// after storage confirms success, together with the byte count and status Stored.
+/// Cancellation or process termination may leave Pending or Uploading; that never means stored.
 /// </summary>
 public sealed class FileIngestionService(MusicHubDbContext db, IFileStorage storage)
 {
@@ -26,6 +27,7 @@ public sealed class FileIngestionService(MusicHubDbContext db, IFileStorage stor
             OriginalFilename = filename,
             StorageLocation = "default",
             StorageKey = storageKey,
+            Status = FileStatus.Pending,
             Source = "upload",
             StartedAt = DateTimeOffset.UtcNow,
         };
@@ -33,11 +35,39 @@ public sealed class FileIngestionService(MusicHubDbContext db, IFileStorage stor
         await db.SaveChangesAsync(cancellationToken);
 
         using var hashingStream = new Sha256HashingStream(content);
-        await storage.PutAsync(storageKey, hashingStream, contentType, cancellationToken);
+        try
+        {
+            record.Status = FileStatus.Uploading;
+            await db.SaveChangesAsync(cancellationToken);
 
-        record.ContentHash = hashingStream.GetHashHex();
-        await db.SaveChangesAsync(cancellationToken);
+            await storage.PutAsync(storageKey, hashingStream, contentType, cancellationToken);
+
+            record.Status = FileStatus.Stored;
+            record.ContentHash = hashingStream.GetHashHex();
+            record.SizeBytes = hashingStream.BytesRead;
+            await db.SaveChangesAsync(cancellationToken);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            await TryMarkFailedAsync(record);
+            throw;
+        }
 
         return record;
+    }
+
+    private async Task TryMarkFailedAsync(FileRecord record)
+    {
+        try
+        {
+            record.Status = FileStatus.Failed;
+            record.ContentHash = null;
+            record.SizeBytes = null;
+            await db.SaveChangesAsync(CancellationToken.None);
+        }
+        catch
+        {
+            // Best effort: the record keeps its earlier state, which never implies success.
+        }
     }
 }
