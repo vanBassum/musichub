@@ -26,18 +26,23 @@ builder.Services.AddDbContext<MusicHubDbContext>((sp, options) =>
 builder.Services.AddAudioMetadata();
 builder.Services.AddIdentification(builder.Configuration);
 
+// Pending migrations are applied after startup by a hosted service; `--migrate` runs the same migration and exits.
+builder.Services.AddSingleton<MigrationState>();
+builder.Services.AddHostedService<DatabaseMigrationService>();
+
 builder.Services.AddHealthChecks()
-    .AddCheck<DatabaseHealthCheck>("database", tags: ["ready"]);
+    .AddCheck<DatabaseHealthCheck>("database", tags: ["ready"])
+    .AddCheck<MigrationHealthCheck>("migrations", tags: ["ready"]);
 
 var app = builder.Build();
 
-// Migration step: `--migrate` applies pending migrations and exits. Normal startup never migrates.
+// `--migrate` applies pending migrations once and exits (normal startup applies them too, with retries).
 if (args.Length > 0 && args[0] == "--migrate")
 {
     try
     {
         using var scope = app.Services.CreateScope();
-        await scope.ServiceProvider.GetRequiredService<MusicHubDbContext>().Database.MigrateAsync();
+        await StartupMigration.ApplyAsync(scope.ServiceProvider.GetRequiredService<MusicHubDbContext>(), CancellationToken.None);
         Console.WriteLine("Migrations applied.");
         return 0;
     }
@@ -96,6 +101,19 @@ app.MapHealthChecks("/health", new HealthCheckOptions
     ResponseWriter = WriteHealth,
 });
 
+// The API needs the migrated schema: until the migrations are applied, /api answers 503 (health and the UI stay up).
+var migrationState = app.Services.GetRequiredService<MigrationState>();
+app.Use(async (context, next) =>
+{
+    if (!migrationState.IsComplete && context.Request.Path.StartsWithSegments("/api"))
+    {
+        context.Response.StatusCode = StatusCodes.Status503ServiceUnavailable;
+        context.Response.Headers.RetryAfter = "10";
+        return;
+    }
+    await next();
+});
+
 app.MapControllers();
 
 // Unknown /api routes return 404; everything else goes to the SPA so client-side routing works.
@@ -103,4 +121,4 @@ app.MapFallback("/api/{**path}", () => Results.NotFound());
 app.MapFallbackToFile("index.html");
 
 app.Run();
-return 0;
+return Environment.ExitCode;
