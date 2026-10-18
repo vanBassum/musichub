@@ -300,6 +300,49 @@ public class FileIngestionServiceTests
         Assert.Equal(FileStatus.Failed, Assert.Single(db.Files.AsNoTracking()).Status);
     }
 
+    [Fact]
+    public async Task IngestAsync_WhenStorageDisposesTheStreamBeforeReturning_StillVerifiesAndReportsStored()
+    {
+        using var db = CreateDb(nameof(IngestAsync_WhenStorageDisposesTheStreamBeforeReturning_StillVerifiesAndReportsStored));
+        var service = new FileIngestionService(db, new DisposingStorage(), new ActiveUploadTracker());
+        byte[] bytes = [1, 2, 3];
+
+        var record = await service.IngestAsync(
+            new NonSeekableStream(new MemoryStream(bytes)), "a.mp3", null, Expect(bytes), CancellationToken.None);
+
+        Assert.Equal(FileStatus.Stored, record.Status);
+        Assert.Equal(Sha256Hex(bytes), record.ContentHash);
+        Assert.Equal(3, record.SizeBytes);
+        Assert.Equal(FileStatus.Stored, Assert.Single(db.Files.AsNoTracking()).Status);
+    }
+
+    [Fact]
+    public async Task IngestAsync_WhenStorageDisposesTheStreamAndHashDiffers_StillFailsAsCorrupt()
+    {
+        using var db = CreateDb(nameof(IngestAsync_WhenStorageDisposesTheStreamAndHashDiffers_StillFailsAsCorrupt));
+        var service = new FileIngestionService(db, new DisposingStorage(), new ActiveUploadTracker());
+
+        var ex = await Assert.ThrowsAsync<UploadIntegrityException>(() =>
+            service.IngestAsync(new MemoryStream([1, 2, 3]), "a.mp3", null, Expect([9, 9, 9]), CancellationToken.None));
+
+        Assert.Equal(UploadIntegrityFailure.Corrupt, ex.Failure);
+        Assert.Equal(FileStatus.Failed, Assert.Single(db.Files.AsNoTracking()).Status);
+    }
+
+    /// <summary>Reads the body to the end and disposes the supplied stream, like the S3 transfer utility does.</summary>
+    private sealed class DisposingStorage : IFileStorage
+    {
+        public async Task PutAsync(string key, Stream content, string? contentType, CancellationToken ct)
+        {
+            await content.CopyToAsync(Stream.Null, ct);
+            await content.DisposeAsync();
+        }
+
+        public Task<Stream> OpenReadAsync(string key, CancellationToken ct) => throw new NotSupportedException();
+        public Task<bool> ExistsAsync(string key, CancellationToken ct) => throw new NotSupportedException();
+        public Task DeleteAsync(string key, CancellationToken ct) => throw new NotSupportedException();
+    }
+
     /// <summary>
     /// Reads the body, keeps what <paramref name="stored"/> makes of it (the received bytes by default,
     /// null for no object), then throws, like a client that fails on the completion response.

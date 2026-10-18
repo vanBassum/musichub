@@ -79,7 +79,13 @@ internal sealed class Sha256HashingStream : Stream
 
     protected override void Dispose(bool disposing)
     {
-        if (disposing) _hasher.Dispose();
+        // The storage client may dispose the stream it was given before PutAsync returns, and the caller
+        // still reads the hash afterwards. Capture it before releasing the hasher.
+        if (disposing)
+        {
+            _finalHash ??= _hasher.GetHashAndReset();
+            _hasher.Dispose();
+        }
         base.Dispose(disposing);
     }
 }
