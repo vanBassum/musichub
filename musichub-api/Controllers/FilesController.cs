@@ -54,7 +54,7 @@ public class FilesController(FileIngestionService ingestion, IOptions<FileIngest
     {
         var records = await ingestion.ListAsync(cancellationToken);
         return Ok(records.Select(r => new FileListItem(
-            r.Id, r.OriginalFilename, r.SizeBytes, r.Status.ToString(), r.StartedAt)));
+            r.Id, r.OriginalFilename, r.SizeBytes, r.Status.ToString(), r.StartedAt, r.StatusDetail)));
     }
 
     /// <summary>Streams the original bytes of a Stored file as an attachment named after its original filename.</summary>
