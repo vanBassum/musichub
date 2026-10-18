@@ -2,7 +2,6 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using MusicHub.Api.Catalog;
 using MusicHub.Api.Data;
-using MusicHub.Api.Ingestion;
 
 namespace MusicHub.Api.Controllers;
 
@@ -46,7 +45,7 @@ public class TracksController(MusicHubDbContext db) : ControllerBase
         }
 
         if (hasAudio is { } wanted)
-            query = query.Where(t => t.Files.Any(f => f.Status == FileStatus.Stored) == wanted);
+            query = query.Where(t => t.Files.AsQueryable().Any(TrackResponse.IsStoredAudio) == wanted);
 
         var total = await query.CountAsync(cancellationToken);
         var items = await query

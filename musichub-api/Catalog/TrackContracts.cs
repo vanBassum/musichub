@@ -14,6 +14,9 @@ public record TrackResponse(
     List<TrackArtistResponse> Artists,
     bool HasAudio)
 {
+    /// <summary>The one rule for "a file counts as audio"; the hasAudio filter and the field both use it.</summary>
+    public static readonly Expression<Func<FileRecord, bool>> IsStoredAudio = f => f.Status == FileStatus.Stored;
+
     public static readonly Expression<Func<Track, TrackResponse>> Projection = t => new TrackResponse(
         t.Id,
         t.Title,
@@ -22,7 +25,7 @@ public record TrackResponse(
         t.Artists.OrderBy(a => a.Id)
             .Select(a => new TrackArtistResponse(a.ArtistId, a.Artist.Name, a.Role))
             .ToList(),
-        t.Files.Any(f => f.Status == FileStatus.Stored));
+        t.Files.AsQueryable().Any(IsStoredAudio));
 }
 
 public record PagedResponse<T>(List<T> Items, int Total, int Page, int PageSize);
