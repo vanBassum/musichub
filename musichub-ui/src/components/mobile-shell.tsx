@@ -2,6 +2,7 @@ import { SlidersHorizontal } from "lucide-react"
 import { useCallback, useLayoutEffect, useRef, useState } from "react"
 
 import { BuildInfoSheet } from "@/components/build-info-sheet"
+import { FilesView } from "@/components/files-view"
 import { FilterSidebar } from "@/components/filter-sidebar"
 import { MobileNav } from "@/components/mobile-nav"
 import { mobilePageIndex } from "@/components/mobile-pages"
@@ -28,12 +29,13 @@ interface MobileShellProps {
 const libraryPage = mobilePageIndex("library")
 const playerPage = mobilePageIndex("player")
 const queuePage = mobilePageIndex("queue")
+const filesPage = mobilePageIndex("files")
 
 const pageClassName =
   "flex h-full w-full shrink-0 snap-center snap-always flex-col overflow-hidden"
 
 // Below `lg` the three panels become full-width pages in a horizontal scroll-snap
-// strip (Library, Player, Queue), opening on the Player. Pages that aren't showing
+// strip (Library, Player, Queue, Files), opening on the Player. Pages that aren't showing
 // are inert, so keyboard focus can't land in them.
 export function MobileShell({
   tracks,
@@ -135,6 +137,9 @@ export function MobileShell({
           <div className="flex min-h-0 flex-1 flex-col rounded-xl border bg-card">
             <QueueList queue={queue} nowPlayingId={nowPlayingId} />
           </div>
+        </div>
+        <div inert={active !== filesPage} className={cn(pageClassName, "p-3")}>
+          <FilesView className="flex-1" />
         </div>
       </div>
       <MobileNav active={active} onNavigate={navigate} />
