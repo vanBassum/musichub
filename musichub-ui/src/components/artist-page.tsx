@@ -64,7 +64,7 @@ export function ArtistPage({ className }: { className?: string }) {
   const artist = useDemoSection<Artist | null>(mockArtist, null)
   const tracks = useDemoSection(mockPopularTracks, [])
   const albums = useDemoSection(mockAlbums, [])
-  const name = mockArtist.name
+  const name = artist.state.status === "ready" ? artist.state.data?.name : undefined
 
   return (
     <div
@@ -108,14 +108,14 @@ export function ArtistPage({ className }: { className?: string }) {
           </TabsTrigger>
         </TabsList>
         <TabsContent value={tab} className="space-y-6">
-          {(tab === "overview" || tab === "tracks") && (
+          {name && (tab === "overview" || tab === "tracks") && (
             <ArtistPopularTracks
               artistName={name}
               state={tracks.state}
               onRetry={tracks.retry}
             />
           )}
-          {(tab === "overview" || tab === "albums") && (
+          {name && (tab === "overview" || tab === "albums") && (
             <ArtistAlbums
               artistName={name}
               state={albums.state}
