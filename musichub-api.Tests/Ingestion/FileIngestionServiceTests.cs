@@ -145,6 +145,49 @@ public class FileIngestionServiceTests
     }
 
     [Fact]
+    public async Task IngestAsync_WhenStorageThrowsAfterObjectWasWritten_ReportsStored()
+    {
+        using var db = CreateDb(nameof(IngestAsync_WhenStorageThrowsAfterObjectWasWritten_ReportsStored));
+        var storage = new ThrowsAfterWriteStorage();
+        var service = new FileIngestionService(db, storage);
+        byte[] bytes = [1, 2, 3];
+
+        var record = await service.IngestAsync(new NonSeekableStream(new MemoryStream(bytes)), "a.mp3", null, CancellationToken.None);
+
+        Assert.Equal(FileStatus.Stored, record.Status);
+        Assert.Equal(Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant(), record.ContentHash);
+        Assert.Equal(3, record.SizeBytes);
+        Assert.Equal(FileStatus.Stored, Assert.Single(db.Files.AsNoTracking()).Status);
+    }
+
+    [Fact]
+    public async Task IngestAsync_WhenStorageThrowsBeforeBodyWasRead_ReportsFailedEvenIfAnObjectExists()
+    {
+        using var db = CreateDb(nameof(IngestAsync_WhenStorageThrowsBeforeBodyWasRead_ReportsFailedEvenIfAnObjectExists));
+        var service = new FileIngestionService(db, new ThrowsAfterWriteStorage(readBody: false));
+
+        await Assert.ThrowsAsync<FileIngestionException>(() =>
+            service.IngestAsync(new MemoryStream([1, 2, 3]), "a.mp3", null, CancellationToken.None));
+
+        Assert.Equal(FileStatus.Failed, Assert.Single(db.Files.AsNoTracking()).Status);
+    }
+
+    /// <summary>Commits the object, then throws, like a client that fails on the completion response.</summary>
+    private sealed class ThrowsAfterWriteStorage(bool readBody = true) : IFileStorage
+    {
+        public async Task PutAsync(string key, Stream content, string? contentType, CancellationToken ct)
+        {
+            if (readBody)
+                await content.CopyToAsync(Stream.Null, ct);
+            throw new InvalidOperationException("checksum validation failed");
+        }
+
+        public Task<Stream> OpenReadAsync(string key, CancellationToken ct) => throw new NotSupportedException();
+        public Task<bool> ExistsAsync(string key, CancellationToken ct) => Task.FromResult(true);
+        public Task DeleteAsync(string key, CancellationToken ct) => throw new NotSupportedException();
+    }
+
+    [Fact]
     public async Task IngestAsync_WhenCancelled_NeverReportsStored()
     {
         using var db = CreateDb(nameof(IngestAsync_WhenCancelled_NeverReportsStored));

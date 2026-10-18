@@ -11,7 +11,8 @@ namespace MusicHub.Api.Ingestion;
 /// after storage confirms success, together with the byte count and status Stored.
 /// Cancellation or process termination may leave Pending or Uploading; that never means stored.
 /// </summary>
-public sealed class FileIngestionService(MusicHubDbContext db, IFileStorage storage)
+public sealed class FileIngestionService(
+    MusicHubDbContext db, IFileStorage storage, ILogger<FileIngestionService>? logger = null)
 {
     /// <summary>
     /// Returns only a record with status Stored; every other outcome throws.
@@ -44,7 +45,21 @@ public sealed class FileIngestionService(MusicHubDbContext db, IFileStorage stor
             record.Status = FileStatus.Uploading;
             await db.SaveChangesAsync(cancellationToken);
 
-            await storage.PutAsync(storageKey, hashingStream, contentType, cancellationToken);
+            try
+            {
+                await storage.PutAsync(storageKey, hashingStream, contentType, cancellationToken);
+            }
+            catch (Exception ex) when (ex is not (OperationCanceledException or BadHttpRequestException))
+            {
+                // The client may throw after the object was committed (an object only becomes visible
+                // once the write completed). When the whole body was read and the object exists, the
+                // bytes are stored: say so instead of reporting a failure that invites a duplicate upload.
+                if (!await ObjectWasWrittenAsync(storageKey, hashingStream, cancellationToken))
+                    throw;
+                logger?.LogWarning(ex,
+                    "Storage reported an error for file {FileId} after the object was written; registering it as Stored.",
+                    record.Id);
+            }
 
             record.Status = FileStatus.Stored;
             record.ContentHash = hashingStream.GetHashHex();
@@ -60,6 +75,7 @@ public sealed class FileIngestionService(MusicHubDbContext db, IFileStorage stor
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
+            logger?.LogError(ex, "Storing file {FileId} failed.", record.Id);
             await TryMarkFailedAsync(record);
             throw new FileIngestionException(record.Id, ex);
         }
@@ -89,6 +105,20 @@ public sealed class FileIngestionService(MusicHubDbContext db, IFileStorage stor
 
         var content = await storage.OpenReadAsync(record.StorageKey, cancellationToken);
         return (record, content);
+    }
+
+    private async Task<bool> ObjectWasWrittenAsync(string key, Sha256HashingStream body, CancellationToken cancellationToken)
+    {
+        if (!body.ReachedEnd)
+            return false;
+        try
+        {
+            return await storage.ExistsAsync(key, cancellationToken);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            return false;
+        }
     }
 
     private async Task TryMarkFailedAsync(FileRecord record)
