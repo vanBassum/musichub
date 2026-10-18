@@ -129,7 +129,7 @@ export function FilesView({
                 </TableCell>
                 <TableCell>
                   <Badge
-                    title={statusHints[file.status]}
+                    title={file.failureReason ?? statusHints[file.status]}
                     className={statusClassNames[file.status]}
                   >
                     {file.status}
@@ -162,7 +162,10 @@ function UploadRow({
   onDismiss: () => void
 }) {
   const percent = upload.size === 0 ? 100 : Math.floor((upload.loaded / upload.size) * 100)
-  const active = upload.state === "uploading" || upload.state === "sent"
+  const active =
+    upload.state === "preparing" ||
+    upload.state === "uploading" ||
+    upload.state === "sent"
 
   return (
     <li className="flex items-center gap-3 text-sm">
@@ -179,7 +182,9 @@ function UploadRow({
               className="h-1.5 w-full"
             />
             <div className="text-xs text-muted-foreground">
-              {upload.state === "sent"
+              {upload.state === "preparing"
+                ? "Preparing: computing the checksum before sending. Not stored yet."
+                : upload.state === "sent"
                 ? "All bytes sent. Waiting for the server to confirm storage…"
                 : `Sending ${percent}% (${formatBytes(upload.loaded)} of ${formatBytes(upload.size)}). Not stored yet.`}
             </div>

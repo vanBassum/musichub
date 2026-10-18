@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using System.Text;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
@@ -33,7 +34,7 @@ public class FilesControllerTests
         using var db = CreateDb(nameof(Upload_WhenStored_Returns201WithStoredRecord));
         var controller = CreateController(db, new FakeFileStorage());
 
-        var result = await controller.Upload("a.mp3", CancellationToken.None);
+        var result = await UploadDeclared(controller, "a.mp3", CancellationToken.None);
 
         var objectResult = Assert.IsType<ObjectResult>(result);
         Assert.Equal(StatusCodes.Status201Created, objectResult.StatusCode);
@@ -46,7 +47,7 @@ public class FilesControllerTests
         using var db = CreateDb(nameof(Upload_WhenStorageFails_ReturnsNon2xxWithFileId));
         var controller = CreateController(db, new FakeFileStorage(_ => throw new InvalidOperationException("storage down")));
 
-        var result = await controller.Upload("a.mp3", CancellationToken.None);
+        var result = await UploadDeclared(controller, "a.mp3", CancellationToken.None);
 
         var objectResult = Assert.IsType<ObjectResult>(result);
         Assert.Equal(StatusCodes.Status502BadGateway, objectResult.StatusCode);
@@ -54,6 +55,59 @@ public class FilesControllerTests
         var saved = Assert.Single(db.Files.AsNoTracking());
         Assert.Equal(FileStatus.Failed, saved.Status);
         Assert.Equal(saved.Id, problem.Extensions["fileId"]);
+    }
+
+    [Fact]
+    public async Task Upload_WithoutDeclaredChecksum_Returns400AndRegistersNothing()
+    {
+        using var db = CreateDb(nameof(Upload_WithoutDeclaredChecksum_Returns400AndRegistersNothing));
+        var controller = CreateController(db, new FakeFileStorage());
+
+        var result = await controller.Upload("a.mp3", null, null, CancellationToken.None);
+
+        Assert.Equal(StatusCodes.Status400BadRequest, Assert.IsType<ObjectResult>(result).StatusCode);
+        Assert.Empty(db.Files);
+    }
+
+    [Fact]
+    public async Task Upload_WhenBodyIsShort_Returns422AndIsNeverStored()
+    {
+        using var db = CreateDb(nameof(Upload_WhenBodyIsShort_Returns422AndIsNeverStored));
+        var controller = CreateController(db, new FakeFileStorage(), [1, 2]);
+
+        var result = await UploadDeclared(controller, "a.mp3", CancellationToken.None);
+
+        var objectResult = Assert.IsType<ObjectResult>(result);
+        Assert.Equal(StatusCodes.Status422UnprocessableEntity, objectResult.StatusCode);
+        var saved = Assert.Single(db.Files.AsNoTracking());
+        Assert.Equal(FileStatus.Failed, saved.Status);
+        Assert.Equal(saved.Id, Assert.IsType<ProblemDetails>(objectResult.Value).Extensions["fileId"]);
+    }
+
+    [Fact]
+    public async Task Upload_WhenDigestDiffers_Returns422AndIsNeverStored()
+    {
+        using var db = CreateDb(nameof(Upload_WhenDigestDiffers_Returns422AndIsNeverStored));
+        var controller = CreateController(db, new FakeFileStorage(), [1, 2, 9]);
+
+        var result = await UploadDeclared(controller, "a.mp3", CancellationToken.None);
+
+        Assert.Equal(StatusCodes.Status422UnprocessableEntity, Assert.IsType<ObjectResult>(result).StatusCode);
+        Assert.Equal(FileStatus.Failed, Assert.Single(db.Files.AsNoTracking()).Status);
+    }
+
+    [Fact]
+    public async Task Upload_WhenResponseIsLost_ListStillReportsStoredFile()
+    {
+        using var db = CreateDb(nameof(Upload_WhenResponseIsLost_ListStillReportsStoredFile));
+        var controller = CreateController(db, new FakeFileStorage());
+
+        _ = await UploadDeclared(controller, "a.mp3", CancellationToken.None); // the client never sees this response
+
+        var list = Assert.IsType<OkObjectResult>(await controller.List(CancellationToken.None));
+        var item = Assert.Single(Assert.IsAssignableFrom<IEnumerable<FileListItem>>(list.Value));
+        Assert.Equal("Stored", item.Status);
+        Assert.Equal(3, item.SizeBytes);
     }
 
     [Fact]
@@ -68,7 +122,7 @@ public class FilesControllerTests
         }));
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
-            controller.Upload("a.mp3", cts.Token));
+            UploadDeclared(controller, "a.mp3", cts.Token));
 
         Assert.NotEqual(FileStatus.Stored, Assert.Single(db.Files.AsNoTracking()).Status);
     }
@@ -96,10 +150,10 @@ public class FilesControllerTests
     }
 
     [Fact]
-    public void ListItem_ExposesOnlyIdFilenameSizeStatusStartedAt()
+    public void ListItem_ExposesOnlyIdFilenameSizeStatusStartedAtFailureReason()
     {
         Assert.Equal(
-            ["Id", "OriginalFilename", "SizeBytes", "StartedAt", "Status"],
+            ["FailureReason", "Id", "OriginalFilename", "SizeBytes", "StartedAt", "Status"],
             typeof(FileListItem).GetProperties().Select(p => p.Name).Order());
     }
 
@@ -111,15 +165,26 @@ public class FilesControllerTests
             throw new BadHttpRequestException("Request body too large.", StatusCodes.Status413PayloadTooLarge)));
 
         var ex = await Assert.ThrowsAsync<BadHttpRequestException>(() =>
-            controller.Upload("a.mp3", CancellationToken.None));
+            UploadDeclared(controller, "a.mp3", CancellationToken.None));
 
         Assert.Equal(StatusCodes.Status413PayloadTooLarge, ex.StatusCode);
         Assert.Equal(FileStatus.Failed, Assert.Single(db.Files.AsNoTracking()).Status);
     }
 
-    private static async Task<int> UploadAsync(FilesController controller, MusicHubDbContext db, string filename)
+    private static string Sha256Hex(byte[] bytes) => Convert.ToHexString(SHA256.HashData(bytes));
+
+    /// <summary>Uploads the controller's request body, declaring the length and digest of <paramref name="declared"/> (default [1,2,3]).</summary>
+    private static Task<IActionResult> UploadDeclared(
+        FilesController controller, string filename, CancellationToken ct, byte[]? declared = null)
     {
-        await controller.Upload(filename, CancellationToken.None);
+        declared ??= [1, 2, 3];
+        return controller.Upload(filename, declared.Length, Sha256Hex(declared), ct);
+    }
+
+    private static async Task<int> UploadAsync(
+        FilesController controller, MusicHubDbContext db, string filename, byte[]? body = null)
+    {
+        await UploadDeclared(controller, filename, CancellationToken.None, body);
         return db.Files.AsNoTracking().OrderByDescending(f => f.Id).First().Id;
     }
 
@@ -136,7 +201,7 @@ public class FilesControllerTests
         using var db = CreateDb(nameof(Download_ReturnsExactBytesAsAttachmentNamedAfterOriginalFilename));
         var bytes = Enumerable.Range(0, 1000).Select(i => (byte)(i * 7)).ToArray();
         var controller = CreateController(db, new FakeFileStorage(), bytes);
-        var id = await UploadAsync(controller, db, "Café – 日本語.mp3");
+        var id = await UploadAsync(controller, db, "Café – 日本語.mp3", bytes);
 
         var result = Assert.IsType<FileStreamResult>(await controller.Download(id, CancellationToken.None));
 

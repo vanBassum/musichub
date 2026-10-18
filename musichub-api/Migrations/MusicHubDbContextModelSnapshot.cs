@@ -111,6 +111,9 @@ namespace MusicHub.Api.Migrations
                     b.Property<string>("ContentHash")
                         .HasColumnType("text");
 
+                    b.Property<string>("FailureReason")
+                        .HasColumnType("text");
+
                     b.Property<string>("OriginalFilename")
                         .IsRequired()
                         .HasColumnType("text");

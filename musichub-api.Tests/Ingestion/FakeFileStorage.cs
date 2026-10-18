@@ -2,8 +2,13 @@ using MusicHub.Api.Storage;
 
 namespace MusicHub.Api.Tests.Ingestion;
 
-/// <summary>In-memory IFileStorage that fully reads the stream (so SHA-256 is accumulated) and keeps the bytes.</summary>
-internal sealed class FakeFileStorage(Action<string>? onPut = null) : IFileStorage
+/// <summary>
+/// In-memory IFileStorage that fully reads the stream (so SHA-256 is accumulated) and keeps the bytes.
+/// <paramref name="onPut"/> runs before the object is kept, <paramref name="afterPut"/> after it (a PUT that
+/// stored the object but reported an error); <paramref name="truncateStoredTo"/> keeps only that many bytes.
+/// </summary>
+internal sealed class FakeFileStorage(
+    Action<string>? onPut = null, Action<string>? afterPut = null, int? truncateStoredTo = null) : IFileStorage
 {
     private readonly Dictionary<string, byte[]> _objects = [];
 
@@ -12,7 +17,9 @@ internal sealed class FakeFileStorage(Action<string>? onPut = null) : IFileStora
         var buffer = new MemoryStream();
         await content.CopyToAsync(buffer, ct);
         onPut?.Invoke(key);
-        _objects[key] = buffer.ToArray();
+        var bytes = buffer.ToArray();
+        _objects[key] = truncateStoredTo is { } n ? bytes[..n] : bytes;
+        afterPut?.Invoke(key);
     }
 
     public Task<Stream> OpenReadAsync(string key, CancellationToken ct) =>

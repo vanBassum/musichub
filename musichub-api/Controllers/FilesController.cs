@@ -18,13 +18,25 @@ public class FilesController(FileIngestionService ingestion, IOptions<FileIngest
     /// Streams the raw request body into managed storage and returns the registered file record.
     /// </summary>
     /// <param name="filename">Original filename. Falls back to "upload" when not supplied.</param>
+    /// <param name="size">Exact byte length of the body, computed by the client before sending.</param>
+    /// <param name="sha256">Hex SHA-256 of the body, computed by the client before sending.</param>
     [HttpPost]
     [DisableRequestSizeLimit]
     public async Task<IActionResult> Upload(
         [FromQuery] string? filename,
+        [FromQuery] long? size,
+        [FromQuery] string? sha256,
         CancellationToken cancellationToken)
     {
-        var limitResult = EnforceUploadLimit();
+        if (size is null or < 0 || sha256 is not { Length: 64 } || !sha256.All(Uri.IsHexDigit))
+        {
+            return Problem(
+                title: "Missing upload checksum",
+                detail: "Declare the file's byte length (size) and hex SHA-256 (sha256) before sending it.",
+                statusCode: StatusCodes.Status400BadRequest);
+        }
+
+        var limitResult = EnforceUploadLimit(size.Value);
         if (limitResult is not null)
             return limitResult;
 
@@ -33,7 +45,20 @@ public class FilesController(FileIngestionService ingestion, IOptions<FileIngest
         try
         {
             record = await ingestion.IngestAsync(
-                Request.Body, effectiveFilename, Request.ContentType, cancellationToken);
+                Request.Body,
+                effectiveFilename,
+                Request.ContentType,
+                new ExpectedUpload(size.Value, sha256.ToLowerInvariant()),
+                cancellationToken);
+        }
+        catch (FileUploadRejectedException ex)
+        {
+            // Never a 2xx: the bytes that arrived are not the bytes the client declared.
+            return Problem(
+                title: "File upload rejected",
+                detail: ex.Reason,
+                statusCode: StatusCodes.Status422UnprocessableEntity,
+                extensions: new Dictionary<string, object?> { ["fileId"] = ex.FileId });
         }
         catch (FileIngestionException ex)
         {
@@ -54,7 +79,7 @@ public class FilesController(FileIngestionService ingestion, IOptions<FileIngest
     {
         var records = await ingestion.ListAsync(cancellationToken);
         return Ok(records.Select(r => new FileListItem(
-            r.Id, r.OriginalFilename, r.SizeBytes, r.Status.ToString(), r.StartedAt)));
+            r.Id, r.OriginalFilename, r.SizeBytes, r.Status.ToString(), r.StartedAt, r.FailureReason)));
     }
 
     /// <summary>Streams the original bytes of a Stored file as an attachment named after its original filename.</summary>
@@ -108,8 +133,11 @@ public class FilesController(FileIngestionService ingestion, IOptions<FileIngest
         record.StartedAt,
     };
 
-    private IActionResult? EnforceUploadLimit()
+    private IActionResult? EnforceUploadLimit(long declaredSize)
     {
+        if (declaredSize > options.Value.MaxUploadSizeBytes)
+            return StatusCode(StatusCodes.Status413RequestEntityTooLarge);
+
         // The Kestrel feature is the only enforcement for chunked bodies where Content-Length is absent.
         var maxSizeFeature = HttpContext.Features.Get<IHttpMaxRequestBodySizeFeature>();
         if (maxSizeFeature is { IsReadOnly: false })

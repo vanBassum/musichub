@@ -9,7 +9,13 @@ import {
 
 // An upload made in this session. "sent" means every byte left the browser but the
 // API has not confirmed storage yet; only the list's `Stored` status is success.
-export type UploadState = "uploading" | "sent" | "failed" | "cancelled"
+// "preparing" is the checksum pass over the file before anything is sent.
+export type UploadState =
+  | "preparing"
+  | "uploading"
+  | "sent"
+  | "failed"
+  | "cancelled"
 
 export interface Upload {
   key: number
@@ -91,8 +97,11 @@ export function useFiles(): FilesState {
   const start = useCallback(
     (file: File) => {
       const key = nextKey.current++
-      const handle = uploadFile(file, (loaded, total) =>
-        patch(key, { loaded, state: loaded >= total ? "sent" : "uploading" })
+      const handle = uploadFile(
+        file,
+        () => patch(key, { state: "uploading" }),
+        (loaded, total) =>
+          patch(key, { loaded, state: loaded >= total ? "sent" : "uploading" })
       )
       setUploads((all) => [
         {
@@ -100,7 +109,7 @@ export function useFiles(): FilesState {
           name: file.name,
           size: file.size,
           loaded: 0,
-          state: "uploading",
+          state: "preparing",
           cancel: handle.cancel,
         },
         ...all,

@@ -6,4 +6,5 @@ public sealed record FileListItem(
     string OriginalFilename,
     long? SizeBytes,
     string Status,
-    DateTimeOffset StartedAt);
+    DateTimeOffset StartedAt,
+    string? FailureReason);
