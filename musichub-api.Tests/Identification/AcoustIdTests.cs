@@ -219,6 +219,21 @@ public class FpcalcFingerprinterTests
     }
 
     [Fact]
+    public async Task A_staging_failure_is_unavailable()
+    {
+        var ex = await Assert.ThrowsAsync<FingerprintUnavailableException>(() =>
+            Create("/nonexistent/fpcalc").FingerprintAsync(new FailingStream(), "a.mp3", CancellationToken.None));
+
+        Assert.Contains("staged", ex.Message);
+    }
+
+    private sealed class FailingStream : MemoryStream
+    {
+        public override ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default) =>
+            throw new IOException("disk full");
+    }
+
+    [Fact]
     public async Task The_json_output_of_fpcalc_is_parsed()
     {
         if (OperatingSystem.IsWindows()) return;

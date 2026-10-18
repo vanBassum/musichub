@@ -40,9 +40,16 @@ public sealed class FpcalcFingerprinter : IChromaprintFingerprinter
         var dir = Path.Combine(Path.GetTempPath(), "musichub-fp-" + Guid.NewGuid().ToString("N"));
         try
         {
-            Directory.CreateDirectory(dir);
             var file = Path.Combine(dir, "audio" + SafeExtension(fileNameHint));
-            await CopyAsync(audio, file, ct);
+            try
+            {
+                Directory.CreateDirectory(dir);
+                await CopyAsync(audio, file, ct);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                throw new FingerprintUnavailableException("The audio could not be staged for fingerprinting.");
+            }
             return Parse(await RunAsync(file, ct));
         }
         finally
