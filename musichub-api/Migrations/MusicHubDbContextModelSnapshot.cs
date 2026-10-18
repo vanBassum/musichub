@@ -132,6 +132,9 @@ namespace MusicHub.Api.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
+                    b.Property<string>("StatusDetail")
+                        .HasColumnType("text");
+
                     b.Property<string>("StorageKey")
                         .IsRequired()
                         .HasColumnType("text");

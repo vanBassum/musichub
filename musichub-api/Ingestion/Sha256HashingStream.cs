@@ -17,6 +17,12 @@ internal sealed class Sha256HashingStream : Stream
     /// <summary>Number of bytes read through this stream so far.</summary>
     public long BytesRead { get; private set; }
 
+    /// <summary>
+    /// The exception the wrapped source threw while being read, if any. It tells a failing source
+    /// (the client's request body) from a failure in whatever consumes this stream (storage).
+    /// </summary>
+    public Exception? SourceError { get; private set; }
+
     public override bool CanRead => true;
     public override bool CanSeek => false;
     public override bool CanWrite => false;
@@ -29,21 +35,27 @@ internal sealed class Sha256HashingStream : Stream
 
     public override int Read(byte[] buffer, int offset, int count)
     {
-        var n = _inner.Read(buffer, offset, count);
+        int n;
+        try { n = _inner.Read(buffer, offset, count); }
+        catch (Exception ex) { SourceError = ex; throw; }
         Record(buffer.AsSpan(offset, n));
         return n;
     }
 
     public override async Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken)
     {
-        var n = await _inner.ReadAsync(buffer, offset, count, cancellationToken);
+        int n;
+        try { n = await _inner.ReadAsync(buffer, offset, count, cancellationToken); }
+        catch (Exception ex) { SourceError = ex; throw; }
         Record(buffer.AsSpan(offset, n));
         return n;
     }
 
     public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
     {
-        var n = await _inner.ReadAsync(buffer, cancellationToken);
+        int n;
+        try { n = await _inner.ReadAsync(buffer, cancellationToken); }
+        catch (Exception ex) { SourceError = ex; throw; }
         Record(buffer.Span[..n]);
         return n;
     }

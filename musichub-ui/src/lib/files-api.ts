@@ -1,4 +1,4 @@
-export type FileStatus = "Pending" | "Uploading" | "Stored" | "Failed"
+export type FileStatus = "Pending" | "Uploading" | "Stored" | "Failed" | "Expired"
 
 // One row of GET /api/files: a persisted registration, not a track.
 export interface FileRegistration {
@@ -8,6 +8,7 @@ export interface FileRegistration {
   status: FileStatus
   startedAt: string
   failureReason: string | null
+  statusDetail: string | null
 }
 
 export async function listFiles(signal?: AbortSignal) {

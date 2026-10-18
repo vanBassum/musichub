@@ -13,7 +13,7 @@ namespace MusicHub.Api.Ingestion;
 /// The received bytes are checked against the client's declared length and SHA-256; a short, long
 /// or corrupt transfer never reaches Stored and its object is removed.
 /// </summary>
-public sealed class FileIngestionService(MusicHubDbContext db, IFileStorage storage)
+public sealed class FileIngestionService(MusicHubDbContext db, IFileStorage storage, ActiveUploadTracker activeUploads)
 {
     /// <summary>
     /// Returns only a record with status Stored; every other outcome throws.
@@ -29,6 +29,10 @@ public sealed class FileIngestionService(MusicHubDbContext db, IFileStorage stor
         var id = Guid.NewGuid();
         var idStr = id.ToString("D"); // e.g. "5f8a2c91-7b43-4c90-a831-1d23e4567890"
         var storageKey = $"library/{idStr[..2]}/{idStr}";
+
+        // Registered before the record exists and released only when this call ends, so the stale-upload
+        // cleanup can never expire a registration whose upload is still running.
+        using var active = activeUploads.Begin(storageKey);
 
         var record = new FileRecord
         {
@@ -58,7 +62,13 @@ public sealed class FileIngestionService(MusicHubDbContext db, IFileStorage stor
                 putError = ex;
             }
 
-            var mismatch = DescribeMismatch(hashingStream, expected);
+            // A PUT that failed while the request body kept delivering is a storage failure, however few
+            // bytes it had consumed: the short count says nothing about the client. Only a failing body
+            // read, or a body that ended cleanly short of the declared length, is a client failure.
+            var storageFailedMidStream = putError is not null
+                && hashingStream.SourceError is null
+                && hashingStream.BytesRead < expected.Length;
+            var mismatch = storageFailedMidStream ? null : DescribeMismatch(hashingStream, expected);
             if (mismatch is { } rejected)
             {
                 await TryDeleteObjectAsync(storageKey);
@@ -68,7 +78,8 @@ public sealed class FileIngestionService(MusicHubDbContext db, IFileStorage stor
 
             // The bytes the API received are intact. A failed PUT may still have stored them:
             // only a conclusive check of the object's length and content counts, not its existence.
-            if (putError is not null && !await IsStoredIntactAsync(storageKey, expected, cancellationToken))
+            if (putError is not null && (storageFailedMidStream
+                || !await IsStoredIntactAsync(storageKey, expected, cancellationToken)))
             {
                 await TryDeleteObjectAsync(storageKey);
                 await TryMarkFailedAsync(record, FileFailureReasons.StorageError);
@@ -169,6 +180,7 @@ public sealed class FileIngestionService(MusicHubDbContext db, IFileStorage stor
         {
             record.Status = FileStatus.Failed;
             record.FailureReason = reason;
+            record.StatusDetail = "The upload failed before storage was confirmed: upload the file again.";
             record.ContentHash = null;
             record.SizeBytes = null;
             await db.SaveChangesAsync(CancellationToken.None);

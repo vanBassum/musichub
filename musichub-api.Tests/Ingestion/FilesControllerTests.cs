@@ -20,7 +20,7 @@ public class FilesControllerTests
     private static FilesController CreateController(MusicHubDbContext db, IFileStorage storage, byte[]? body = null)
     {
         var controller = new FilesController(
-            new FileIngestionService(db, storage), Options.Create(new FileIngestionOptions()))
+            new FileIngestionService(db, storage, new ActiveUploadTracker()),Options.Create(new FileIngestionOptions()))
         {
             ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext() },
         };
@@ -150,10 +150,10 @@ public class FilesControllerTests
     }
 
     [Fact]
-    public void ListItem_ExposesOnlyIdFilenameSizeStatusStartedAtFailureReason()
+    public void ListItem_ExposesOnlyIdFilenameSizeStatusStartedAtFailureReasonStatusDetail()
     {
         Assert.Equal(
-            ["FailureReason", "Id", "OriginalFilename", "SizeBytes", "StartedAt", "Status"],
+            ["FailureReason", "Id", "OriginalFilename", "SizeBytes", "StartedAt", "Status", "StatusDetail"],
             typeof(FileListItem).GetProperties().Select(p => p.Name).Order());
     }
 

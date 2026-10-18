@@ -25,7 +25,7 @@ public class FileIngestionServiceTests
 
         using var db = CreateDb(nameof(IngestAsync_WithNonSeekableStream_ComputesCorrectSha256));
         var storage = new FakeFileStorage();
-        var service = new FileIngestionService(db, storage);
+        var service = new FileIngestionService(db, storage, new ActiveUploadTracker());
 
         var record = await service.IngestAsync(
             new NonSeekableStream(new MemoryStream(data)), "test.txt", null, Expect(data), CancellationToken.None);
@@ -39,7 +39,7 @@ public class FileIngestionServiceTests
         var data = new byte[] { 1, 2, 3 };
         using var db = CreateDb(nameof(IngestAsync_StorageKeyFollowsLibraryLayout));
         var storage = new FakeFileStorage();
-        var service = new FileIngestionService(db, storage);
+        var service = new FileIngestionService(db, storage, new ActiveUploadTracker());
 
         var record = await service.IngestAsync(
             new MemoryStream(data), "song.mp3", null, Expect(data), CancellationToken.None);
@@ -60,7 +60,7 @@ public class FileIngestionServiceTests
         var data = new byte[] { 42 };
         using var db = CreateDb(nameof(IngestAsync_SetsRequiredMetadata));
         var storage = new FakeFileStorage();
-        var service = new FileIngestionService(db, storage);
+        var service = new FileIngestionService(db, storage, new ActiveUploadTracker());
 
         var record = await service.IngestAsync(
             new MemoryStream(data), "track.flac", "audio/flac", Expect(data), CancellationToken.None);
@@ -87,7 +87,7 @@ public class FileIngestionServiceTests
                 .Select(f => (int?)f.Id)
                 .FirstOrDefault();
         });
-        var service = new FileIngestionService(db, storage);
+        var service = new FileIngestionService(db, storage, new ActiveUploadTracker());
 
         await service.IngestAsync(new MemoryStream(data), "f.mp3", null, Expect(data), CancellationToken.None);
 
@@ -100,7 +100,7 @@ public class FileIngestionServiceTests
     {
         var data = new byte[] { 1, 2, 3, 4, 5 };
         using var db = CreateDb(nameof(IngestAsync_OnSuccess_SetsStoredWithHashAndSize));
-        var service = new FileIngestionService(db, new FakeFileStorage());
+        var service = new FileIngestionService(db, new FakeFileStorage(), new ActiveUploadTracker());
 
         var record = await service.IngestAsync(new MemoryStream(data), "a.mp3", null, Expect(data), CancellationToken.None);
 
@@ -116,7 +116,7 @@ public class FileIngestionServiceTests
         using var db = CreateDb(nameof(IngestAsync_WhileStreaming_StatusIsUploadingWithoutHashOrSize));
         FileRecord? seen = null;
         var storage = new FakeFileStorage(onPut: key => seen = db.Files.AsNoTracking().Single(f => f.StorageKey == key));
-        var service = new FileIngestionService(db, storage);
+        var service = new FileIngestionService(db, storage, new ActiveUploadTracker());
 
         await service.IngestAsync(new MemoryStream([1]), "a.mp3", null, Expect([1]), CancellationToken.None);
 
@@ -131,7 +131,7 @@ public class FileIngestionServiceTests
     {
         using var db = CreateDb(nameof(IngestAsync_WhenStorageFails_PersistsFailedWithoutHashOrSize));
         var storage = new FakeFileStorage(onPut: _ => throw new InvalidOperationException("storage down"));
-        var service = new FileIngestionService(db, storage);
+        var service = new FileIngestionService(db, storage, new ActiveUploadTracker());
 
         var ex = await Assert.ThrowsAsync<FileIngestionException>(() =>
             service.IngestAsync(new MemoryStream([1, 2]), "a.mp3", null, Expect([1, 2]), CancellationToken.None));
@@ -155,7 +155,7 @@ public class FileIngestionServiceTests
             cts.Cancel();
             throw new OperationCanceledException(cts.Token);
         });
-        var service = new FileIngestionService(db, storage);
+        var service = new FileIngestionService(db, storage, new ActiveUploadTracker());
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
             service.IngestAsync(new MemoryStream([1, 2]), "a.mp3", null, Expect([1, 2]), cts.Token));
@@ -173,7 +173,7 @@ public class FileIngestionServiceTests
         MusicHubDbContext db, FakeFileStorage storage, byte[] sent, ExpectedUpload expected)
     {
         var ex = await Assert.ThrowsAsync<FileUploadRejectedException>(() =>
-            new FileIngestionService(db, storage).IngestAsync(
+            new FileIngestionService(db, storage, new ActiveUploadTracker()).IngestAsync(
                 new MemoryStream(sent), "a.mp3", null, expected, CancellationToken.None));
         var saved = Assert.Single(db.Files.AsNoTracking());
         Assert.Equal(saved.Id, ex.FileId);
@@ -192,7 +192,7 @@ public class FileIngestionServiceTests
         using var db = CreateDb(nameof(IngestAsync_WhenBytesAndDigestMatch_StoresWithDeclaredValues));
         var expected = Expect(data);
 
-        var record = await new FileIngestionService(db, new FakeFileStorage()).IngestAsync(
+        var record = await new FileIngestionService(db, new FakeFileStorage(), new ActiveUploadTracker()).IngestAsync(
             new MemoryStream(data), "a.mp3", null, expected, CancellationToken.None);
 
         Assert.Equal(FileStatus.Stored, record.Status);
@@ -238,7 +238,7 @@ public class FileIngestionServiceTests
         using var db = CreateDb(nameof(IngestAsync_WhenStorageErrorsAfterCompleteWrite_ConfirmsByContentAndStores));
         var storage = new FakeFileStorage(afterPut: _ => throw new InvalidOperationException("lost PUT response"));
 
-        var record = await new FileIngestionService(db, storage).IngestAsync(
+        var record = await new FileIngestionService(db, storage, new ActiveUploadTracker()).IngestAsync(
             new MemoryStream(data), "a.mp3", null, Expect(data), CancellationToken.None);
 
         Assert.Equal(FileStatus.Stored, record.Status);
@@ -254,7 +254,7 @@ public class FileIngestionServiceTests
             afterPut: _ => throw new InvalidOperationException("PUT broke"), truncateStoredTo: 2);
 
         var ex = await Assert.ThrowsAsync<FileIngestionException>(() =>
-            new FileIngestionService(db, storage).IngestAsync(
+            new FileIngestionService(db, storage, new ActiveUploadTracker()).IngestAsync(
                 new MemoryStream(data), "a.mp3", null, Expect(data), CancellationToken.None));
 
         var saved = Assert.Single(db.Files.AsNoTracking());
@@ -262,6 +262,77 @@ public class FileIngestionServiceTests
         Assert.Equal(FileStatus.Failed, saved.Status);
         Assert.NotNull(saved.FailureReason);
         Assert.False(await storage.ExistsAsync(saved.StorageKey, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task IngestAsync_WhenStorageFailsMidStream_FailsAsStorageErrorNotIncomplete()
+    {
+        byte[] data = [1, 2, 3, 4, 5, 6];
+        using var db = CreateDb(nameof(IngestAsync_WhenStorageFailsMidStream_FailsAsStorageErrorNotIncomplete));
+        var storage = new FakeFileStorage(failAfterReading: 2);
+
+        var ex = await Assert.ThrowsAsync<FileIngestionException>(() =>
+            new FileIngestionService(db, storage, new ActiveUploadTracker()).IngestAsync(
+                new MemoryStream(data), "a.mp3", null, Expect(data), CancellationToken.None));
+
+        var saved = Assert.Single(db.Files.AsNoTracking());
+        Assert.Equal(saved.Id, ex.FileId);
+        Assert.Equal(FileStatus.Failed, saved.Status);
+        Assert.Equal(FileFailureReasons.StorageError, saved.FailureReason);
+        Assert.False(await storage.ExistsAsync(saved.StorageKey, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task IngestAsync_WhenRequestBodyFailsMidStream_FailsAsIncomplete()
+    {
+        byte[] data = [1, 2, 3, 4, 5, 6];
+        using var db = CreateDb(nameof(IngestAsync_WhenRequestBodyFailsMidStream_FailsAsIncomplete));
+        var storage = new FakeFileStorage();
+
+        var ex = await Assert.ThrowsAsync<FileUploadRejectedException>(() =>
+            new FileIngestionService(db, storage, new ActiveUploadTracker()).IngestAsync(
+                new FailingBody(data[..3]), "a.mp3", null, Expect(data), CancellationToken.None));
+
+        var saved = Assert.Single(db.Files.AsNoTracking());
+        Assert.Equal(FileFailureReasons.Incomplete, ex.Reason);
+        Assert.Equal(FileFailureReasons.Incomplete, saved.FailureReason);
+        Assert.Equal(FileStatus.Failed, saved.Status);
+    }
+
+    /// <summary>A request body that delivers some bytes and then fails, as an aborted client connection does.</summary>
+    private sealed class FailingBody(byte[] head) : Stream
+    {
+        private readonly MemoryStream _head = new(head);
+
+        public override bool CanRead => true;
+        public override bool CanSeek => false;
+        public override bool CanWrite => false;
+        public override long Length => throw new NotSupportedException();
+        public override long Position
+        {
+            get => throw new NotSupportedException();
+            set => throw new NotSupportedException();
+        }
+
+        public override int Read(byte[] buffer, int offset, int count) =>
+            ReadCore(buffer.AsSpan(offset, count));
+
+        public override ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken ct = default) =>
+            ValueTask.FromResult(ReadCore(buffer.Span));
+
+        public override Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken ct) =>
+            Task.FromResult(ReadCore(buffer.AsSpan(offset, count)));
+
+        private int ReadCore(Span<byte> buffer)
+        {
+            var n = _head.Read(buffer);
+            return n > 0 ? n : throw new IOException("The client closed the connection.");
+        }
+
+        public override void Flush() { }
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+        public override void SetLength(long value) => throw new NotSupportedException();
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
     }
 
     /// <summary>Wraps a stream and makes it non-seekable, to simulate an HTTP request body.</summary>

@@ -8,12 +8,21 @@ namespace MusicHub.Api.Tests.Ingestion;
 /// stored the object but reported an error); <paramref name="truncateStoredTo"/> keeps only that many bytes.
 /// </summary>
 internal sealed class FakeFileStorage(
-    Action<string>? onPut = null, Action<string>? afterPut = null, int? truncateStoredTo = null) : IFileStorage
+    Action<string>? onPut = null, Action<string>? afterPut = null, int? truncateStoredTo = null,
+    int? failAfterReading = null) : IFileStorage
 {
     private readonly Dictionary<string, byte[]> _objects = [];
 
     public async Task PutAsync(string key, Stream content, string? contentType, CancellationToken ct)
     {
+        if (failAfterReading is { } limit)
+        {
+            // Storage breaks mid-stream: it has consumed part of the body, the body itself never failed.
+            var part = new byte[limit];
+            await content.ReadExactlyAsync(part, ct);
+            throw new InvalidOperationException("S3 connection reset");
+        }
+
         var buffer = new MemoryStream();
         await content.CopyToAsync(buffer, ct);
         onPut?.Invoke(key);
