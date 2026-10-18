@@ -2,3 +2,9 @@
 
 GET {{host}}/api/health
 Accept: application/json
+
+### List tracks: search (title, version, artist), hasAudio, page, pageSize (max 100)
+GET {{host}}/api/tracks?search=monday&hasAudio=false&page=1&pageSize=25
+
+### Track detail
+GET {{host}}/api/tracks/1
