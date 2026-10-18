@@ -47,9 +47,11 @@ public enum EvidenceAvailability
 }
 
 /// <summary>A recording a tool suggests. A suggestion, not an identity.</summary>
+/// <param name="Detail">The tool's own provenance for the suggestion, e.g. an external recording ID and the service's
+/// score; shown with the evidence, never read as MusicHub's confidence.</param>
 /// <param name="Reference">Where the source names this candidate, when it does.</param>
 public sealed record EvidenceCandidate(
-    string Title, IReadOnlyList<string> Artists, string? Album, EvidenceSourceReference? Reference = null);
+    string Title, IReadOnlyList<string> Artists, string? Album, string? Detail = null, EvidenceSourceReference? Reference = null);
 
 /// <summary>A candidate as the source identifies it: its identifiers and URLs, and what the source says about it.</summary>
 /// <param name="RecordingId">The source's identifier for the recording.</param>

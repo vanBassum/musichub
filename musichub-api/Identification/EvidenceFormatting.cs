@@ -8,7 +8,7 @@ internal static class EvidenceFormatting
     public static IEnumerable<IdentificationEvidence> Describe(EvidenceReport report) => report.Availability switch
     {
         EvidenceAvailability.Provided => report.Candidates.Select(c =>
-            new IdentificationEvidence(report.Source, $"{report.Note} Candidate {FormatWithReference(c)}.")),
+            new IdentificationEvidence(report.Source, $"{report.Note} Candidate {FormatWithReference(c)}.{(c.Detail is null ? "" : $" {c.Detail}")}")),
         EvidenceAvailability.NothingFound => [new IdentificationEvidence(report.Source, $"Found nothing. {report.Note}")],
         _ => [new IdentificationEvidence(report.Source, $"Unavailable. {report.Note}")],
     };

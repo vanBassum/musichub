@@ -8,6 +8,7 @@ import {
 } from "react"
 
 import { BuildInfoSheet } from "@/components/build-info-sheet"
+import { FilesView } from "@/components/files-view"
 import { MobileNav } from "@/components/mobile-nav"
 import { mobilePageIndex } from "@/components/mobile-pages"
 import { NowPlaying, QueueList } from "@/components/player-panel"
@@ -19,6 +20,7 @@ import {
   SheetTrigger,
 } from "@/components/ui/sheet"
 import type { Track } from "@/data/mock-tracks"
+import type { FilesState } from "@/lib/use-files"
 import { cn } from "@/lib/utils"
 
 interface MobileShellProps {
@@ -28,17 +30,19 @@ interface MobileShellProps {
   table: ReactNode
   queue: Track[]
   nowPlayingId: string
+  filesState: FilesState
 }
 
 const libraryPage = mobilePageIndex("library")
 const playerPage = mobilePageIndex("player")
 const queuePage = mobilePageIndex("queue")
+const filesPage = mobilePageIndex("files")
 
 const pageClassName =
   "flex h-full w-full shrink-0 snap-center snap-always flex-col overflow-hidden"
 
-// Below `lg` the three panels become full-width pages in a horizontal scroll-snap
-// strip (Library, Player, Queue), opening on the Player. Pages that aren't showing
+// Below `lg` the panels and the Files view become full-width pages in a horizontal
+// scroll-snap strip (Library, Player, Queue, Files), opening on the Player. Pages that aren't showing
 // are inert, so keyboard focus can't land in them.
 export function MobileShell({
   total,
@@ -46,6 +50,7 @@ export function MobileShell({
   table,
   queue,
   nowPlayingId,
+  filesState,
 }: MobileShellProps) {
   const strip = useRef<HTMLDivElement>(null)
   const [active, setActive] = useState(playerPage)
@@ -131,6 +136,9 @@ export function MobileShell({
           <div className="flex min-h-0 flex-1 flex-col rounded-xl border bg-card">
             <QueueList queue={queue} nowPlayingId={nowPlayingId} />
           </div>
+        </div>
+        <div inert={active !== filesPage} className={cn(pageClassName, "p-3")}>
+          <FilesView state={filesState} className="flex-1" />
         </div>
       </div>
       <MobileNav active={active} onNavigate={navigate} />

@@ -111,7 +111,7 @@ public sealed class MusicBrainzCandidateSearch : ICandidateSearch
             : [];
         if (releases.Count == 0)
         {
-            yield return new EvidenceCandidate(title, artists, null,
+            yield return new EvidenceCandidate(title, artists, null, Reference:
                 new EvidenceSourceReference(id, recordingUrl, null, null, string.Join("; ", [.. details, "no release listed"])));
             yield break;
         }
@@ -124,7 +124,7 @@ public sealed class MusicBrainzCandidateSearch : ICandidateSearch
                 title,
                 artists,
                 Text(release, "title"),
-                new EvidenceSourceReference(
+                Reference: new EvidenceSourceReference(
                     id,
                     recordingUrl,
                     releaseId,

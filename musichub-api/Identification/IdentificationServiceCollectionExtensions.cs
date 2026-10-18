@@ -10,7 +10,8 @@ public static class IdentificationServiceCollectionExtensions
     /// configuration. The AI strategy without a configured model fails when resolved, it never falls back silently.
     /// Needs <c>IAudioMetadataReader</c> to be registered. The candidate search and the audio fingerprint tools stay
     /// unavailable, and say so in the evidence, until an <see cref="ICandidateSearch"/> or an
-    /// <see cref="IAudioFingerprintMatcher"/> is registered; <c>Identification:MusicBrainz:Enabled</c> registers the
+    /// <see cref="IAudioFingerprintMatcher"/> is registered; the AcoustID matcher is registered when
+    /// <c>AcoustId__ApiKey</c> is configured, and <c>Identification:MusicBrainz:Enabled</c> registers the
     /// MusicBrainz search, which then needs <c>Contact</c>. The AI strategy also needs an
     /// <see cref="IIdentificationAiClient"/>; without one it leaves every file unresolved.
     /// </summary>
@@ -25,6 +26,13 @@ public static class IdentificationServiceCollectionExtensions
                 MusicBrainzCandidateSearch.Create(
                     sp.GetRequiredService<IOptions<IdentificationOptions>>().Value.MusicBrainz,
                     sp.GetRequiredService<IHttpClientFactory>()));
+        }
+        services.Configure<AcoustIdOptions>(configuration.GetSection(AcoustIdOptions.SectionName));
+        if (!string.IsNullOrWhiteSpace(configuration[$"{AcoustIdOptions.SectionName}:{nameof(AcoustIdOptions.ApiKey)}"]))
+        {
+            services.AddSingleton<IChromaprintFingerprinter, FpcalcFingerprinter>();
+            // The matcher applies AcoustId__TimeoutSeconds itself.
+            services.AddHttpClient<IAudioFingerprintMatcher, AcoustIdFingerprintMatcher>(c => c.Timeout = Timeout.InfiniteTimeSpan);
         }
         services.AddSingleton<IIdentificationEvidenceProvider, FileMetadataEvidenceProvider>();
         services.AddSingleton<IIdentificationEvidenceProvider, CandidateSearchEvidenceProvider>();

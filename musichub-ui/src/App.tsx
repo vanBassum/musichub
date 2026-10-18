@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react"
 
-import { AppHeader } from "@/components/app-header"
+import { AppHeader, type AppView } from "@/components/app-header"
+import { FilesView } from "@/components/files-view"
 import { FilterSidebar } from "@/components/filter-sidebar"
 import { MobileShell } from "@/components/mobile-shell"
 import { PlayerPanel } from "@/components/player-panel"
@@ -9,12 +10,14 @@ import { TrackTable } from "@/components/track-table"
 import { mockNowPlayingId, mockQueue } from "@/data/mock-tracks"
 import type { AudioFilter } from "@/lib/catalog-api"
 import { useTracks } from "@/lib/use-catalog"
+import { useFiles } from "@/lib/use-files"
 import { useIsDesktop } from "@/lib/use-media-query"
 
 const searchDelayMs = 300
 
 export function App() {
   const [selectedId, setSelectedId] = useState<number | null>(null)
+  const [view, setView] = useState<AppView>("library")
   // What the box shows now, and the term sent to the API once typing pauses.
   const [searchInput, setSearchInput] = useState("")
   const [search, setSearch] = useState("")
@@ -22,6 +25,8 @@ export function App() {
   const [page, setPage] = useState(1)
   const isDesktop = useIsDesktop()
   const catalog = useTracks(search, audio, page)
+  // Held here so uploads survive navigation and the desktop/mobile layout swap.
+  const filesState = useFiles()
 
   useEffect(() => {
     const term = searchInput.trim()
@@ -80,6 +85,7 @@ export function App() {
           table={table(false)}
           queue={mockQueue}
           nowPlayingId={mockNowPlayingId}
+          filesState={filesState}
         />
         {details}
       </>
@@ -88,12 +94,18 @@ export function App() {
 
   return (
     <div className="flex min-h-svh flex-col lg:h-svh">
-      <AppHeader />
-      <main className="grid min-h-0 flex-1 gap-4 p-4 lg:grid-cols-[15rem_minmax(0,1fr)_20rem] xl:grid-cols-[17rem_minmax(0,1fr)_24rem]">
-        {filters()}
-        {table(true)}
-        <PlayerPanel queue={mockQueue} nowPlayingId={mockNowPlayingId} />
-      </main>
+      <AppHeader view={view} onNavigate={setView} />
+      {view === "files" ? (
+        <main className="flex min-h-0 flex-1 flex-col p-4">
+          <FilesView state={filesState} className="flex-1" />
+        </main>
+      ) : (
+        <main className="grid min-h-0 flex-1 gap-4 p-4 lg:grid-cols-[15rem_minmax(0,1fr)_20rem] xl:grid-cols-[17rem_minmax(0,1fr)_24rem]">
+          {filters()}
+          {table(true)}
+          <PlayerPanel queue={mockQueue} nowPlayingId={mockNowPlayingId} />
+        </main>
+      )}
       {details}
     </div>
   )
