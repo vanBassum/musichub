@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react"
 
 import { AppHeader, type AppView } from "@/components/app-header"
+import { ArtistPage } from "@/components/artist-page"
 import { FilesView } from "@/components/files-view"
 import { FilterSidebar } from "@/components/filter-sidebar"
 import { MobileShell } from "@/components/mobile-shell"
@@ -98,6 +99,10 @@ export function App() {
       {view === "files" ? (
         <main className="flex min-h-0 flex-1 flex-col p-4">
           <FilesView state={filesState} className="flex-1" />
+        </main>
+      ) : view === "artists" ? (
+        <main className="flex min-h-0 flex-1 flex-col p-4">
+          <ArtistPage className="flex-1" />
         </main>
       ) : (
         <main className="grid min-h-0 flex-1 gap-4 p-4 lg:grid-cols-[15rem_minmax(0,1fr)_20rem] xl:grid-cols-[17rem_minmax(0,1fr)_24rem]">

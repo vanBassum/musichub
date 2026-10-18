@@ -1,4 +1,10 @@
-import { FolderOpen, Library, ListMusic, Music } from "lucide-react"
+import {
+  FolderOpen,
+  Library,
+  ListMusic,
+  Music,
+  UserRound,
+} from "lucide-react"
 
 // The order of the mobile pages, left to right: the strip and the nav both follow it.
 export const mobilePages = [
@@ -6,6 +12,7 @@ export const mobilePages = [
   { id: "player", label: "Player", icon: Music },
   { id: "queue", label: "Queue", icon: ListMusic },
   { id: "files", label: "Files", icon: FolderOpen },
+  { id: "artists", label: "Artists", icon: UserRound },
 ] as const
 
 export type MobilePageId = (typeof mobilePages)[number]["id"]

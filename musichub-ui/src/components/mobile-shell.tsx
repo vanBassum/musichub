@@ -7,6 +7,7 @@ import {
   type ReactNode,
 } from "react"
 
+import { ArtistPage } from "@/components/artist-page"
 import { BuildInfoSheet } from "@/components/build-info-sheet"
 import { FilesView } from "@/components/files-view"
 import { MobileNav } from "@/components/mobile-nav"
@@ -37,12 +38,13 @@ const libraryPage = mobilePageIndex("library")
 const playerPage = mobilePageIndex("player")
 const queuePage = mobilePageIndex("queue")
 const filesPage = mobilePageIndex("files")
+const artistsPage = mobilePageIndex("artists")
 
 const pageClassName =
   "flex h-full w-full shrink-0 snap-center snap-always flex-col overflow-hidden"
 
 // Below `lg` the panels and the Files view become full-width pages in a horizontal
-// scroll-snap strip (Library, Player, Queue, Files), opening on the Player. Pages that aren't showing
+// scroll-snap strip (Library, Player, Queue, Files, Artists), opening on the Player. Pages that aren't showing
 // are inert, so keyboard focus can't land in them.
 export function MobileShell({
   total,
@@ -139,6 +141,9 @@ export function MobileShell({
         </div>
         <div inert={active !== filesPage} className={cn(pageClassName, "p-3")}>
           <FilesView state={filesState} className="flex-1" />
+        </div>
+        <div inert={active !== artistsPage} className={cn(pageClassName, "p-3")}>
+          <ArtistPage className="flex-1" />
         </div>
       </div>
       <MobileNav active={active} onNavigate={navigate} />
