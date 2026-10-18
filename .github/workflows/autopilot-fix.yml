@@ -205,7 +205,7 @@ jobs:
           claude_args: |
             --max-turns 100
             --add-dir ${{ runner.temp }}/autopilot
-            --allowedTools "Read,Write,Edit,Grep,Glob,Bash(dotnet restore:*),Bash(dotnet build:*),Bash(pnpm --dir musichub-ui lint:*),Bash(pnpm --dir musichub-ui typecheck:*),Bash(pnpm --dir musichub-ui build:*),Bash(pnpm --dir musichub-ui format:*),Bash(git add:*),Bash(git commit:*),Bash(git mv:*),Bash(git rm:*),Bash(git status:*),Bash(git diff:*),Bash(git log:*),Bash(git show:*),Bash(gh issue view:*),Bash(gh pr view:*),Bash(gh pr diff:*)"
+            --allowedTools "Read,Write,Edit,Grep,Glob,Bash(dotnet restore:*),Bash(dotnet build:*),Bash(dotnet ef:*),Bash(pnpm --dir musichub-ui lint:*),Bash(pnpm --dir musichub-ui typecheck:*),Bash(pnpm --dir musichub-ui build:*),Bash(pnpm --dir musichub-ui format:*),Bash(git add:*),Bash(git commit:*),Bash(git mv:*),Bash(git rm:*),Bash(git status:*),Bash(git diff:*),Bash(git log:*),Bash(git show:*),Bash(gh issue view:*),Bash(gh pr view:*),Bash(gh pr diff:*)"
 
       # Independent of what Claude reported: a clean tree and a clean build.
       - name: Validate and bundle the commits
