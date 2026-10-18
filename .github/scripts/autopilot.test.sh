@@ -1000,10 +1000,10 @@ jq '[.[] | select(.body | contains("claude-review: smells") | not)]' "$SCENARIO/
 exits "runs fine" 0 outcome
 no_fix "smells left no single well-formed verdict"
 
-CASE=outcome-no-fix-contradictory-verdicts; new_scenario $CASE; state 555 merge 42; pull false open; blocked_review
+CASE=outcome-no-fix-latest-verdict-clears-blocker; new_scenario $CASE; state 555 merge 42; pull false open; blocked_review
 jq --arg s "$S1" --argjson bot "$BOT" '. + [{body: "<!-- claude-review: api sha=\($s) blocking=0 -->", user: $bot}]' "$SCENARIO/issues_42_comments.json" >"$SCENARIO/c.tmp" && mv "$SCENARIO/c.tmp" "$SCENARIO/issues_42_comments.json"
 exits "runs fine" 0 outcome
-no_fix "api left no single well-formed verdict"
+no_fix "no reviewer reported a blocking finding"
 
 CASE=outcome-no-fix-forged-verdict; new_scenario $CASE; state 555 merge 42; pull false open; blocked_review
 jq --arg s "$S1" '[.[] | if (.body | contains("claude-review: api")) then .user = {login: "vanBassum", type: "User"} else . end]' "$SCENARIO/issues_42_comments.json" >"$SCENARIO/c.tmp" && mv "$SCENARIO/c.tmp" "$SCENARIO/issues_42_comments.json"
