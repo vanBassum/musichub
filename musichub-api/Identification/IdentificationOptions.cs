@@ -16,4 +16,7 @@ public sealed class IdentificationOptions
 
     /// <summary>The AI model to refer to; required when <see cref="Strategy"/> is Ai.</summary>
     public string? AiModel { get; set; }
+
+    /// <summary>How many evidence tools the AI may run for one file before it has to propose or give up.</summary>
+    public int AiMaxSteps { get; set; } = 5;
 }

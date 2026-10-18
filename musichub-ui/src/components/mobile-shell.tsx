@@ -1,13 +1,17 @@
 import { SlidersHorizontal } from "lucide-react"
-import { useCallback, useLayoutEffect, useRef, useState } from "react"
+import {
+  useCallback,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react"
 
 import { BuildInfoSheet } from "@/components/build-info-sheet"
 import { FilesView } from "@/components/files-view"
-import { FilterSidebar } from "@/components/filter-sidebar"
 import { MobileNav } from "@/components/mobile-nav"
 import { mobilePageIndex } from "@/components/mobile-pages"
 import { NowPlaying, QueueList } from "@/components/player-panel"
-import { TrackTable } from "@/components/track-table"
 import { Button } from "@/components/ui/button"
 import {
   Sheet,
@@ -20,11 +24,12 @@ import type { FilesState } from "@/lib/use-files"
 import { cn } from "@/lib/utils"
 
 interface MobileShellProps {
-  tracks: Track[]
+  // The catalog's track count, once known.
+  total: number | undefined
+  filters: ReactNode
+  table: ReactNode
   queue: Track[]
   nowPlayingId: string
-  selectedId: string | null
-  onSelect: (id: string) => void
   filesState: FilesState
 }
 
@@ -40,11 +45,11 @@ const pageClassName =
 // scroll-snap strip (Library, Player, Queue, Files), opening on the Player. Pages that aren't showing
 // are inert, so keyboard focus can't land in them.
 export function MobileShell({
-  tracks,
+  total,
+  filters,
+  table,
   queue,
   nowPlayingId,
-  selectedId,
-  onSelect,
   filesState,
 }: MobileShellProps) {
   const strip = useRef<HTMLDivElement>(null)
@@ -96,9 +101,9 @@ export function MobileShell({
         >
           <div className="flex items-center gap-2">
             <h1 className="text-xl font-semibold">Library</h1>
-            <span className="text-muted-foreground">
-              {tracks.length} tracks
-            </span>
+            {total !== undefined && (
+              <span className="text-muted-foreground">{total} tracks</span>
+            )}
             <BuildInfoSheet className="ml-auto" />
             <Sheet>
               <SheetTrigger
@@ -114,20 +119,11 @@ export function MobileShell({
               </SheetTrigger>
               <SheetContent side="bottom" className="h-[85dvh]">
                 <SheetTitle className="sr-only">Filters</SheetTitle>
-                <FilterSidebar
-                  tracks={tracks}
-                  className="flex-1 rounded-none border-0 bg-transparent pt-12"
-                />
+                {filters}
               </SheetContent>
             </Sheet>
           </div>
-          <TrackTable
-            showHeader={false}
-            tracks={tracks}
-            selectedId={selectedId}
-            nowPlayingId={nowPlayingId}
-            onSelect={onSelect}
-          />
+          {table}
         </div>
         <section
           aria-label="Player"

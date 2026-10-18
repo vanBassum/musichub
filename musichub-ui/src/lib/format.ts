@@ -14,3 +14,11 @@ export function formatBytes(bytes: number) {
   }
   return `${unit === 0 ? value : value.toFixed(1)} ${units[unit]}`
 }
+
+export function formatDate(iso: string) {
+  return new Date(iso).toLocaleDateString("en", {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  })
+}
