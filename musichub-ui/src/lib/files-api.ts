@@ -1,4 +1,4 @@
-export type FileStatus = "Pending" | "Uploading" | "Stored" | "Failed"
+export type FileStatus = "Pending" | "Uploading" | "Stored" | "Failed" | "Expired"
 
 // One row of GET /api/files: a persisted registration, not a track.
 export interface FileRegistration {
@@ -7,6 +7,7 @@ export interface FileRegistration {
   sizeBytes: number | null
   status: FileStatus
   startedAt: string
+  statusDetail: string | null
 }
 
 export async function listFiles(signal?: AbortSignal) {
@@ -40,10 +41,20 @@ export function uploadFile(
   onProgress: (loaded: number, total: number) => void
 ): UploadHandle {
   const request = new XMLHttpRequest()
-  const result = new Promise<void>((resolve, reject) => {
+  let cancelled = false
+  const result = sha256Hex(file).then(
+    (sha256) =>
+      new Promise<void>((resolve, reject) => {
+    if (cancelled) {
+      reject(new UploadCancelled())
+      return
+    }
+    // The API requires the declared length and digest and stores the file only if
+    // the bytes it received match both.
     request.open(
       "POST",
-      `/api/files?filename=${encodeURIComponent(file.name)}`
+      `/api/files?filename=${encodeURIComponent(file.name)}` +
+        `&expectedLength=${file.size}&expectedSha256=${sha256}`
     )
     request.setRequestHeader(
       "Content-Type",
@@ -63,8 +74,29 @@ export function uploadFile(
       reject(new UploadError(failureMessage(request)))
     }
     request.send(file)
-  })
-  return { result, cancel: () => request.abort() }
+      })
+  )
+  return {
+    result,
+    cancel: () => {
+      cancelled = true
+      request.abort()
+    },
+  }
+}
+
+// Web Crypto has no incremental SHA-256, so the file is read into memory once.
+// It is only available in a secure context (https or localhost).
+async function sha256Hex(file: File) {
+  if (!globalThis.crypto?.subtle) {
+    throw new UploadError(
+      "This page cannot compute the file's SHA-256 (it needs https). Open the app over https and upload again."
+    )
+  }
+  const digest = await crypto.subtle.digest("SHA-256", await file.arrayBuffer())
+  return Array.from(new Uint8Array(digest), (b) =>
+    b.toString(16).padStart(2, "0")
+  ).join("")
 }
 
 function storedResponse(text: string) {
