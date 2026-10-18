@@ -1,3 +1,4 @@
+using MusicHub.Api.Identification;
 using MusicHub.Api.Ingestion;
 using MusicHub.Api.Storage;
 using System.Text.Json;
@@ -23,6 +24,7 @@ builder.Services.AddDbContext<MusicHubDbContext>((sp, options) =>
     options.UseNpgsql(sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<DatabaseOptions>>().Value.BuildConnectionString()));
 
 builder.Services.AddAudioMetadata();
+builder.Services.AddIdentification(builder.Configuration);
 
 builder.Services.AddHealthChecks()
     .AddCheck<DatabaseHealthCheck>("database", tags: ["ready"]);
