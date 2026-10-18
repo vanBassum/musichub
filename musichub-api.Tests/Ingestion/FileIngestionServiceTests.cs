@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using MusicHub.Api.Data;
 using MusicHub.Api.Ingestion;
 using MusicHub.Api.Storage;
+using Xunit;
 
 namespace MusicHub.Api.Tests.Ingestion;
 
