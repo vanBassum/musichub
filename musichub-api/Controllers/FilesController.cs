@@ -53,9 +53,7 @@ public class FilesController(FileIngestionService ingestion, IOptions<FileIngest
             // The bytes that arrived are not the bytes the client declared; the record is Failed.
             return Problem(
                 title: "Upload verification failed",
-                detail: ex.Failure == UploadIntegrityFailure.Incomplete
-                    ? "Fewer bytes arrived than declared. The file was not stored; upload it again."
-                    : "The received bytes do not match the declared length and SHA-256. The file was not stored; upload it again.",
+                detail: $"{ex.Detail} The file was not stored; upload it again.",
                 statusCode: StatusCodes.Status422UnprocessableEntity,
                 extensions: new Dictionary<string, object?> { ["fileId"] = ex.FileId, ["reason"] = ex.Failure.ToString() });
         }

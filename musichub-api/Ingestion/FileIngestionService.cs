@@ -74,9 +74,7 @@ public sealed class FileIngestionService(
         catch (UploadIntegrityException ex)
         {
             logger?.LogWarning("Upload {FileId} rejected: {Failure}.", record.Id, ex.Failure);
-            await TryMarkFailedAsync(record, ex.Failure, ex.Failure == UploadIntegrityFailure.Incomplete
-                ? "Fewer bytes arrived than declared."
-                : "The received bytes do not match the declared length and SHA-256.");
+            await TryMarkFailedAsync(record, ex.Failure, ex.Detail);
             throw;
         }
         catch (Exception ex) when (ex is BadHttpRequestException)

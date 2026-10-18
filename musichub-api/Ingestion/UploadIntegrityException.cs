@@ -25,4 +25,12 @@ public sealed class UploadIntegrityException(int fileId, UploadIntegrityFailure 
 {
     public int FileId { get; } = fileId;
     public UploadIntegrityFailure Failure { get; } = failure;
+
+    /// <summary>The fixed, safe sentence persisted as the status detail and shown to the client.</summary>
+    public string Detail { get; } = failure switch
+    {
+        UploadIntegrityFailure.Incomplete => "Fewer bytes arrived than declared.",
+        UploadIntegrityFailure.Corrupt => "The received bytes do not match the declared length and SHA-256.",
+        _ => throw new ArgumentOutOfRangeException(nameof(failure), failure, null),
+    };
 }
