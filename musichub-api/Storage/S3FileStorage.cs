@@ -12,39 +12,18 @@ internal sealed class S3FileStorage(IAmazonS3 s3, IOptions<FileStorageOptions> o
 
     public async Task PutAsync(string key, Stream content, string? contentType, CancellationToken cancellationToken)
     {
-        if (content.CanSeek)
+        // TransferUtility handles both seekable and non-seekable streams via multipart upload.
+        using var transfer = new TransferUtility(s3);
+        var request = new TransferUtilityUploadRequest
         {
-            var request = new PutObjectRequest
-            {
-                BucketName = _bucket,
-                Key = key,
-                InputStream = content,
-                AutoCloseStream = false,
-            };
-            if (contentType is not null)
-            {
-                request.ContentType = contentType;
-            }
-            await s3.PutObjectAsync(request, cancellationToken);
-        }
-        else
-        {
-            // Non-seekable stream: use TransferUtility which handles unknown-length input
-            // via multipart upload, so the entire file is never buffered in memory.
-            using var transfer = new TransferUtility(s3);
-            var request = new TransferUtilityUploadRequest
-            {
-                BucketName = _bucket,
-                Key = key,
-                InputStream = content,
-                AutoCloseStream = false,
-            };
-            if (contentType is not null)
-            {
-                request.ContentType = contentType;
-            }
-            await transfer.UploadAsync(request, cancellationToken);
-        }
+            BucketName = _bucket,
+            Key = key,
+            InputStream = content,
+            AutoCloseStream = false,
+        };
+        if (contentType is not null)
+            request.ContentType = contentType;
+        await transfer.UploadAsync(request, cancellationToken);
     }
 
     public async Task<Stream> OpenReadAsync(string key, CancellationToken cancellationToken)

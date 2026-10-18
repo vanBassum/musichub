@@ -24,14 +24,9 @@ public class FilesController(FileIngestionService ingestion, IOptions<FileIngest
         [FromQuery] string? filename,
         CancellationToken cancellationToken)
     {
-        // Set a per-request body size limit via the Kestrel feature (no-op on other hosts).
-        var maxSizeFeature = HttpContext.Features.Get<IHttpMaxRequestBodySizeFeature>();
-        if (maxSizeFeature is { IsReadOnly: false })
-            maxSizeFeature.MaxRequestBodySize = options.Value.MaxUploadSizeBytes;
-
-        // Early rejection when Content-Length is provided and exceeds the limit.
-        if (Request.ContentLength.HasValue && Request.ContentLength > options.Value.MaxUploadSizeBytes)
-            return StatusCode(StatusCodes.Status413RequestEntityTooLarge);
+        var limitResult = EnforceUploadLimit();
+        if (limitResult is not null)
+            return limitResult;
 
         var effectiveFilename = filename ?? "upload";
         var record = await ingestion.IngestAsync(
@@ -47,5 +42,18 @@ public class FilesController(FileIngestionService ingestion, IOptions<FileIngest
             record.Source,
             record.StartedAt,
         });
+    }
+
+    private IActionResult? EnforceUploadLimit()
+    {
+        // The Kestrel feature is the only enforcement for chunked bodies where Content-Length is absent.
+        var maxSizeFeature = HttpContext.Features.Get<IHttpMaxRequestBodySizeFeature>();
+        if (maxSizeFeature is { IsReadOnly: false })
+            maxSizeFeature.MaxRequestBodySize = options.Value.MaxUploadSizeBytes;
+
+        if (Request.ContentLength.HasValue && Request.ContentLength > options.Value.MaxUploadSizeBytes)
+            return StatusCode(StatusCodes.Status413RequestEntityTooLarge);
+
+        return null;
     }
 }
