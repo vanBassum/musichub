@@ -36,8 +36,8 @@ const filesPage = mobilePageIndex("files")
 const pageClassName =
   "flex h-full w-full shrink-0 snap-center snap-always flex-col overflow-hidden"
 
-// Below `lg` the three panels become full-width pages in a horizontal scroll-snap
-// strip (Library, Player, Queue, Files), opening on the Player. Pages that aren't showing
+// Below `lg` the panels and the Files view become full-width pages in a horizontal
+// scroll-snap strip (Library, Player, Queue, Files), opening on the Player. Pages that aren't showing
 // are inert, so keyboard focus can't land in them.
 export function MobileShell({
   tracks,
