@@ -1,5 +1,6 @@
 name: Autopilot
-run-name: Autopilot #${{ github.event.issue.number || inputs.issue }}
+# Quoted, as in claude-review.yml: the watchdog finds the issue by this name.
+run-name: "Autopilot #${{ github.event.issue.number || inputs.issue }}"
 
 # One autonomous attempt at one issue, started by adding the `autopilot` label:
 #

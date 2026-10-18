@@ -240,9 +240,10 @@ Actions budget.
 **Tokens**: `AUTOPILOT_PAT` (secret) is a fine-grained personal access token of
 vanBassum. The repository belongs to a user, so a GitHub App token can't reach the
 board. It is passed only to the shell steps that need it: push the branch and open
-the PR, resume a PR, merge a PR that passed the gate, and rerun a failed run (the
-watchdog; with `Actions: read and write`, so that a rerun that fails again is
-watched too). A fine-grained token can't reach a user's project either, so the card
+the PR, resume a PR, merge a PR that passed the gate, rerun a failed run (the
+watchdog), and dispatch a fix round or a queued attempt. Both need `Actions: read
+and write`: a run started with `GITHUB_TOKEN` starts no `workflow_run`, so the
+watchdog would never see it fail. A fine-grained token can't reach a user's project either, so the card
 is moved with `AUTOPILOT_BOARD_TOKEN` (secret), a classic token with the `project`
 and `repo` scopes (`project` alone can't add an issue of this private repository;
 set to expire, renew it then). It is needed because a PR opened or merged with

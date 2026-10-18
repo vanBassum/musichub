@@ -450,8 +450,14 @@ echo '[{"number":12},{"number":9},{"number":30,"pull_request":{}}]' >"$SCENARIO/
 echo '[]' >"$SCENARIO/issues_9_comments.json"
 state 400 waiting
 exits "runs fine" 0 queue
-called "dispatches autopilot for the waiting issue, with GITHUB_TOKEN" "[gha] workflow run autopilot.yml --repo vanBassum/musichub --ref main -f issue=12"
+called "dispatches autopilot for the waiting issue, with the PAT, so the watchdog sees the run" "[pat] workflow run autopilot.yml --repo vanBassum/musichub --ref main -f issue=12"
 [ "$(grep -c 'workflow run' "$SCENARIO/calls")" = 1 ] && ok "one at a time" || no "one at a time"
+
+CASE=queue-without-pat; new_scenario $CASE; TOKEN_ENV=""
+echo '[{"number":12}]' >"$SCENARIO/issues.json"
+state 400 waiting
+exits "runs fine" 0 queue
+called "without the PAT, the dispatch uses GITHUB_TOKEN" "[gha] workflow run autopilot.yml --repo vanBassum/musichub --ref main -f issue=12"
 
 CASE=queue-lowest-first; new_scenario $CASE
 echo '[{"number":12},{"number":9}]' >"$SCENARIO/issues.json"
@@ -1060,7 +1066,7 @@ no_fix() {
 }
 fix_granted() {
   said "records stage fix for the PR" "$(marker fix 42)"
-  called "dispatches the fix workflow for the reviewed commit, with GITHUB_TOKEN" "[gha] $DISPATCH"
+  called "dispatches the fix workflow for the reviewed commit, with the PAT, so the watchdog sees the run" "[pat] $DISPATCH"
   not_said "doesn't stop" "$(marker todo 42)"
   said "${2:-says which round}" "fix round ${1:-1} of 3"
 }
@@ -1073,6 +1079,11 @@ said "lists the verdicts" "- api: 2 blocking"
 called "moves the card to Build" "o=opt-build"
 not_called "doesn't label the PR no-automerge" "no-automerge"
 not_called "keeps the label" "--remove-label autopilot"
+
+CASE=outcome-fix-without-pat; new_scenario $CASE; state 555 merge 42; pull false open; blocked_review; TOKEN_ENV=""
+exits "runs fine" 0 outcome
+called "without the PAT, the fix dispatch uses GITHUB_TOKEN" "[gha] $DISPATCH"
+not_said "and doesn't stop" "$(marker todo 42)"
 
 CASE=outcome-fix-understanding-concrete; new_scenario $CASE; state 555 merge 42; pull false open
 blocked_review 0 1 "- [risk] The new action has no permission check." 0

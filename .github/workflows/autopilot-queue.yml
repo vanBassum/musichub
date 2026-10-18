@@ -8,8 +8,10 @@ name: Autopilot queue
 # waiting, without a new comment. One issue per tick, so a backlog doesn't spend the
 # whole allowance at once.
 #
-# A workflow_dispatch made with GITHUB_TOKEN does start a run (unlike most events
-# it causes). The job runs no Claude and no code of any PR.
+# The dispatch uses AUTOPILOT_PAT when it can: a run started with GITHUB_TOKEN does
+# start, but its completion starts no workflow_run, so the watchdog would never
+# retry or stop it. It falls back to GITHUB_TOKEN. The job runs no Claude and no
+# code of any PR.
 
 on:
   schedule:
@@ -40,4 +42,5 @@ jobs:
           persist-credentials: false
       - env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          AUTOPILOT_TOKEN: ${{ secrets.AUTOPILOT_PAT }}
         run: bash .github/scripts/autopilot.sh queue
