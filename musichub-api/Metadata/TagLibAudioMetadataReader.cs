@@ -20,11 +20,6 @@ public sealed class TagLibAudioMetadataReader : IAudioMetadataReader
         try
         {
             using var file = TagLib.File.Create(new ReadOnlyStreamAbstraction(audio, fileNameHint), ReadStyle.Average);
-            if (file is TagLib.Mpeg.AudioFile && !HasConsecutiveMpegFrames(audio))
-            {
-                throw new UnsupportedAudioException("The input contains no valid MPEG audio frames.");
-            }
-
             var technical = ReadTechnical(file);
             if (technical.SampleRateHz is null || technical.Channels is null || technical.Duration is null)
             {
@@ -36,54 +31,6 @@ public sealed class TagLibAudioMetadataReader : IAudioMetadataReader
         catch (Exception ex) when (ex is not OperationCanceledException and not UnsupportedAudioException)
         {
             throw new UnsupportedAudioException("The audio is corrupt or not a supported format.", ex);
-        }
-    }
-
-    private static bool HasConsecutiveMpegFrames(Stream stream)
-    {
-        if (!stream.CanSeek)
-        {
-            return true;
-        }
-
-        var originalPosition = stream.Position;
-        try
-        {
-            stream.Position = 0;
-            var length = (int)Math.Min(stream.Length, 1024 * 1024);
-            var bytes = new byte[length];
-            var read = 0;
-            while (read < length)
-            {
-                var count = stream.Read(bytes, read, length - read);
-                if (count == 0) break;
-                read += count;
-            }
-
-            for (var i = 0; i + 8 <= read; i++)
-            {
-                if (bytes[i] != 0xFF || (bytes[i + 1] & 0xE0) != 0xE0) continue;
-                var version = (bytes[i + 1] >> 3) & 3;
-                var layer = (bytes[i + 1] >> 1) & 3;
-                var bitrateIndex = (bytes[i + 2] >> 4) & 15;
-                var sampleIndex = (bytes[i + 2] >> 2) & 3;
-                if (version != 3 || layer != 1 || bitrateIndex is 0 or 15 || sampleIndex == 3) continue;
-                int[] rates = [44100, 48000, 32000];
-                int[] bitrates = [0, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320];
-                var frameLength = 144 * bitrates[bitrateIndex] * 1000 / rates[sampleIndex] + ((bytes[i + 2] >> 1) & 1);
-                var next = i + frameLength;
-                if (next + 4 <= read && bytes[next] == 0xFF && (bytes[next + 1] & 0xFE) == (bytes[i + 1] & 0xFE)
-                    && (bytes[next + 2] & 0xFC) == (bytes[i + 2] & 0xFC))
-                {
-                    return true;
-                }
-            }
-
-            return false;
-        }
-        finally
-        {
-            stream.Position = originalPosition;
         }
     }
 
