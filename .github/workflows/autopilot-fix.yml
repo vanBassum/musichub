@@ -182,12 +182,8 @@ jobs:
              $T/scripts/add-package.sh $T/autopilot/fix.md $T/autopilot/admission.md "$RUNNER_TEMP/sandbox/trusted/"
           cp $T/reviewers/understanding.md "$RUNNER_TEMP/sandbox/trusted/reviewer-understanding.md"
           cp ${{ runner.temp }}/findings/findings.md "$RUNNER_TEMP/sandbox/in/findings.md"
-          gh issue view "$ISSUE" --repo "${{ github.repository }}" --comments >"$RUNNER_TEMP/sandbox/in/issue.md"
-          # Not `gh pr view --comments`: that also reads the checks, which this job's
-          # token may not.
-          gh pr view "$PR" --repo "${{ github.repository }}" --json number,title,headRefName,body,comments \
-            --jq '"# PR #\(.number): \(.title)\n\nBranch: \(.headRefName)\n\n\(.body)\n\n## Comments\n" + ([.comments[] | "\n### \(.author.login), \(.createdAt)\n\n\(.body)\n"] | join(""))' \
-            >"$RUNNER_TEMP/sandbox/in/pr.md"
+          bash $T/scripts/thread-markdown.sh issue "${{ github.repository }}" "$ISSUE" >"$RUNNER_TEMP/sandbox/in/issue.md"
+          bash $T/scripts/thread-markdown.sh pr "${{ github.repository }}" "$PR" >"$RUNNER_TEMP/sandbox/in/pr.md"
           gh pr diff "$PR" --repo "${{ github.repository }}" >"$RUNNER_TEMP/sandbox/in/pr.diff"
           bash $T/scripts/understanding-pending-logs.sh understanding understanding-pending-logs.md
           mv understanding-pending-logs.md "$RUNNER_TEMP/sandbox/in/"

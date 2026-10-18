@@ -11,7 +11,7 @@ The prompt gives REPO, ISSUE, JUDGE_ONLY, IN_DIR and OUT_DIR. You work in the
 repository checked out at the current directory (main, on a new branch). IN_DIR is
 read-only and holds what you read about the issue:
 
-- `issue.md`: the issue with all its comments (`gh issue view --comments`);
+- `issue.md`: the issue (title, labels, body) with all its comments;
 - `open-prs.md`: the open pull requests;
 - `understanding/`: the musichub understanding, and
   `understanding-pending-logs.md`: the accepted decisions newer than its projections;
