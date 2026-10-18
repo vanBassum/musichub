@@ -122,34 +122,27 @@ endpoint is reachable by anyone who can reach the server. Look for:
   HTML (`dangerouslySetInnerHTML`).
 - **Secrets:** tokens, passwords or connection strings committed in
   `appsettings*.json`, code or the UI bundle.
-- **The review gate:** `.github/workflows/claude-review.yml` and
-  `.github/scripts/review-gate.sh` run from `main`, and a PR touching `.github/`,
-  `.githooks/` or `.claude/` never merges itself, so don't report that self-gating.
-  Do report a change that weakens the gate or its trust boundary once merged: a
-  reviewer dropped from the matrix or from `REVIEWERS`, a verdict, SHA, build or path
-  check loosened, PR code executed instead of only read, broader permissions, the
-  PAT handed to a job that runs Claude, or a rule that makes a blocking finding less
-  likely.
+- **The review:** `.github/workflows/claude-review.yml` and the reviewer rules run
+  from `main`, so a PR can't weaken its own review; don't report that. Do report a
+  change that weakens the review once merged: a reviewer dropped from the matrix, a
+  verdict or SHA check loosened, PR code executed instead of only read, broader
+  permissions, or a rule that makes a blocking finding less likely.
 
-## Autopilot: admissibility
+## Claude's PRs
 
-A PR whose HEAD BRANCH (from the prompt) starts with `autopilot/` was built by
-autopilot without a human. Autopilot's builder judged the issue against the
-admission rules in `.github/autopilot/admission.md` (section 2.6, "Never
-autonomous", and "Packages") before it built anything; you check that judgement
-independently, because the builder judged its own work. Read those sections, and
-report as `[risk]` every change in the PR that autopilot may not make on its own:
-irreversible data loss, widening exposure, a security change whose rule the
-understanding doesn't state, a package that is unapproved, unjustified or unsafe
-by those rules, or a change that needs the understanding to change first. Such a
-finding needs a decision, not a code change (see "Reporting"). A PR from any other
-branch was written by a person: skip this section.
+A PR whose HEAD BRANCH (from the prompt) starts with `claude/` was written by Claude
+from an issue (`.github/workflows/claude.yml`). Its author checked the understanding
+itself before it built, so check that independently. Report as `[risk]` every change
+in it that needs a decision first: irreversible data loss, widening exposure, a
+security change whose rule the understanding doesn't state, a package that the
+understanding requires the owner to approve and the issue doesn't name, or a change
+that needs the understanding to change first.
 
 ## Reporting
 
-Use `[risk]` for every CONTRADICTED or UNDOCUMENTED durable change, for a change
-autopilot may not make on its own (see "Autopilot: admissibility"), and for a
-concrete architectural/security violation. These block the merge. Use `[bug]` for
+Use `[risk]` for every CONTRADICTED or UNDOCUMENTED durable change, for a change in
+Claude's PR that needs a decision first (see "Claude's PRs"), and for a concrete
+architectural/security violation. These block the merge. Use `[bug]` for
 directly incorrect externally visible behaviour covered by the contracts. Use
 `[convention]` only for non-blocking evidence/documentation quality issues.
 
@@ -168,14 +161,7 @@ projection should establish it.
 Include the checked understanding commit SHA from the workflow prompt in the summary
 for traceability.
 
-Your marker has one more field than `_common.md` shows, and it must always be there:
-
-`<!-- claude-review: understanding sha=<SHA> blocking=<N> decisions=<D> -->`
-
-`<N>` counts your blocking findings, as usual. `<D>` counts those of them that need
-a decision rather than a code change: every UNDOCUMENTED or CONTRADICTED durable
-change, and every change autopilot may not make on its own. A concrete violation a
-code change can fix (a missing check, a path around an existing owner) is blocking
-but no decision. `<D>` is never more than `<N>`, and `0` when you found nothing.
-Autopilot gives a PR with decisions no fix round: a decision needs Bas. Say for
-each blocking finding whether it needs a decision.
+Say for each blocking finding whether it needs a decision from Bas (every
+UNDOCUMENTED or CONTRADICTED durable change, and every change in Claude's PR that
+needs a decision first) or a code change (a missing check, a path around an
+existing owner).

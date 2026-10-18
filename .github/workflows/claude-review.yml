@@ -1,18 +1,17 @@
 name: Claude PR review
-# The watchdog (autopilot-watchdog.yml) finds the PR by this name. Quoted: an
-# unquoted " #" starts a YAML comment, which would drop the number.
+# Quoted: an unquoted " #" starts a YAML comment, which would drop the number.
 run-name: "Claude PR review #${{ github.event.pull_request.number }}"
 
-# Runs one Claude reviewer per focus area (matrix) on every PR against main, then
-# merges the PR when the fail-closed gate in .github/scripts/review-gate.sh agrees.
-# Each reviewer's instructions live in .github/reviewers/<name>.md, and the shared
-# rules they all follow are in .github/reviewers/_common.md.
+# Runs one Claude reviewer per focus area (matrix) on every PR against main. Each
+# reviewer's instructions live in .github/reviewers/<name>.md, and the shared rules
+# they all follow are in .github/reviewers/_common.md. A reviewer's job is green
+# only when it passed the PR's head commit without blocking findings
+# (.github/scripts/review-verdict.sh). Nothing merges by itself: Bas merges.
 #
-# Trust: this runs on pull_request_target, so the workflow, the reviewer rules and
-# the merge gate always come from main. A PR can't weaken the review of itself.
-# The PR's code is only ever read (checked out at pr/), never executed. Only PRs
-# from branches of this repository are reviewed; a fork PR gets no verdict and so
-# never merges.
+# Trust: this runs on pull_request_target, so the workflow and the reviewer rules
+# always come from main. A PR can't weaken the review of itself. The PR's code is
+# only ever read (checked out at pr/), never executed. Only PRs from branches of
+# this repository are reviewed.
 #
 # The understanding reviewer also reads the current contracts from
 # vanBassum/musichub-understanding/main. UNDERSTANDING_DEPLOY_KEY is the private
@@ -21,14 +20,7 @@ run-name: "Claude PR review #${{ github.event.pull_request.number }}"
 #
 # Auth: CLAUDE_CODE_OAUTH_TOKEN is a repo secret created with `claude setup-token`
 # (it uses the Claude subscription, so no API key is needed). Comments are posted
-# with the workflow's own GITHUB_TOKEN. PRs are merged with AUTOPILOT_PAT, a
-# fine-grained token of the repository's owner: a push made with GITHUB_TOKEN starts
-# no workflows, so main would never be built or get its image. The autopilot job
-# moves the issue's card on the board (a user's project) with AUTOPILOT_BOARD_TOKEN,
-# a classic token with the `project` and `repo` scopes.
-#
-# A reviewer job that fails (a crash, a timeout, no verdict) is rerun once by the
-# watchdog (autopilot-watchdog.yml).
+# with the workflow's own GITHUB_TOKEN.
 
 on:
   pull_request_target:
@@ -47,7 +39,6 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # Keep in sync with REVIEWERS in the automerge and autopilot jobs.
         reviewer: [api, ui, understanding, smells]
     concurrency:
       group: claude-review-${{ github.event.pull_request.number }}-${{ matrix.reviewer }}
@@ -132,147 +123,11 @@ jobs:
             ${{ matrix.reviewer == 'understanding' && '--add-dir understanding' || '' }}
             --allowedTools "Read,Grep,Glob,mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(git log:*),Bash(git show:*)"
 
-      # A reviewer that posted no valid verdict for this exact commit fails here,
-      # so `gh run rerun --failed` reruns that reviewer (and then the gate).
+      # Red: a blocking finding (read the review comment), or no valid verdict for
+      # this exact commit (rerun the job).
       - name: Check the verdict
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR: ${{ github.event.pull_request.number }}
           SHA: ${{ github.event.pull_request.head.sha }}
-        run: bash .github/scripts/review-gate.sh verdict "${{ matrix.reviewer }}"
-
-      # What this review used, as the Claude run itself measured it (see
-      # claude-usage.sh): shown in the job summary, and kept for the autopilot job.
-      - name: Record Claude usage
-        if: always()
-        env:
-          EXEC: ${{ steps.claude.outputs.execution_file }}
-          REVIEWER: ${{ matrix.reviewer }}
-        run: |
-          mkdir -p "$RUNNER_TEMP/usage"
-          if [ -f "$EXEC" ] && bash .github/scripts/claude-usage.sh "$EXEC" >"$RUNNER_TEMP/usage/usage-review-$REVIEWER.json"; then
-            echo "Claude usage ($REVIEWER, client-side measurement): \`$(cat "$RUNNER_TEMP/usage/usage-review-$REVIEWER.json")\`" >>"$GITHUB_STEP_SUMMARY"
-          else
-            rm -f "$RUNNER_TEMP/usage/usage-review-$REVIEWER.json"
-          fi
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: claude-usage-${{ matrix.reviewer }}
-          path: ${{ runner.temp }}/usage
-          if-no-files-found: ignore
-          overwrite: true
-          retention-days: 14
-
-  automerge:
-    needs: review
-    runs-on: [self-hosted, strato]
-    timeout-minutes: 45
-    concurrency:
-      group: claude-automerge-${{ github.event.pull_request.number }}
-      cancel-in-progress: true
-    permissions:
-      contents: write
-      pull-requests: write
-      checks: read
-      # For an autopilot PR the gate reads its issue (state, label, attempt).
-      issues: read
-    # Why the gate refused, for the autopilot job's comment.
-    outputs:
-      reason: ${{ steps.gate.outputs.reason }}
-    steps:
-      - name: Check out the gate from main
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.pull_request.base.ref }}
-          path: trusted
-          sparse-checkout: .github/scripts
-          persist-credentials: false
-          fetch-depth: 1
-
-      - name: Merge when every gate passes
-        id: gate
-        working-directory: ${{ runner.temp }}
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # Only for the merge itself, so the push to main starts the build like any
-          # other. Without it the gate refuses to merge.
-          MERGE_TOKEN: ${{ secrets.AUTOPILOT_PAT }}
-          PR: ${{ github.event.pull_request.number }}
-          SHA: ${{ github.event.pull_request.head.sha }}
-          BASE_BRANCH: main
-          # Keep in sync with the review matrix above.
-          REVIEWERS: api ui understanding smells
-          # Autopilot PRs merge only in full mode (see autopilot.yml).
-          PIPELINE_MODE: ${{ vars.PIPELINE_MODE }}
-          # The build check runs the PR's tests in the sandbox, which takes a while.
-          BUILD_WAIT_SECONDS: '2400'
-        run: bash "$GITHUB_WORKSPACE/trusted/.github/scripts/review-gate.sh" merge
-
-  # An autopilot PR (branch autopilot/issue-N-rRUN, see autopilot.yml) reports how
-  # its review ended to its issue: merged -> Done. Blocked by what a code change can
-  # address (blocking findings that need no decision, a failed build check, a
-  # conflict with main) -> a fix round, up to three per attempt: the attempt moves to
-  # `fix` and this job dispatches autopilot-fix.yml, which pushes the fix to the same
-  # PR, so this workflow reviews it again in full. Anything else -> the attempt
-  # stops, the PR is labelled no-automerge and kept, the issue goes back to To Do.
-  # It decides nothing about merging; the gate above already did, and it merges
-  # nothing while the attempt is in `fix`.
-  autopilot:
-    needs: [review, automerge]
-    if: >-
-      always() &&
-      github.event.pull_request.draft == false &&
-      github.event.pull_request.head.repo.full_name == github.repository &&
-      startsWith(github.event.pull_request.head.ref, 'autopilot/')
-    runs-on: [self-hosted, strato]
-    timeout-minutes: 10
-    concurrency:
-      group: claude-autopilot-${{ github.event.pull_request.number }}
-      cancel-in-progress: false
-    permissions:
-      contents: read
-      issues: write
-      pull-requests: write
-      checks: read
-      # Only to dispatch autopilot-fix.yml for the fix round.
-      actions: write
-    steps:
-      - name: Check out the autopilot script from main
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.pull_request.base.ref }}
-          path: trusted
-          sparse-checkout: .github/scripts
-          persist-credentials: false
-          fetch-depth: 1
-
-      - name: Collect the reviewers' Claude usage
-        uses: actions/download-artifact@v4
-        continue-on-error: true
-        with:
-          pattern: claude-usage-*
-          merge-multiple: true
-          path: ${{ runner.temp }}/autopilot
-
-      - name: Report the outcome to the issue
-        working-directory: ${{ runner.temp }}
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # Dispatches the fix round, so that the watchdog sees that run.
-          AUTOPILOT_TOKEN: ${{ secrets.AUTOPILOT_PAT }}
-          # Moves the board card.
-          AUTOPILOT_PROJECT_ID: ${{ vars.AUTOPILOT_PROJECT_ID }}
-          AUTOPILOT_BOARD_TOKEN: ${{ secrets.AUTOPILOT_BOARD_TOKEN }}
-          AUTOPILOT_DIR: ${{ runner.temp }}/autopilot
-          PR: ${{ github.event.pull_request.number }}
-          SHA: ${{ github.event.pull_request.head.sha }}
-          HEAD_REF: ${{ github.event.pull_request.head.ref }}
-          REVIEW_RESULT: ${{ needs.review.result }}
-          AUTOMERGE_RESULT: ${{ needs.automerge.result }}
-          GATE_REASON: ${{ needs.automerge.outputs.reason }}
-          # The fix round needs a verdict from each (keep in sync with the matrix)
-          # and runs only in full mode.
-          REVIEWERS: api ui understanding smells
-          PIPELINE_MODE: ${{ vars.PIPELINE_MODE }}
-        run: bash "$GITHUB_WORKSPACE/trusted/.github/scripts/autopilot.sh" outcome
+        run: bash .github/scripts/review-verdict.sh "${{ matrix.reviewer }}"

@@ -1,13 +1,12 @@
 name: Work for autopilot
-description: A change that autopilot can build on its own once it gets the `autopilot` label.
+description: A change Claude can build once it gets the `autopilot` label.
 body:
   - type: markdown
     attributes:
       value: |
-        Autopilot builds an issue only when it is clear, small and supported by the
-        understanding (`.github/autopilot/admission.md`). What this form asks for is
-        what it checks first; a missing answer is the most common reason an issue
-        comes back as `autopilot:needs-design`. Decide it here, before the label.
+        With the `autopilot` label, Claude builds this issue and opens a PR
+        (`.github/autopilot.md`). It stops and asks when a decision is missing, so
+        decide it here, before the label.
   - type: textarea
     id: problem
     attributes:
@@ -39,22 +38,7 @@ body:
       description: The projection sections or accepted logs in musichub-understanding that support this. If none does yet, record the decision there first.
       placeholder: features/features.md § Library; logs/2026-10-18-12-00-00-internal-file-upload-contract.md
     validations:
-      required: true
-  - type: textarea
-    id: exposure
-    attributes:
-      label: Exposure and data
-      description: Who can reach what this adds (there is no authentication yet), and whether data is deleted, overwritten or newly shown. "None" when it changes neither.
-    validations:
-      required: true
-  - type: textarea
-    id: packages
-    attributes:
-      label: Packages and components
-      description: Any new NuGet or npm package (name, exact version, why), and the official shadcn/ui components it needs. A UI package beyond React, shadcn/ui and Tailwind needs the owner's explicit approval here. "None" when it needs none.
-      placeholder: "npm: zod 3.25.76, to validate the upload form (approved: @vanBassum)"
-    validations:
-      required: true
+      required: false
   - type: textarea
     id: scope
     attributes:

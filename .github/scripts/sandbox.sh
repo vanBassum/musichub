@@ -1,11 +1,7 @@
 #!/usr/bin/env bash
-# Runs code that no person has merged yet in a throwaway container, away from the
-# runner. That code is Claude's autopilot build and fix runs, and the PR's own
-# restore, build and tests. The self-hosted runner holds the Docker socket and, in
-# other jobs, AUTOPILOT_PAT and the board token. Code that runs on the runner itself
-# can leave something behind for a later job: a file, a process, a git config. So
-# nothing unmerged runs there. A job's trusted steps prepare a directory, the
-# container works in it, and the trusted steps read back only files, as data.
+# Runs a PR's own restore, build and tests in a throwaway container, away from the
+# runner, which holds the Docker socket. A job's trusted steps prepare a directory,
+# the container works in it, and it is removed afterwards.
 #
 #   sandbox.sh prepare <dir> <checkout>   a fresh copy of the commit checked out
 #                                         in <checkout> (and its origin/main, if
@@ -19,18 +15,15 @@
 #   sandbox.sh clean <dir>                remove the container and <dir>
 #
 # Inside the container, <dir> is /work. /work/in and /work/trusted are read-only:
-# the job's inputs, and the scripts and prompts from main. /work/out is where the
-# run leaves its results, and /work/home is its home directory (NuGet and pnpm
-# caches, Claude Code's state). Nothing else of the host is mounted.
+# the job's inputs, and the scripts from main. /work/out is where the run leaves
+# its results, and /work/home is its home directory (NuGet and pnpm caches).
+# Nothing else of the host is mounted.
 #
-# The container gets only these environment variables: CLAUDE_CODE_OAUTH_TOKEN and
-# ANTHROPIC_API_KEY (Claude's credential, when the job sets one), and every variable
-# whose name starts with SANDBOX_ (the job's parameters).
-# .github/scripts/workflows.test.sh checks that no workflow puts a GitHub token in
-# a SANDBOX_ variable. The container runs as the image's unprivileged user, with all
+# The container gets only HOME and the variables whose name starts with SANDBOX_
+# (the job's parameters). It runs as the image's unprivileged user, with all
 # capabilities dropped, no new privileges, a read-only root filesystem, memory, CPU
 # and process limits. It is on its own Docker network, `musichub-sandbox`, which
-# reaches the internet (NuGet, npm, the Claude API) but no stack on the host.
+# reaches the internet (NuGet, npm) but no stack on the host.
 #
 # The bind mounts are resolved by the host's Docker daemon. The strato runners
 # mount their work directory at the same path on both sides
@@ -88,7 +81,7 @@ cmd_run() {
     || docker network inspect "$NETWORK" >/dev/null 2>&1 || fail "Could not create the $NETWORK network."
   uid=$(docker run --rm --network none --entrypoint id "$IMAGE" -u)
   as_root "$dir" chown -R "$uid:$uid" /work
-  for v in CLAUDE_CODE_OAUTH_TOKEN ANTHROPIC_API_KEY $(compgen -e | grep -E '^SANDBOX_[A-Z0-9_]+$' || true); do
+  for v in $(compgen -e | grep -E '^SANDBOX_[A-Z0-9_]+$' || true); do
     [ -n "${!v:-}" ] && env+=(-e "$v")
   done
   NAME=$(container_name)

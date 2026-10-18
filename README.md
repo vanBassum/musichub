@@ -114,15 +114,14 @@ git config core.hooksPath .githooks   # refuses pushes to main
 1. Branch from an up-to-date `main` (`feature/…`, `fix/…`, `docs/…`, `ci/…`), push
    it, and open a pull request to `main`.
 2. The build and four Claude reviewers (api, ui, understanding, smells) run on every
-   push. Each reviewer posts its findings and a verdict for the exact commit.
-3. When the build passes and no reviewer reports a blocking finding, the PR is
-   squash-merged automatically. A PR that changes `.github/`, `.githooks/` or
-   `.claude/`, or carries the `no-automerge` label, is merged by hand.
+   push. Each reviewer posts its findings and a verdict for the exact commit; its
+   check is green only without blocking findings.
+3. Bas merges when everything is green. Nothing merges by itself.
 
-The `autopilot` label on an issue lets Claude judge, build and open the PR by
-itself, and fix what the review finds (up to three rounds); `autopilot:analysis-only`
-together with it asks for an investigation report only. Use the "Work for autopilot"
-issue form.
+The `autopilot` label on an issue lets Claude build it and open the PR, or say which
+decision is missing. `@claude` in a comment on an issue or a PR asks Claude for
+anything else, such as "@claude fix the review findings". Use the "Work for
+autopilot" issue form.
 
 Every push to `main` publishes `ghcr.io/vanbassum/musichub:sha-<12 hex>` (and the
 moving `:main`). Environments pin a `sha-…` tag; there are no release tags.

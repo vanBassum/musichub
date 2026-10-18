@@ -135,9 +135,6 @@ finding blocks; every tagged finding does.
   Don't use `[convention]`; for the other reviewers it means "doesn't block", and nothing you
   report is non-blocking.
 
-Every finding you report blocks, so every one ends with its key, as `_common.md` describes
-(`<!-- finding: smells:<path>:<slug> -->`, the slug naming the smell, such as `duplicate-code`).
-
 In the marker at the end of the summary, `blocking=<N>` is the number of findings you reported:
 every `[risk]` and every `[smell]`. It is `0` only when you report no findings.
 
