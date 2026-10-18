@@ -28,11 +28,7 @@ public sealed class RuleBasedRecordingIdentifier(
         var reports = new List<EvidenceReport>();
         foreach (var provider in providers)
         {
-            if (audio.CanSeek)
-            {
-                audio.Position = 0;
-            }
-            reports.Add(await provider.CollectAsync(new IdentificationContext(audio, fileNameHint, metadata), ct));
+            reports.Add(await CollectFromStartAsync(provider, audio, fileNameHint, metadata, ct));
         }
 
         var evidence = reports.SelectMany(Describe).ToList();

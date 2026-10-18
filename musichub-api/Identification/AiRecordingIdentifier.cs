@@ -41,7 +41,7 @@ public sealed class AiRecordingIdentifier(
         var outcomes = new List<AiToolOutcome>();
         var candidates = new Dictionary<string, EvidenceCandidate>(StringComparer.Ordinal);
 
-        for (var step = 0; step <= maxSteps; step++)
+        for (var step = 0; ; step++)
         {
             var available = tools.Keys.Where(t => outcomes.All(o => o.Tool != t)).ToList();
             AiIdentificationAction? action;
@@ -79,7 +79,7 @@ public sealed class AiRecordingIdentifier(
                     {
                         return Unresolved($"The AI asked for unavailable tool \"{action.Tool}\".", reports);
                     }
-                    var report = await RunToolAsync(tools[action.Tool], audio, fileNameHint, metadata, ct);
+                    var report = await CollectFromStartAsync(tools[action.Tool], audio, fileNameHint, metadata, ct);
                     reports.Add(report);
                     outcomes.Add(ToOutcome(report, candidates));
                     break;
@@ -88,18 +88,6 @@ public sealed class AiRecordingIdentifier(
                     return Unresolved("The AI returned an invalid action.", reports);
             }
         }
-
-        return Unresolved($"The AI used its {maxSteps} allowed tool steps without proposing an identity.", reports);
-    }
-
-    private static async Task<EvidenceReport> RunToolAsync(
-        IIdentificationEvidenceProvider provider, Stream audio, string? fileNameHint, AudioMetadata metadata, CancellationToken ct)
-    {
-        if (audio.CanSeek)
-        {
-            audio.Position = 0;
-        }
-        return await provider.CollectAsync(new IdentificationContext(audio, fileNameHint, metadata), ct);
     }
 
     private static AiToolOutcome ToOutcome(EvidenceReport report, Dictionary<string, EvidenceCandidate> candidates)
