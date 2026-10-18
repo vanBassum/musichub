@@ -89,6 +89,10 @@ jobs:
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
+          # Claude's own PRs (claude.yml) are opened and pushed by the Claude GitHub
+          # App. The review's prompt and rules come from main, so the bot can start
+          # a review but can't change it.
+          allowed_bots: "claude[bot]"
           # Post each inline comment at once, from this job, to this PR. The action's
           # buffer is one fixed file, /tmp/inline-comments-buffer.jsonl, that it never
           # empties; on the shared self-hosted runner another reviewer (also a
