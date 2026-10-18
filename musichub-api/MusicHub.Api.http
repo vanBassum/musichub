@@ -3,20 +3,8 @@
 GET {{host}}/api/health
 Accept: application/json
 
-### Register a track (no audio file needed); artists by name or by artistId
-POST {{host}}/api/tracks
-Content-Type: application/json
-
-{ "title": "Blue Monday", "version": "12-inch mix", "artists": [{ "name": "New Order", "role": "Main" }] }
-
 ### List tracks: search (title, version, artist), hasAudio, page, pageSize (max 100)
 GET {{host}}/api/tracks?search=monday&hasAudio=false&page=1&pageSize=25
 
 ### Track detail
 GET {{host}}/api/tracks/1
-
-### Replace a track's metadata and artists
-PUT {{host}}/api/tracks/1
-Content-Type: application/json
-
-{ "title": "Blue Monday", "version": null, "artists": [{ "artistId": 1, "role": "Main" }] }

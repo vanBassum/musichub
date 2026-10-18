@@ -3,15 +3,6 @@ using MusicHub.Api.Ingestion;
 
 namespace MusicHub.Api.Catalog;
 
-/// <summary>
-/// An artist on a track: an existing artist by <see cref="ArtistId"/>, or by <see cref="Name"/>
-/// (reusing the artist with that name, ignoring case, or creating it). Exactly one of the two.
-/// </summary>
-public record TrackArtistRequest(int? ArtistId, string? Name, string? Role);
-
-/// <summary>Body of creating a track and of replacing its metadata.</summary>
-public record TrackRequest(string? Title, string? Version, List<TrackArtistRequest>? Artists);
-
 public record TrackArtistResponse(int ArtistId, string Name, string? Role);
 
 /// <param name="HasAudio">Derived: at least one linked file whose upload is <see cref="FileStatus.Stored"/>.</param>
