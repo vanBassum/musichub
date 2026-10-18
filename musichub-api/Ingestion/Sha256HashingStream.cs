@@ -11,6 +11,7 @@ internal sealed class Sha256HashingStream : Stream
     private readonly Stream _inner;
     private readonly IncrementalHash _hasher = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
     private byte[]? _finalHash;
+    private bool _hasherDisposed;
 
     public Sha256HashingStream(Stream inner) => _inner = inner;
 
@@ -79,7 +80,14 @@ internal sealed class Sha256HashingStream : Stream
 
     protected override void Dispose(bool disposing)
     {
-        if (disposing) _hasher.Dispose();
+        // The storage client may dispose the stream it was given before PutAsync returns, and the caller
+        // still reads the hash afterwards. Capture it before releasing the hasher.
+        if (disposing && !_hasherDisposed)
+        {
+            _finalHash ??= _hasher.GetHashAndReset();
+            _hasher.Dispose();
+            _hasherDisposed = true;
+        }
         base.Dispose(disposing);
     }
 }
