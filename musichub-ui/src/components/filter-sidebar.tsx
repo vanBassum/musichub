@@ -1,59 +1,33 @@
-import { ChevronDown, Search } from "lucide-react"
-import type { ReactNode } from "react"
+import { Search } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
-import { Checkbox } from "@/components/ui/checkbox"
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from "@/components/ui/collapsible"
 import { Input } from "@/components/ui/input"
-import { Slider } from "@/components/ui/slider"
-import { trackStatuses, type Track } from "@/data/mock-tracks"
+import type { AudioFilter } from "@/lib/catalog-api"
 import { cn } from "@/lib/utils"
 
 interface FilterSidebarProps {
-  tracks: Track[]
+  search: string
+  onSearchChange: (search: string) => void
+  audio: AudioFilter
+  onAudioChange: (audio: AudioFilter) => void
   // Extra classes, e.g. to drop the card chrome inside the mobile sheet.
   className?: string
 }
 
-interface FilterGroupProps {
-  title: string
-  defaultOpen?: boolean
-  children?: ReactNode
-}
+const audioOptions: { value: AudioFilter; label: string }[] = [
+  { value: "all", label: "All tracks" },
+  { value: "with", label: "With audio" },
+  { value: "without", label: "Without audio" },
+]
 
-// Groups open and close; the filters inside are placeholders until filtering exists.
-function FilterGroup({
-  title,
-  defaultOpen = false,
-  children,
-}: FilterGroupProps) {
-  return (
-    <Collapsible defaultOpen={defaultOpen} className="border-b last:border-b-0">
-      <CollapsibleTrigger className="group flex w-full items-center justify-between py-2.5 text-sm font-medium outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/30">
-        {title}
-        <ChevronDown
-          className="size-4 text-muted-foreground transition-transform group-data-[panel-open]:rotate-180"
-          aria-hidden="true"
-        />
-      </CollapsibleTrigger>
-      <CollapsibleContent className="pb-3">
-        {children ?? (
-          <p className="text-xs text-muted-foreground">Not available yet.</p>
-        )}
-      </CollapsibleContent>
-    </Collapsible>
-  )
-}
-
-export function FilterSidebar({ tracks, className }: FilterSidebarProps) {
-  const counts = trackStatuses.map((status) => ({
-    ...status,
-    count: tracks.filter((track) => track.status === status.value).length,
-  }))
+export function FilterSidebar({
+  search,
+  onSearchChange,
+  audio,
+  onAudioChange,
+  className,
+}: FilterSidebarProps) {
+  const filtered = search !== "" || audio !== "all"
 
   return (
     <aside
@@ -68,8 +42,11 @@ export function FilterSidebar({ tracks, className }: FilterSidebarProps) {
         <Button
           variant="link"
           size="sm"
-          disabled
-          title="Not available yet"
+          disabled={!filtered}
+          onClick={() => {
+            onSearchChange("")
+            onAudioChange("all")
+          }}
           className="px-0"
         >
           Clear all
@@ -82,59 +59,28 @@ export function FilterSidebar({ tracks, className }: FilterSidebarProps) {
         />
         <Input
           type="search"
-          disabled
-          placeholder="Search..."
+          value={search}
+          onChange={(event) => onSearchChange(event.target.value)}
+          placeholder="Search title or artist..."
           aria-label="Search library"
           className="h-9 pl-8"
         />
       </div>
-      <div className="-mx-1 flex min-h-0 flex-col overflow-y-auto px-1">
-        <FilterGroup title="Artist" />
-        <FilterGroup title="Album" />
-        <FilterGroup title="Genre" />
-        <FilterGroup title="Year" />
-        <FilterGroup title="Status" defaultOpen>
-          <ul className="flex flex-col gap-2.5">
-            <li className="flex items-center gap-3 text-sm">
-              <Checkbox disabled aria-label="All" />
-              <span className="flex-1 opacity-50">All</span>
-              <span className="text-xs text-muted-foreground">
-                {tracks.length}
-              </span>
-            </li>
-            {counts.map((status) => (
-              <li
-                key={status.value}
-                className="flex items-center gap-3 text-sm"
-              >
-                <Checkbox disabled aria-label={status.label} />
-                <span className="flex-1 opacity-50">{status.label}</span>
-                <span className="text-xs text-muted-foreground">
-                  {status.count}
-                </span>
-              </li>
-            ))}
-          </ul>
-        </FilterGroup>
-        <FilterGroup title="Quality" />
-        <FilterGroup title="File size" />
-        <FilterGroup title="Duration" defaultOpen>
-          <div className="flex flex-col gap-2 px-1 pt-1">
-            <Slider
-              disabled
-              defaultValue={[0, 15]}
-              min={0}
-              max={15}
-              aria-label="Duration in minutes"
-            />
-            <div className="flex justify-between text-xs text-muted-foreground">
-              <span>0:00</span>
-              <span>15:00</span>
-            </div>
-          </div>
-        </FilterGroup>
-        <FilterGroup title="Source" />
-      </div>
+      <fieldset className="flex flex-col gap-2">
+        <legend className="mb-1 text-sm font-medium">Stored audio</legend>
+        {audioOptions.map((option) => (
+          <Button
+            key={option.value}
+            variant={audio === option.value ? "secondary" : "ghost"}
+            size="sm"
+            aria-pressed={audio === option.value}
+            onClick={() => onAudioChange(option.value)}
+            className="justify-start"
+          >
+            {option.label}
+          </Button>
+        ))}
+      </fieldset>
     </aside>
   )
 }

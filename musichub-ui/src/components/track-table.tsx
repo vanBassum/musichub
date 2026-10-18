@@ -1,9 +1,5 @@
-import { ArrowDownUp, LayoutList, MoreHorizontal, Play } from "lucide-react"
-
-import { CoverArt } from "@/components/cover-art"
-import { TrackStatusBadge } from "@/components/track-status-badge"
+import { AudioBadge } from "@/components/audio-badge"
 import { Button } from "@/components/ui/button"
-import { Checkbox } from "@/components/ui/checkbox"
 import {
   Table,
   TableBody,
@@ -12,30 +8,44 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
-import type { Track } from "@/data/mock-tracks"
-import { formatDuration } from "@/lib/format"
+import { artistNames, type PagedTracks } from "@/lib/catalog-api"
+import { formatDate } from "@/lib/format"
+import type { CatalogStatus } from "@/lib/use-catalog"
 import { cn } from "@/lib/utils"
 
 interface TrackTableProps {
-  tracks: Track[]
-  selectedId: string | null
-  nowPlayingId: string
-  onSelect: (id: string) => void
+  status: CatalogStatus
+  data: PagedTracks | undefined
+  error: string | undefined
+  onRetry: () => void
+  onPageChange: (page: number) => void
+  // Whether a search or filter is applied, to word the empty state.
+  filtered: boolean
+  selectedId: number | null
+  onSelect: (id: number) => void
   // The mobile Library page has its own header with the Filters button.
   showHeader?: boolean
 }
 
 export function TrackTable({
-  tracks,
+  status,
+  data,
+  error,
+  onRetry,
+  onPageChange,
+  filtered,
   selectedId,
-  nowPlayingId,
   onSelect,
   showHeader = true,
 }: TrackTableProps) {
+  const tracks = data?.items ?? []
+  const lastPage = data ? Math.max(1, Math.ceil(data.total / data.pageSize)) : 1
+
   return (
     <section
       aria-labelledby={showHeader ? "library-heading" : undefined}
       aria-label={showHeader ? undefined : "Library tracks"}
+      aria-busy={status === "loading"}
       className="flex min-h-0 min-w-0 flex-col rounded-xl border bg-card"
     >
       {showHeader && (
@@ -43,56 +53,44 @@ export function TrackTable({
           <h1 id="library-heading" className="text-xl font-semibold">
             Library
           </h1>
-          <span className="text-lg text-muted-foreground">
-            {tracks.length} tracks
-          </span>
-          <div className="ml-auto flex items-center gap-2">
-            <Button
-              variant="outline"
-              size="icon-lg"
-              disabled
-              aria-label="Change view"
-              title="Not available yet"
-            >
-              <LayoutList />
-            </Button>
-            <Button
-              variant="outline"
-              size="lg"
-              disabled
-              title="Not available yet"
-            >
-              <ArrowDownUp data-icon="inline-start" />
-              Sort: Artist
-            </Button>
-          </div>
+          {data && (
+            <span className="text-lg text-muted-foreground">
+              {data.total} tracks
+            </span>
+          )}
         </div>
       )}
-      <div className="min-h-0 flex-1 overflow-auto">
-        <Table className="min-w-[48rem] text-sm">
+      {status === "error" && (
+        <div
+          role="alert"
+          className="mx-4 mb-2 flex items-center gap-3 rounded-md border border-destructive/40 p-3 text-sm"
+        >
+          <span className="text-destructive">
+            Could not load tracks. {error}
+          </span>
+          <Button variant="outline" size="sm" onClick={onRetry}>
+            Try again
+          </Button>
+        </div>
+      )}
+      <div
+        className={cn(
+          "min-h-0 flex-1 overflow-auto",
+          status === "loading" && data && "opacity-60"
+        )}
+      >
+        <Table className="min-w-[32rem] text-sm">
           <TableHeader className="sticky top-0 z-10 bg-card">
             <TableRow className="hover:bg-transparent">
-              <TableHead className="w-10 pl-4">
-                <Checkbox disabled aria-label="Select all tracks" />
-              </TableHead>
-              <TableHead className="w-12">
-                <span className="sr-only">Cover</span>
-              </TableHead>
-              <TableHead>Title</TableHead>
+              <TableHead className="pl-4">Title</TableHead>
               <TableHead>Artist</TableHead>
-              <TableHead>Album</TableHead>
-              <TableHead>Year</TableHead>
-              <TableHead>Duration</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead className="w-12 pr-4">
-                <span className="sr-only">Actions</span>
-              </TableHead>
+              <TableHead>Audio</TableHead>
+              <TableHead className="pr-4">Added</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {tracks.map((track) => {
               const selected = track.id === selectedId
-              const playing = track.id === nowPlayingId
               return (
                 <TableRow
                   key={track.id}
@@ -113,50 +111,69 @@ export function TrackTable({
                     selected && "bg-primary/20 hover:bg-primary/25"
                   )}
                 >
-                  <TableCell className="pl-4">
-                    {playing ? (
-                      <Play
-                        className="size-4 text-primary"
-                        aria-label="Now playing"
-                      />
-                    ) : (
-                      <Checkbox disabled aria-label={`Select ${track.title}`} />
+                  <TableCell className="max-w-64 truncate pl-4 font-medium">
+                    {track.title}
+                    {track.version && (
+                      <span className="font-normal text-muted-foreground">
+                        {" "}
+                        ({track.version})
+                      </span>
+                    )}
+                  </TableCell>
+                  <TableCell className="max-w-56 truncate">
+                    {artistNames(track) || (
+                      <span className="text-muted-foreground">No artist</span>
                     )}
                   </TableCell>
                   <TableCell>
-                    <CoverArt track={track} className="size-9 text-xs" />
-                  </TableCell>
-                  <TableCell className="max-w-56 truncate font-medium">
-                    {track.title}
-                  </TableCell>
-                  <TableCell className="max-w-44 truncate">
-                    {track.artist}
-                  </TableCell>
-                  <TableCell className="max-w-44 truncate">
-                    {track.album}
-                  </TableCell>
-                  <TableCell>{track.year}</TableCell>
-                  <TableCell>{formatDuration(track.durationSeconds)}</TableCell>
-                  <TableCell>
-                    <TrackStatusBadge status={track.status} />
+                    <AudioBadge hasAudio={track.hasAudio} />
                   </TableCell>
                   <TableCell className="pr-4">
-                    <Button
-                      variant="ghost"
-                      size="icon-sm"
-                      disabled
-                      aria-label={`Actions for ${track.title}`}
-                      title="Not available yet"
-                    >
-                      <MoreHorizontal />
-                    </Button>
+                    {formatDate(track.createdAt)}
                   </TableCell>
                 </TableRow>
               )
             })}
           </TableBody>
         </Table>
+        {status === "loading" && !data && (
+          <p role="status" className="p-4 text-sm text-muted-foreground">
+            Loading tracks…
+          </p>
+        )}
+        {status === "ready" && tracks.length === 0 && (
+          <p className="p-4 text-sm text-muted-foreground">
+            {filtered
+              ? "No tracks match the search or filter."
+              : "The catalog has no tracks yet."}
+          </p>
+        )}
       </div>
+      {data && data.total > 0 && (
+        <div className="flex items-center gap-2 border-t p-3 text-sm">
+          <span className="text-muted-foreground">
+            Page {data.page} of {lastPage}
+          </span>
+          <div className="ml-auto flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={data.page <= 1}
+              onClick={() => onPageChange(data.page - 1)}
+            >
+              Previous
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={data.page >= lastPage}
+              onClick={() => onPageChange(data.page + 1)}
+            >
+              Next
+            </Button>
+          </div>
+        </div>
+      )}
     </section>
   )
 }
