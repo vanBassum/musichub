@@ -171,4 +171,27 @@ public sealed class TracksControllerTests : IDisposable
         Assert.Equal(["Failed", "Without"], (await List(hasAudio: false)).Items.Select(t => t.Title));
         Assert.True(Body<TrackResponse>(await GetDetail(withAudio)).HasAudio);
     }
+
+    [Fact]
+    public async Task List_OnEmptyCatalog_ReturnsEmptyPage()
+    {
+        var page = await List();
+        Assert.Empty(page.Items);
+        Assert.Equal(0, page.Total);
+    }
+
+    [Fact]
+    public void ListQueries_TranslateToPostgres()
+    {
+        // The other tests run on SQLite; this proves the queries also translate for the production provider.
+        using var db = new MusicHubDbContext(
+            new DbContextOptionsBuilder<MusicHubDbContext>().UseNpgsql("Host=localhost").Options);
+
+        var filtered = db.Tracks.AsNoTracking()
+            .Where(t => t.Title.ToLower().Contains("a") || t.Artists.Any(a => a.Artist.Name.ToLower().Contains("a")))
+            .Where(t => t.Files.AsQueryable().Any(TrackResponse.IsStoredAudio) == true);
+
+        Assert.NotEmpty(filtered.OrderBy(t => t.Title).ThenBy(t => t.Id).Skip(0).Take(25).Select(TrackResponse.Projection).ToQueryString());
+        Assert.NotEmpty(filtered.ToQueryString());
+    }
 }
