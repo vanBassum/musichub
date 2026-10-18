@@ -92,7 +92,7 @@ export function FilesView({
       {uploads.length > 0 && (
         <ul
           aria-label="Uploads"
-          className="flex max-h-[30%] shrink-0 flex-col gap-2 overflow-y-auto border-t p-4"
+          className="flex max-h-[30%] shrink-0 flex-col gap-1.5 overflow-y-auto border-t p-4"
         >
           {uploads.map((upload) => (
             <UploadRow
@@ -156,6 +156,29 @@ export function FilesView({
   )
 }
 
+function describeUpload(upload: UploadItem, percent: number) {
+  switch (upload.state) {
+    case "uploading":
+      return {
+        label: `Uploading ${percent}%`,
+        detail: `Sending ${percent}% (${formatBytes(upload.loaded)} of ${formatBytes(upload.size)}). Not stored yet.`,
+      }
+    case "sent":
+      return {
+        label: "Confirming…",
+        detail: "All bytes sent. Waiting for the server to confirm storage.",
+      }
+    case "cancelled":
+      return {
+        label: "Cancelled",
+        detail:
+          "Cancelled. Storage was not confirmed; check the list, then upload it again if needed.",
+      }
+    default:
+      return { label: "Failed", detail: `Failed: ${upload.error}` }
+  }
+}
+
 function UploadRow({
   upload,
   onDismiss,
@@ -166,40 +189,49 @@ function UploadRow({
   const percent = upload.size === 0 ? 100 : Math.floor((upload.loaded / upload.size) * 100)
   const active = upload.state === "uploading" || upload.state === "sent"
 
+  const { label, detail } = describeUpload(upload, percent)
+
   return (
-    <li className="flex items-center gap-3 text-sm">
-      <div className="min-w-0 flex-1">
-        <div className="truncate" title={upload.name}>
-          {upload.name}
-        </div>
-        {active ? (
-          <>
-            <progress
-              value={upload.loaded}
-              max={upload.size || 1}
-              aria-label={`Transfer progress of ${upload.name}`}
-              className="h-1.5 w-full"
-            />
-            <div className="text-xs text-muted-foreground">
-              {upload.state === "sent"
-                ? "All bytes sent. Waiting for the server to confirm storage…"
-                : `Sending ${percent}% (${formatBytes(upload.loaded)} of ${formatBytes(upload.size)}). Not stored yet.`}
-            </div>
-          </>
-        ) : (
-          <div role="alert" className="text-xs text-destructive">
-            {upload.state === "cancelled"
-              ? "Cancelled. Storage was not confirmed; check the list, then upload it again if needed."
-              : `Failed: ${upload.error}`}
-          </div>
+    <li className="flex min-w-0 items-center gap-2 text-sm sm:gap-3">
+      <span className="min-w-0 flex-1 truncate" title={upload.name}>
+        {upload.name}
+      </span>
+      {active && (
+        <progress
+          value={upload.loaded}
+          max={upload.size || 1}
+          aria-label={`Transfer progress of ${upload.name}`}
+          className="hidden h-1.5 w-24 shrink-0 sm:block lg:w-40"
+        />
+      )}
+      <span
+        tabIndex={0}
+        title={detail}
+        role={active ? undefined : "alert"}
+        className={cn(
+          "shrink-0 rounded-sm text-xs focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
+          active ? "text-muted-foreground" : "text-destructive"
         )}
-      </div>
+      >
+        {label}
+        <span className="sr-only">. {detail}</span>
+      </span>
       {upload.cancel ? (
-        <Button variant="outline" size="sm" onClick={upload.cancel}>
+        <Button
+          variant="outline"
+          size="sm"
+          aria-label={`Cancel upload of ${upload.name}`}
+          onClick={upload.cancel}
+        >
           Cancel
         </Button>
       ) : (
-        <Button variant="ghost" size="icon-sm" aria-label="Dismiss" onClick={onDismiss}>
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          aria-label={`Dismiss ${upload.name}`}
+          onClick={onDismiss}
+        >
           <X />
         </Button>
       )}

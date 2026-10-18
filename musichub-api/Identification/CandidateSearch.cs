@@ -13,6 +13,10 @@ public interface ICandidateSearch
         string title, IReadOnlyList<string> artists, CancellationToken ct);
 }
 
+/// <summary>The search service could not answer (network failure, timeout, rate limit, server error): not "no match".</summary>
+public sealed class CandidateSearchUnavailableException(string message, Exception? inner = null)
+    : Exception(message, inner);
+
 /// <summary>
 /// Searches for candidates with the artist and title the tags name, as hints. Reports itself unavailable when no
 /// <see cref="ICandidateSearch"/> is registered.
@@ -34,7 +38,15 @@ public sealed class CandidateSearchEvidenceProvider(ICandidateSearch? search = n
         }
 
         var query = $"\"{title}\" by {string.Join(", ", artists)}";
-        var candidates = await search.SearchAsync(title, artists, ct);
+        IReadOnlyList<EvidenceCandidate> candidates;
+        try
+        {
+            candidates = await search.SearchAsync(title, artists, ct);
+        }
+        catch (CandidateSearchUnavailableException e)
+        {
+            return EvidenceReport.Unavailable(Source, $"The search for {query} failed: {e.Message}");
+        }
         return candidates.Count == 0
             ? EvidenceReport.NothingFound(Source, $"No match for {query}.")
             : EvidenceReport.Provided(Source, candidates, $"Search for {query}.");
