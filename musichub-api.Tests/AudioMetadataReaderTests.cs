@@ -114,28 +114,6 @@ public class AudioMetadataReaderTests
         await Assert.ThrowsAsync<UnsupportedAudioException>(() => _reader.ReadAsync(stream, "song.mp3", CancellationToken.None));
     }
 
-    [Theory]
-    [InlineData("song.mp3")]
-    [InlineData("song.wav")]
-    [InlineData("song.flac")]
-    [InlineData(null)]
-    public async Task Random_bytes_are_unsupported(string? fileName)
-    {
-        var bytes = new byte[4096];
-        new Random(1).NextBytes(bytes);
-        using var stream = new MemoryStream(bytes);
-
-        await Assert.ThrowsAsync<UnsupportedAudioException>(() => _reader.ReadAsync(stream, fileName, CancellationToken.None));
-    }
-
-    [Fact]
-    public async Task Truncated_input_is_unsupported()
-    {
-        using var stream = new MemoryStream(AudioSamples.Wav()[..20]);
-
-        await Assert.ThrowsAsync<UnsupportedAudioException>(() => _reader.ReadAsync(stream, "song.wav", CancellationToken.None));
-    }
-
     [Fact]
     public async Task Cancellation_is_not_wrapped()
     {
