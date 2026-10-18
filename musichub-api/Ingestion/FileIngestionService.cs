@@ -1,3 +1,4 @@
+using Microsoft.EntityFrameworkCore;
 using MusicHub.Api.Data;
 using MusicHub.Api.Storage;
 
@@ -12,6 +13,9 @@ namespace MusicHub.Api.Ingestion;
 /// </summary>
 public sealed class FileIngestionService(MusicHubDbContext db, IFileStorage storage)
 {
+    /// <summary>
+    /// Returns only a record with status Stored; every other outcome throws.
+    /// </summary>
     public async Task<FileRecord> IngestAsync(
         Stream content,
         string filename,
@@ -47,14 +51,29 @@ public sealed class FileIngestionService(MusicHubDbContext db, IFileStorage stor
             record.SizeBytes = hashingStream.BytesRead;
             await db.SaveChangesAsync(cancellationToken);
         }
+        catch (Exception ex) when (ex is BadHttpRequestException)
+        {
+            // A client error while reading the body (e.g. Kestrel's 413 for an over-limit chunked
+            // upload): the file is not stored, but it is not a storage failure either.
+            await TryMarkFailedAsync(record);
+            throw;
+        }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             await TryMarkFailedAsync(record);
-            throw;
+            throw new FileIngestionException(record.Id, ex);
         }
 
         return record;
     }
+
+    /// <summary>Lists persisted file registrations, newest first (Id breaks ties).</summary>
+    public async Task<IReadOnlyList<FileRecord>> ListAsync(CancellationToken cancellationToken) =>
+        await db.Files
+            .AsNoTracking()
+            .OrderByDescending(f => f.StartedAt)
+            .ThenByDescending(f => f.Id)
+            .ToListAsync(cancellationToken);
 
     private async Task TryMarkFailedAsync(FileRecord record)
     {

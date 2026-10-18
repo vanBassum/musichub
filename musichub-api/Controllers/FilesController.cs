@@ -29,22 +29,46 @@ public class FilesController(FileIngestionService ingestion, IOptions<FileIngest
             return limitResult;
 
         var effectiveFilename = filename ?? "upload";
-        var record = await ingestion.IngestAsync(
-            Request.Body, effectiveFilename, Request.ContentType, cancellationToken);
-
-        return StatusCode(StatusCodes.Status201Created, new
+        FileRecord record;
+        try
         {
-            record.Id,
-            record.OriginalFilename,
-            record.StorageLocation,
-            record.StorageKey,
-            Status = record.Status.ToString(),
-            record.ContentHash,
-            record.SizeBytes,
-            record.Source,
-            record.StartedAt,
-        });
+            record = await ingestion.IngestAsync(
+                Request.Body, effectiveFilename, Request.ContentType, cancellationToken);
+        }
+        catch (FileIngestionException ex)
+        {
+            // Never a 2xx: the file is not stored. The record (marked Failed when possible) is in GET /api/files.
+            return Problem(
+                title: "File upload failed",
+                detail: "The file could not be stored. Check its status in GET /api/files and upload it again.",
+                statusCode: StatusCodes.Status502BadGateway,
+                extensions: new Dictionary<string, object?> { ["fileId"] = ex.FileId });
+        }
+
+        return StatusCode(StatusCodes.Status201Created, ToResponse(record));
     }
+
+    /// <summary>Lists the persisted file registrations, newest first.</summary>
+    [HttpGet]
+    public async Task<IActionResult> List(CancellationToken cancellationToken)
+    {
+        var records = await ingestion.ListAsync(cancellationToken);
+        return Ok(records.Select(r => new FileListItem(
+            r.Id, r.OriginalFilename, r.SizeBytes, r.Status.ToString(), r.StartedAt)));
+    }
+
+    private static object ToResponse(FileRecord record) => new
+    {
+        record.Id,
+        record.OriginalFilename,
+        record.StorageLocation,
+        record.StorageKey,
+        Status = record.Status.ToString(),
+        record.ContentHash,
+        record.SizeBytes,
+        record.Source,
+        record.StartedAt,
+    };
 
     private IActionResult? EnforceUploadLimit()
     {

@@ -133,10 +133,12 @@ public class FileIngestionServiceTests
         var storage = new FakeFileStorage(onPut: _ => throw new InvalidOperationException("storage down"));
         var service = new FileIngestionService(db, storage);
 
-        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+        var ex = await Assert.ThrowsAsync<FileIngestionException>(() =>
             service.IngestAsync(new MemoryStream([1, 2]), "a.mp3", null, CancellationToken.None));
+        Assert.IsType<InvalidOperationException>(ex.InnerException);
 
         var saved = Assert.Single(db.Files.AsNoTracking());
+        Assert.Equal(saved.Id, ex.FileId);
         Assert.Equal(FileStatus.Failed, saved.Status);
         Assert.Null(saved.ContentHash);
         Assert.Null(saved.SizeBytes);
@@ -189,24 +191,5 @@ public class FileIngestionServiceTests
         public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
         public override void SetLength(long value) => throw new NotSupportedException();
         public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
-    }
-
-    /// <summary>In-memory IFileStorage that fully reads the stream (so SHA-256 is accumulated).</summary>
-    private sealed class FakeFileStorage(Action<string>? onPut = null) : IFileStorage
-    {
-        public async Task PutAsync(string key, Stream content, string? contentType, CancellationToken ct)
-        {
-            await content.CopyToAsync(Stream.Null, ct);
-            onPut?.Invoke(key);
-        }
-
-        public Task<Stream> OpenReadAsync(string key, CancellationToken ct) =>
-            Task.FromResult<Stream>(new MemoryStream());
-
-        public Task<bool> ExistsAsync(string key, CancellationToken ct) =>
-            Task.FromResult(false);
-
-        public Task DeleteAsync(string key, CancellationToken ct) =>
-            Task.CompletedTask;
     }
 }
