@@ -27,6 +27,11 @@ docker run -p 8080:8080 musichub   # http://localhost:8080
 
 Or `docker compose up --build`.
 
+The UI shows the build identity (full and short commit SHA, UTC build time) in its
+Build info sheet. It comes from the `APP_COMMIT` and `APP_BUILD_TIME` build args of the
+image build, baked into the bundle; a local `pnpm build` or an argument-less
+`docker build` shows `unknown`.
+
 Routing in the container: `/api/*` goes to the controllers (unknown API routes
 return 404), every other path falls back to `index.html` for client-side routing.
 

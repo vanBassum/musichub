@@ -13,6 +13,11 @@ COPY musichub-ui/package.json musichub-ui/pnpm-lock.yaml musichub-ui/pnpm-worksp
 RUN pnpm install --frozen-lockfile
 
 COPY musichub-ui/ ./
+# Build identity from .github/workflows/build.yml, baked into the bundle by Vite.
+ARG APP_COMMIT=unknown
+ARG APP_BUILD_TIME=unknown
+ENV VITE_APP_COMMIT=$APP_COMMIT \
+    VITE_APP_BUILD_TIME=$APP_BUILD_TIME
 RUN pnpm build
 
 # -----------------------------
