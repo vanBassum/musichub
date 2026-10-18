@@ -25,6 +25,13 @@ export interface UploadHandle {
 
 export class UploadError extends Error {}
 
+// The user cancelled: not a failure, but storage was not confirmed either.
+export class UploadCancelled extends UploadError {
+  constructor() {
+    super("Upload cancelled.")
+  }
+}
+
 // POST /api/files streams the raw body. XMLHttpRequest is used because fetch can't
 // report upload progress. `onProgress` reports bytes handed to the network; it is
 // not proof of storage, only the API's 201 is.
@@ -47,7 +54,7 @@ export function uploadFile(
     }
     request.onerror = () =>
       reject(new UploadError("The connection to the server failed. Upload the file again."))
-    request.onabort = () => reject(new UploadError("Upload cancelled."))
+    request.onabort = () => reject(new UploadCancelled())
     request.onload = () => {
       if (request.status === 201 && storedResponse(request.responseText)) {
         resolve()

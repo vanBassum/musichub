@@ -1,5 +1,5 @@
 import { RefreshCw, Upload, X } from "lucide-react"
-import { useCallback, useEffect, useRef, useState } from "react"
+import { useRef } from "react"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -11,28 +11,10 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
-import {
-  listFiles,
-  uploadFile,
-  type FileRegistration,
-  type FileStatus,
-} from "@/lib/files-api"
+import type { FileStatus } from "@/lib/files-api"
 import { formatBytes } from "@/lib/format"
+import type { FilesState, Upload as UploadItem } from "@/lib/use-files"
 import { cn } from "@/lib/utils"
-
-// An upload made in this session. "sent" means every byte left the browser but the
-// API has not confirmed storage yet; only the list's `Stored` status is success.
-type UploadState = "uploading" | "sent" | "failed" | "cancelled"
-
-interface Upload {
-  key: number
-  name: string
-  size: number
-  loaded: number
-  state: UploadState
-  error?: string
-  cancel?: () => void
-}
 
 const statusClassNames: Record<FileStatus, string> = {
   Stored: "bg-success text-success-foreground",
@@ -48,66 +30,16 @@ const statusHints: Record<FileStatus, string> = {
   Pending: "Registered, not confirmed as stored",
 }
 
-export function FilesView({ className }: { className?: string }) {
-  const [files, setFiles] = useState<FileRegistration[] | null>(null)
-  const [loadError, setLoadError] = useState<string | null>(null)
-  const [refreshing, setRefreshing] = useState(true)
-  const [uploads, setUploads] = useState<Upload[]>([])
+export function FilesView({
+  state,
+  className,
+}: {
+  state: FilesState
+  className?: string
+}) {
+  const { files, loadError, refreshing, uploads, refresh, start, dismiss } =
+    state
   const input = useRef<HTMLInputElement>(null)
-  const nextKey = useRef(0)
-
-  const refresh = useCallback(async () => {
-    setRefreshing(true)
-    try {
-      setFiles(await listFiles())
-      setLoadError(null)
-    } catch (error) {
-      setLoadError(error instanceof Error ? error.message : "Loading failed.")
-    } finally {
-      setRefreshing(false)
-    }
-  }, [])
-
-  useEffect(() => {
-    void refresh()
-  }, [refresh])
-
-  const patch = (key: number, change: Partial<Upload>) =>
-    setUploads((all) => all.map((u) => (u.key === key ? { ...u, ...change } : u)))
-
-  const start = (file: File) => {
-    const key = nextKey.current++
-    const handle = uploadFile(file, (loaded, total) =>
-      patch(key, { loaded, state: loaded >= total ? "sent" : "uploading" })
-    )
-    setUploads((all) => [
-      {
-        key,
-        name: file.name,
-        size: file.size,
-        loaded: 0,
-        state: "uploading",
-        cancel: handle.cancel,
-      },
-      ...all,
-    ])
-    handle.result.then(
-      () => {
-        // Stored: the list now carries the confirmed registration.
-        setUploads((all) => all.filter((u) => u.key !== key))
-        void refresh()
-      },
-      (error: Error) => {
-        const cancelled = error.message === "Upload cancelled."
-        patch(key, {
-          state: cancelled ? "cancelled" : "failed",
-          error: error.message,
-          cancel: undefined,
-        })
-        void refresh()
-      }
-    )
-  }
 
   const onSelect = (selected: FileList | null) => {
     if (!selected) return
@@ -161,9 +93,7 @@ export function FilesView({ className }: { className?: string }) {
             <UploadRow
               key={upload.key}
               upload={upload}
-              onDismiss={() =>
-                setUploads((all) => all.filter((u) => u.key !== upload.key))
-              }
+              onDismiss={() => dismiss(upload.key)}
             />
           ))}
         </ul>
@@ -225,7 +155,7 @@ function UploadRow({
   upload,
   onDismiss,
 }: {
-  upload: Upload
+  upload: UploadItem
   onDismiss: () => void
 }) {
   const percent = upload.size === 0 ? 100 : Math.floor((upload.loaded / upload.size) * 100)

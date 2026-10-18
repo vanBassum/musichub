@@ -16,6 +16,7 @@ import {
   SheetTrigger,
 } from "@/components/ui/sheet"
 import type { Track } from "@/data/mock-tracks"
+import type { FilesState } from "@/lib/use-files"
 import { cn } from "@/lib/utils"
 
 interface MobileShellProps {
@@ -24,6 +25,7 @@ interface MobileShellProps {
   nowPlayingId: string
   selectedId: string | null
   onSelect: (id: string) => void
+  filesState: FilesState
 }
 
 const libraryPage = mobilePageIndex("library")
@@ -43,6 +45,7 @@ export function MobileShell({
   nowPlayingId,
   selectedId,
   onSelect,
+  filesState,
 }: MobileShellProps) {
   const strip = useRef<HTMLDivElement>(null)
   const [active, setActive] = useState(playerPage)
@@ -139,7 +142,7 @@ export function MobileShell({
           </div>
         </div>
         <div inert={active !== filesPage} className={cn(pageClassName, "p-3")}>
-          <FilesView className="flex-1" />
+          <FilesView state={filesState} className="flex-1" />
         </div>
       </div>
       <MobileNav active={active} onNavigate={navigate} />
