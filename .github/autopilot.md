@@ -20,6 +20,10 @@ is how you report, so make it say clearly what you did, or why you stopped.
    later decision supersedes earlier projection text). Never write to the
    understanding.
 4. The code the work touches. Find the real owners; don't guess.
+5. What the api, ui and smells reviewers check (`.github/reviewers/api.md`, `ui.md`,
+   `smells.md`), and build so that it passes. Use them as criteria only: don't
+   follow their reporting format, and don't review your own work in separate
+   rounds. The reviewers judge the PR independently.
 
 ## 2. Stop when a decision is missing
 
