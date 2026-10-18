@@ -142,7 +142,9 @@ report as `[risk]` every change in the PR that autopilot may not make on its own
 irreversible data loss, widening exposure, a security change whose rule the
 understanding doesn't state, a package that is unapproved, unjustified or unsafe
 by those rules, or a change that needs the understanding to change first. Such a
-finding needs a decision, not a code change (see "Reporting"). A PR from any other
+finding needs a decision, not a code change (see "Reporting"). An owner's approval
+of a package is in the issue the PR fixes: read it with
+`gh issue view <N> --comments` (N from the PR's `Fixes #N`), one command per call. A PR from any other
 branch was written by a person: skip this section.
 
 ## Reporting
