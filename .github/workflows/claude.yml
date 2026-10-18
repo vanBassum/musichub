@@ -91,8 +91,11 @@ jobs:
           classify_inline_comments: "false"
           additional_permissions: |
             actions: read
+          # One entry per command Claude needs, as the action's docs advise. git add,
+          # commit, rm and push come from the action itself: it pushes through its
+          # own wrapper, which allows no flags, so no git push or fetch here.
           claude_args: |
             --max-turns 150
             --add-dir understanding
-            --allowedTools "Edit,Write,Bash(dotnet:*),Bash(pnpm:*),Bash(git:*),Bash(gh pr create:*),Bash(gh pr view:*),Bash(gh pr diff:*),Bash(gh issue view:*)"
+            --allowedTools "Edit,Write,Bash(git status:*),Bash(git diff:*),Bash(git log:*),Bash(git show:*),Bash(git mv:*),Bash(git fetch origin main),Bash(git merge origin/main:*),Bash(dotnet restore:*),Bash(dotnet build:*),Bash(dotnet test:*),Bash(dotnet add:*),Bash(dotnet ef migrations add:*),Bash(pnpm --dir musichub-ui install:*),Bash(pnpm --dir musichub-ui lint:*),Bash(pnpm --dir musichub-ui typecheck:*),Bash(pnpm --dir musichub-ui build:*),Bash(pnpm --dir musichub-ui format:*),Bash(pnpm --dir musichub-ui add:*),Bash(pnpm --dir musichub-ui exec shadcn add:*),Bash(gh pr create:*),Bash(gh pr view:*),Bash(gh pr diff:*),Bash(gh issue view:*)"
             --append-system-prompt "Before anything else, read .github/autopilot.md and follow it."

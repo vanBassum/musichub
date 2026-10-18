@@ -56,6 +56,8 @@ wording that Bas can add to the issue or to the understanding.
   `pnpm --dir musichub-ui install --frozen-lockfile`, then `pnpm --dir musichub-ui lint`
   and `pnpm --dir musichub-ui build`. Never make a check pass by weakening it.
 - Commit in small commits; a message says what is now true. Commit no build output.
+- Your tools are an explicit list of commands, exactly as written here (one command
+  per call, no `cd`, no chaining). Push with the push command the action gave you.
 
 ## 4. Deliver
 
