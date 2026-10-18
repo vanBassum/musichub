@@ -16,6 +16,12 @@ public class FileRecord
     public FileStatus Status { get; set; }
     public string? ContentHash { get; set; }
     public long? SizeBytes { get; set; }
+
+    /// <summary>Why the upload is Failed; null otherwise.</summary>
+    public UploadIntegrityFailure? FailureReason { get; set; }
+
+    /// <summary>A fixed, safe sentence for the UI that explains <see cref="FailureReason"/>; never exception text.</summary>
+    public string? StatusDetail { get; set; }
     public required string Source { get; set; }
     public DateTimeOffset StartedAt { get; set; }
 

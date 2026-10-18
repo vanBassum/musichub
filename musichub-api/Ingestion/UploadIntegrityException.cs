@@ -1,8 +1,14 @@
 namespace MusicHub.Api.Ingestion;
 
-/// <summary>Why the received bytes do not match what the client declared.</summary>
+/// <summary>
+/// Why an upload is not Stored; persisted on the file record as <see cref="FileRecord.FailureReason"/>.
+/// <see cref="Incomplete"/> and <see cref="Corrupt"/> mean the received bytes do not match what the client declared.
+/// </summary>
 public enum UploadIntegrityFailure
 {
+    /// <summary>The storage backend failed and the stored object could not be verified.</summary>
+    StorageError,
+
     /// <summary>Fewer bytes than declared arrived: a truncated transfer.</summary>
     Incomplete,
 

@@ -74,20 +74,22 @@ public sealed class FileIngestionService(
         catch (UploadIntegrityException ex)
         {
             logger?.LogWarning("Upload {FileId} rejected: {Failure}.", record.Id, ex.Failure);
-            await TryMarkFailedAsync(record);
+            await TryMarkFailedAsync(record, ex.Failure, ex.Failure == UploadIntegrityFailure.Incomplete
+                ? "Fewer bytes arrived than declared."
+                : "The received bytes do not match the declared length and SHA-256.");
             throw;
         }
         catch (Exception ex) when (ex is BadHttpRequestException)
         {
             // A client error while reading the body (e.g. Kestrel's 413 for an over-limit chunked
             // upload): the file is not stored, but it is not a storage failure either.
-            await TryMarkFailedAsync(record);
+            await TryMarkFailedAsync(record, UploadIntegrityFailure.Incomplete, "The request body could not be read completely.");
             throw;
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             logger?.LogError(ex, "Storing file {FileId} failed.", record.Id);
-            await TryMarkFailedAsync(record);
+            await TryMarkFailedAsync(record, UploadIntegrityFailure.StorageError, "The storage backend failed and the object could not be verified.");
             throw new FileIngestionException(record.Id, ex);
         }
 
@@ -149,11 +151,13 @@ public sealed class FileIngestionService(
         }
     }
 
-    private async Task TryMarkFailedAsync(FileRecord record)
+    private async Task TryMarkFailedAsync(FileRecord record, UploadIntegrityFailure reason, string detail)
     {
         try
         {
             record.Status = FileStatus.Failed;
+            record.FailureReason = reason;
+            record.StatusDetail = detail;
             record.ContentHash = null;
             record.SizeBytes = null;
             await db.SaveChangesAsync(CancellationToken.None);

@@ -18,8 +18,8 @@ public class FilesController(FileIngestionService ingestion, IOptions<FileIngest
     /// Streams the raw request body into managed storage and returns the registered file record.
     /// </summary>
     /// <param name="filename">Original filename. Falls back to "upload" when not supplied.</param>
-    /// <param name="expectedLength">Declared byte length of the body. Requires <paramref name="expectedSha256"/>.</param>
-    /// <param name="expectedSha256">Declared SHA-256 (hex) of the body. Given with the length, the upload is Stored only if both match.</param>
+    /// <param name="expectedLength">Declared byte length of the body (required).</param>
+    /// <param name="expectedSha256">Declared SHA-256 (hex) of the body (required). The upload is Stored only if length and digest both match.</param>
     [HttpPost]
     [DisableRequestSizeLimit]
     public async Task<IActionResult> Upload(
@@ -28,18 +28,14 @@ public class FilesController(FileIngestionService ingestion, IOptions<FileIngest
         [FromQuery] string? expectedSha256,
         CancellationToken cancellationToken)
     {
-        UploadExpectation? expected = null;
-        if (expectedLength is not null || expectedSha256 is not null)
-        {
-            expected = expectedLength is { } length && expectedSha256 is not null
-                ? UploadExpectation.TryCreate(length, expectedSha256)
-                : null;
-            if (expected is null)
-                return Problem(
-                    title: "Invalid upload verification values",
-                    detail: "expectedLength (a non-negative byte count) and expectedSha256 (64 hex characters) must be given together.",
-                    statusCode: StatusCodes.Status400BadRequest);
-        }
+        var expected = expectedLength is { } length && expectedSha256 is not null
+            ? UploadExpectation.TryCreate(length, expectedSha256)
+            : null;
+        if (expected is null)
+            return Problem(
+                title: "Invalid upload verification values",
+                detail: "expectedLength (a non-negative byte count) and expectedSha256 (64 hex characters) are required.",
+                statusCode: StatusCodes.Status400BadRequest);
 
         var limitResult = EnforceUploadLimit();
         if (limitResult is not null)
@@ -70,7 +66,7 @@ public class FilesController(FileIngestionService ingestion, IOptions<FileIngest
                 title: "File upload failed",
                 detail: "The file could not be stored. Check its status in GET /api/files and upload it again.",
                 statusCode: StatusCodes.Status502BadGateway,
-                extensions: new Dictionary<string, object?> { ["fileId"] = ex.FileId });
+                extensions: new Dictionary<string, object?> { ["fileId"] = ex.FileId, ["reason"] = UploadIntegrityFailure.StorageError.ToString() });
         }
 
         return StatusCode(StatusCodes.Status201Created, ToResponse(record));
@@ -82,7 +78,8 @@ public class FilesController(FileIngestionService ingestion, IOptions<FileIngest
     {
         var records = await ingestion.ListAsync(cancellationToken);
         return Ok(records.Select(r => new FileListItem(
-            r.Id, r.OriginalFilename, r.SizeBytes, r.Status.ToString(), r.StartedAt)));
+            r.Id, r.OriginalFilename, r.SizeBytes, r.Status.ToString(), r.StartedAt,
+            r.FailureReason?.ToString(), r.StatusDetail)));
     }
 
     /// <summary>Streams the original bytes of a Stored file as an attachment named after its original filename.</summary>

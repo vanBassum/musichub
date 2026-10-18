@@ -144,6 +144,8 @@ public class FileIngestionServiceTests
         var saved = Assert.Single(db.Files.AsNoTracking());
         Assert.Equal(saved.Id, ex.FileId);
         Assert.Equal(FileStatus.Failed, saved.Status);
+        Assert.Equal(UploadIntegrityFailure.StorageError, saved.FailureReason);
+        Assert.DoesNotContain("storage down", saved.StatusDetail);
         Assert.Null(saved.ContentHash);
         Assert.Null(saved.SizeBytes);
     }
@@ -162,6 +164,8 @@ public class FileIngestionServiceTests
         var saved = Assert.Single(db.Files.AsNoTracking());
         Assert.Equal(ex.FileId, saved.Id);
         Assert.Equal(FileStatus.Failed, saved.Status);
+        Assert.Equal(UploadIntegrityFailure.Incomplete, saved.FailureReason);
+        Assert.False(string.IsNullOrWhiteSpace(saved.StatusDetail));
         Assert.Null(saved.ContentHash);
         Assert.Null(saved.SizeBytes);
     }
@@ -178,6 +182,7 @@ public class FileIngestionServiceTests
         Assert.Equal(UploadIntegrityFailure.Corrupt, ex.Failure);
         var saved = Assert.Single(db.Files.AsNoTracking());
         Assert.Equal(FileStatus.Failed, saved.Status);
+        Assert.Equal(UploadIntegrityFailure.Corrupt, saved.FailureReason);
         Assert.Null(saved.ContentHash);
         Assert.Null(saved.SizeBytes);
     }
