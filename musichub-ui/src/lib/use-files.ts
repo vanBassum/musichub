@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 
 import {
+  deleteFailedFiles,
   deleteFile,
   listFiles,
   uploadFile,
   UploadCancelled,
+  type FailedFilesDeletion,
   type FileRegistration,
 } from "@/lib/files-api"
 
@@ -25,9 +27,17 @@ export interface Upload {
 // A delete requested in this session: pending until the API answers; an error stays until retried.
 export type DeleteState = { pending: true } | { pending: false; error: string }
 
+// The bulk delete of Failed files: pending, then either the API's counts or an error.
+export type BulkDeleteState =
+  | { pending: true }
+  | { pending: false; result: FailedFilesDeletion }
+  | { pending: false; error: string }
+
 export interface FilesState {
   deletions: Record<string, DeleteState>
+  bulkDeletion: BulkDeleteState | null
   remove: (id: string) => void
+  removeFailed: () => void
   files: FileRegistration[] | null
   loadError: string | null
   refreshing: boolean
@@ -161,6 +171,26 @@ export function useFiles(): FilesState {
     [refresh]
   )
 
+  const [bulkDeletion, setBulkDeletion] = useState<BulkDeleteState | null>(null)
+  const bulkInFlight = useRef(false)
+
+  // One bulk delete at a time. The API selects the Failed files when it runs; the list is refreshed afterwards.
+  const removeFailed = useCallback(() => {
+    if (bulkInFlight.current) return
+    bulkInFlight.current = true
+    setBulkDeletion({ pending: true })
+    deleteFailedFiles()
+      .then(
+        (result) => setBulkDeletion({ pending: false, result }),
+        (error: Error) =>
+          setBulkDeletion({ pending: false, error: error.message })
+      )
+      .finally(() => {
+        bulkInFlight.current = false
+        void refresh()
+      })
+  }, [refresh])
+
   const dismiss = useCallback(
     (key: number) => setUploads((all) => all.filter((u) => u.key !== key)),
     []
@@ -172,9 +202,11 @@ export function useFiles(): FilesState {
     refreshing,
     uploads,
     deletions,
+    bulkDeletion,
     refresh,
     start,
     dismiss,
     remove,
+    removeFailed,
   }
 }

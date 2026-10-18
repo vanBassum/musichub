@@ -33,6 +33,25 @@ export async function deleteFile(id: string) {
   )
 }
 
+// What POST /api/files/delete-failed did: the API picks the Failed files itself when it runs.
+// `skipped` files were no longer Failed (or being uploaded) and were left alone; `failed`
+// files stay in the list as Deleting and can be deleted again.
+export interface FailedFilesDeletion {
+  deleted: number
+  skipped: number
+  failed: { fileId: number; detail: string }[]
+}
+
+export async function deleteFailedFiles() {
+  const response = await fetch("/api/files/delete-failed", { method: "POST" })
+  if (!response.ok) {
+    throw new Error(
+      `The failed files could not be deleted (HTTP ${response.status}).`
+    )
+  }
+  return (await response.json()) as FailedFilesDeletion
+}
+
 export async function listFiles(signal?: AbortSignal) {
   const response = await fetch("/api/files", { signal })
   if (!response.ok) {

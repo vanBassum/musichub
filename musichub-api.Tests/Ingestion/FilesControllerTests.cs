@@ -198,6 +198,33 @@ public class FilesControllerTests
     }
 
     [Fact]
+    public async Task DeleteFailed_RemovesFailedFilesAndReportsCounts()
+    {
+        using var db = CreateDb(nameof(DeleteFailed_RemovesFailedFilesAndReportsCounts));
+        var controller = CreateController(db, new FakeFileStorage());
+        db.Files.AddRange(
+            NewRecord(FileStatus.Failed), NewRecord(FileStatus.Failed), NewRecord(FileStatus.Stored));
+        await db.SaveChangesAsync();
+
+        var result = Assert.IsType<OkObjectResult>(await controller.DeleteFailed(CancellationToken.None));
+
+        var body = Assert.IsType<FailedFilesDeletion>(result.Value);
+        Assert.Equal(2, body.Deleted);
+        Assert.Empty(body.Failed);
+        Assert.Equal(FileStatus.Stored, Assert.Single(db.Files.AsNoTracking()).Status);
+    }
+
+    private static FileRecord NewRecord(FileStatus status) => new()
+    {
+        OriginalFilename = "a.mp3",
+        StorageLocation = "default",
+        StorageKey = $"library/aa/{Guid.NewGuid()}",
+        Status = status,
+        Source = "upload",
+        StartedAt = DateTimeOffset.UtcNow,
+    };
+
+    [Fact]
     public async Task Delete_UnknownFile_Returns404()
     {
         using var db = CreateDb(nameof(Delete_UnknownFile_Returns404));

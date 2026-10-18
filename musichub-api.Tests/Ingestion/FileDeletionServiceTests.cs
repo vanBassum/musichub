@@ -243,6 +243,128 @@ public sealed class FileDeletionServiceTests : IDisposable
         Assert.False(await RecordExistsAsync(id));
     }
 
+    [Fact]
+    public async Task DeleteFailed_RemovesOnlyFailedFilesWithTheirObjects()
+    {
+        var failedWithObject = await AddAsync(FileStatus.Failed);
+        var failedWithoutObject = await AddAsync(FileStatus.Failed, withObject: false);
+        var stored = await AddAsync(FileStatus.Stored);
+        var expired = await AddAsync(FileStatus.Expired, withObject: false);
+        var key = (await LoadAsync(failedWithObject)).StorageKey;
+        var storedKey = (await LoadAsync(stored)).StorageKey;
+        using var db = CreateDb();
+
+        var result = await CreateService(db).DeleteFailedAsync(CancellationToken.None);
+
+        Assert.Equal(2, result.Deleted);
+        Assert.Equal(0, result.Skipped);
+        Assert.Empty(result.Failed);
+        Assert.False(await RecordExistsAsync(failedWithObject));
+        Assert.False(await RecordExistsAsync(failedWithoutObject));
+        Assert.True(await RecordExistsAsync(stored));
+        Assert.True(await RecordExistsAsync(expired));
+        Assert.False(await _storage.ExistsAsync(key, CancellationToken.None));
+        Assert.True(await _storage.ExistsAsync(storedKey, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task DeleteFailed_NoFailedFiles_DeletesNothing()
+    {
+        await AddAsync(FileStatus.Stored);
+        using var db = CreateDb();
+
+        var result = await CreateService(db).DeleteFailedAsync(CancellationToken.None);
+
+        Assert.Equal(0, result.Deleted);
+        Assert.Equal(0, result.Skipped);
+        Assert.Empty(result.Failed);
+        Assert.Equal(0, _storage.DeleteCalls);
+    }
+
+    [Fact]
+    public async Task DeleteFailed_FileThatIsNoLongerFailed_IsSkippedAndKept()
+    {
+        var id = await AddAsync(FileStatus.Failed);
+        using var db = CreateDb();
+        var service = CreateService(db);
+
+        // The status changes between the selection of ids and the delete.
+        using (var other = CreateDb())
+            await other.Files.Where(f => f.Id == id).ExecuteUpdateAsync(s => s.SetProperty(f => f.Status, FileStatus.Stored));
+
+        Assert.Equal(
+            FileDeletionOutcome.StatusChanged,
+            await service.DeleteAsync(id, CancellationToken.None, onlyIfStatus: FileStatus.Failed));
+
+        var kept = await LoadAsync(id);
+        Assert.Equal(FileStatus.Stored, kept.Status);
+        Assert.True(await _storage.ExistsAsync(kept.StorageKey, CancellationToken.None));
+        Assert.Equal(0, _storage.DeleteCalls);
+    }
+
+    [Fact]
+    public async Task DeleteFailed_StatusChangesDuringTheRun_ThatFileIsSkipped()
+    {
+        var first = await AddAsync(FileStatus.Failed);
+        var second = await AddAsync(FileStatus.Failed);
+        using var db = CreateDb();
+        // While the first file is being deleted, the second is changed to Stored by someone else.
+        _storage.BeforeExists = async () =>
+        {
+            _storage.BeforeExists = null;
+            using var other = CreateDb();
+            await other.Files.Where(f => f.Id == second).ExecuteUpdateAsync(s => s.SetProperty(f => f.Status, FileStatus.Stored));
+        };
+
+        var result = await CreateService(db).DeleteFailedAsync(CancellationToken.None);
+
+        Assert.Equal(1, result.Deleted);
+        Assert.Equal(1, result.Skipped);
+        Assert.False(await RecordExistsAsync(first));
+        Assert.Equal(FileStatus.Stored, (await LoadAsync(second)).Status);
+    }
+
+    [Fact]
+    public async Task DeleteFailed_FileWithRunningUpload_IsSkipped()
+    {
+        var id = await AddAsync(FileStatus.Failed);
+        var key = (await LoadAsync(id)).StorageKey;
+        using var db = CreateDb();
+
+        FailedFilesDeletion result;
+        using (_tracker.Begin(key))
+            result = await CreateService(db).DeleteFailedAsync(CancellationToken.None);
+
+        Assert.Equal(0, result.Deleted);
+        Assert.Equal(1, result.Skipped);
+        Assert.True(await RecordExistsAsync(id));
+    }
+
+    [Fact]
+    public async Task DeleteFailed_StorageFailure_IsReportedPerFileAndTheFileStaysRetryable()
+    {
+        var a = await AddAsync(FileStatus.Failed);
+        var b = await AddAsync(FileStatus.Failed);
+        _storage.FailDelete = true;
+        using (var db = CreateDb())
+        {
+            var result = await CreateService(db).DeleteFailedAsync(CancellationToken.None);
+
+            Assert.Equal(0, result.Deleted);
+            Assert.Equal([a, b], result.Failed.Select(f => f.FileId).Order());
+            Assert.All(result.Failed, f => Assert.DoesNotContain("secret-host", f.Detail));
+        }
+
+        Assert.Equal(FileStatus.Deleting, (await LoadAsync(a)).Status);
+        Assert.Equal(FileStatus.Deleting, (await LoadAsync(b)).Status);
+
+        // The per-file delete retries a Deleting file.
+        _storage.FailDelete = false;
+        using var retry = CreateDb();
+        Assert.Equal(FileDeletionOutcome.Deleted, await CreateService(retry).DeleteAsync(a, CancellationToken.None));
+        Assert.False(await RecordExistsAsync(a));
+    }
+
     private async Task<bool> RecordExistsAsync(int id)
     {
         using var db = CreateDb();

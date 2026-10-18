@@ -14,6 +14,7 @@ import {
 import type { FileStatus } from "@/lib/files-api"
 import { formatBytes } from "@/lib/format"
 import type {
+  BulkDeleteState,
   DeleteState,
   FilesState,
   Upload as UploadItem,
@@ -51,13 +52,17 @@ export function FilesView({
     refreshing,
     uploads,
     deletions,
+    bulkDeletion,
     refresh,
     start,
     dismiss,
     remove,
+    removeFailed,
   } = state
   const input = useRef<HTMLInputElement>(null)
   const [confirming, setConfirming] = useState<string | null>(null)
+  const [confirmingBulk, setConfirmingBulk] = useState(false)
+  const failedCount = files?.filter((file) => file.status === "Failed").length ?? 0
 
   const onSelect = (selected: FileList | null) => {
     if (!selected) return
@@ -90,6 +95,17 @@ export function FilesView({
             <RefreshCw data-icon="inline-start" />
             Refresh
           </Button>
+          <DeleteFailedControl
+            count={failedCount}
+            pending={bulkDeletion?.pending === true}
+            confirming={confirmingBulk}
+            onAsk={() => setConfirmingBulk(true)}
+            onCancel={() => setConfirmingBulk(false)}
+            onConfirm={() => {
+              setConfirmingBulk(false)
+              removeFailed()
+            }}
+          />
           <Button size="lg" onClick={() => input.current?.click()}>
             <Upload data-icon="inline-start" />
             Upload files
@@ -118,6 +134,10 @@ export function FilesView({
             />
           ))}
         </ul>
+      )}
+
+      {bulkDeletion && !bulkDeletion.pending && (
+        <BulkDeleteResult state={bulkDeletion} />
       )}
 
       {loadError && (
@@ -188,6 +208,99 @@ export function FilesView({
         </Table>
       </div>
     </section>
+  )
+}
+
+// Deletes only the Failed files. The count is what the list shows now; the API decides again when it runs.
+function DeleteFailedControl({
+  count,
+  pending,
+  confirming,
+  onAsk,
+  onCancel,
+  onConfirm,
+}: {
+  count: number
+  pending: boolean
+  confirming: boolean
+  onAsk: () => void
+  onCancel: () => void
+  onConfirm: () => void
+}) {
+  if (confirming && count > 0 && !pending) {
+    return (
+      <span
+        role="group"
+        aria-label="Confirm deleting all failed files"
+        className="flex items-center gap-1.5"
+      >
+        <span className="text-sm">
+          Delete {count} failed {count === 1 ? "file" : "files"}?
+        </span>
+        <Button variant="destructive" size="lg" onClick={onConfirm}>
+          Delete
+        </Button>
+        <Button variant="outline" size="lg" onClick={onCancel}>
+          Keep
+        </Button>
+      </span>
+    )
+  }
+  return (
+    <Button
+      variant="outline"
+      size="lg"
+      onClick={onAsk}
+      disabled={count === 0 || pending}
+    >
+      <Trash2 data-icon="inline-start" />
+      {pending ? "Deleting failed files…" : "Delete all failed files"}
+    </Button>
+  )
+}
+
+function BulkDeleteResult({
+  state,
+}: {
+  state: Exclude<BulkDeleteState, { pending: true }>
+}) {
+  if ("error" in state) {
+    return (
+      <p role="alert" className="shrink-0 border-t p-4 text-sm text-destructive">
+        {state.error}
+      </p>
+    )
+  }
+  const { deleted, skipped, failed } = state.result
+  const problems = failed.length > 0
+  return (
+    <div
+      role={problems ? "alert" : "status"}
+      className={cn(
+        "shrink-0 border-t p-4 text-sm",
+        problems ? "text-destructive" : "text-muted-foreground"
+      )}
+    >
+      <p>
+        Deleted {deleted} failed {deleted === 1 ? "file" : "files"}
+        {skipped > 0 && `; ${skipped} skipped because they changed meanwhile`}
+        {problems && `; ${failed.length} could not be deleted`}.
+      </p>
+      {problems && (
+        <>
+          <ul className="mt-1 list-disc pl-5">
+            {failed.map((f) => (
+              <li key={f.fileId}>
+                File {f.fileId}: {f.detail}
+              </li>
+            ))}
+          </ul>
+          <p className="mt-1">
+            They stay in the list as Deleting: delete each one again to retry.
+          </p>
+        </>
+      )}
+    </div>
   )
 }
 
