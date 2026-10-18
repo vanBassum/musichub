@@ -29,7 +29,6 @@ public sealed class RuleBasedRecordingIdentifier(IAudioMetadataReader metadataRe
             return IdentificationResult.Unresolved("The embedded tags have no title and artist.");
         }
 
-        // Tags are untrusted, file-provided evidence; the evidence says so.
         var evidence = new IdentificationEvidence(
             FileMetadataSource,
             $"Embedded tags (untrusted) name \"{tags.Title}\" by {string.Join(", ", artists)}.");
