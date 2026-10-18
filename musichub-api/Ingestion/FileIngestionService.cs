@@ -13,6 +13,9 @@ namespace MusicHub.Api.Ingestion;
 /// </summary>
 public sealed class FileIngestionService(MusicHubDbContext db, IFileStorage storage)
 {
+    /// <summary>
+    /// Returns only a record with status Stored; every other outcome throws.
+    /// </summary>
     public async Task<FileRecord> IngestAsync(
         Stream content,
         string filename,

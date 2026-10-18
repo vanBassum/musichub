@@ -45,9 +45,6 @@ public class FilesController(FileIngestionService ingestion, IOptions<FileIngest
                 extensions: new Dictionary<string, object?> { ["fileId"] = ex.FileId });
         }
 
-        if (record.Status != FileStatus.Stored)
-            throw new InvalidOperationException($"File {record.Id} is {record.Status}, not Stored.");
-
         return StatusCode(StatusCodes.Status201Created, ToResponse(record));
     }
 
