@@ -20,7 +20,7 @@ public class FilesControllerTests
     {
         var controller = new FilesController(
             new FileIngestionService(db, storage, new ActiveUploadTracker()),
-            new FileDeletionService(db, storage, new ActiveUploadTracker(), TimeProvider.System,
+            new FileDeletionService(db, storage, new ActiveUploadTracker(),
                 Microsoft.Extensions.Logging.Abstractions.NullLogger<FileDeletionService>.Instance),
             Options.Create(new FileIngestionOptions()))
         {
@@ -170,17 +170,31 @@ public class FilesControllerTests
     }
 
     [Fact]
-    public async Task Delete_StoredFile_Returns204AndListShowsDeleted()
+    public async Task Delete_StoredFile_Returns204AndItLeavesTheList()
     {
-        using var db = CreateDb(nameof(Delete_StoredFile_Returns204AndListShowsDeleted));
+        using var db = CreateDb(nameof(Delete_StoredFile_Returns204AndItLeavesTheList));
+        var storage = new FakeFileStorage();
+        var controller = CreateController(db, storage);
+        await controller.Upload("a.mp3", 3, Sha256Hex([1, 2, 3]), CancellationToken.None);
+        var record = db.Files.AsNoTracking().Single();
+
+        Assert.IsType<NoContentResult>(await controller.Delete(record.Id, CancellationToken.None));
+
+        var list = Assert.IsType<OkObjectResult>(await controller.List(CancellationToken.None));
+        Assert.Empty(Assert.IsAssignableFrom<IEnumerable<FileListItem>>(list.Value));
+        Assert.False(await storage.ExistsAsync(record.StorageKey, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task Delete_Repeated_Returns404TheSecondTime()
+    {
+        using var db = CreateDb(nameof(Delete_Repeated_Returns404TheSecondTime));
         var controller = CreateController(db, new FakeFileStorage());
         await controller.Upload("a.mp3", 3, Sha256Hex([1, 2, 3]), CancellationToken.None);
         var id = db.Files.AsNoTracking().Single().Id;
 
         Assert.IsType<NoContentResult>(await controller.Delete(id, CancellationToken.None));
-        Assert.IsType<NoContentResult>(await controller.Delete(id, CancellationToken.None));
-
-        Assert.Equal(FileStatus.Deleted, db.Files.AsNoTracking().Single().Status);
+        Assert.IsType<NotFoundResult>(await controller.Delete(id, CancellationToken.None));
     }
 
     [Fact]

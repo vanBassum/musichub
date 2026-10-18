@@ -27,7 +27,6 @@ const statusClassNames: Record<FileStatus, string> = {
   Pending: "bg-warning text-warning-foreground",
   Expired: "bg-muted text-muted-foreground",
   Deleting: "bg-warning text-warning-foreground",
-  Deleted: "bg-muted text-muted-foreground",
 }
 
 const statusHints: Record<FileStatus, string> = {
@@ -37,7 +36,6 @@ const statusHints: Record<FileStatus, string> = {
   Pending: "Registered, not confirmed as stored",
   Expired: "Never finished and not stored: upload it again",
   Deleting: "Deletion not finished: delete it again to retry",
-  Deleted: "Deleted on purpose; the registration is kept",
 }
 
 export function FilesView({
@@ -164,20 +162,18 @@ export function FilesView({
                 </TableCell>
                 <TableCell>{new Date(file.startedAt).toLocaleString()}</TableCell>
                 <TableCell className="pr-4">
-                  {file.status !== "Deleted" && (
-                    <DeleteControl
-                      name={file.originalFilename}
-                      state={deletions[file.id]}
-                      retry={file.status === "Deleting"}
-                      confirming={confirming === file.id}
-                      onAsk={() => setConfirming(file.id)}
-                      onCancel={() => setConfirming(null)}
-                      onConfirm={() => {
-                        setConfirming(null)
-                        remove(file.id)
-                      }}
-                    />
-                  )}
+                  <DeleteControl
+                    name={file.originalFilename}
+                    state={deletions[file.id]}
+                    retry={file.status === "Deleting"}
+                    confirming={confirming === file.id}
+                    onAsk={() => setConfirming(file.id)}
+                    onCancel={() => setConfirming(null)}
+                    onConfirm={() => {
+                      setConfirming(null)
+                      remove(file.id)
+                    }}
+                  />
                 </TableCell>
               </TableRow>
             ))}
@@ -195,7 +191,7 @@ export function FilesView({
   )
 }
 
-// Delete with an inline confirmation. The registration stays in the list as Deleted; catalog entries are kept.
+// Delete with an inline confirmation. On success the row leaves the list (the list is refreshed); a failure shows here and the row stays.
 function DeleteControl({
   name,
   state,

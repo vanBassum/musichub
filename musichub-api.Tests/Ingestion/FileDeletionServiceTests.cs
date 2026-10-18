@@ -36,7 +36,14 @@ public sealed class FileDeletionServiceTests : IDisposable
             inner.PutAsync(key, content, contentType, ct);
 
         public Task<Stream> OpenReadAsync(string key, CancellationToken ct) => inner.OpenReadAsync(key, ct);
-        public Task<bool> ExistsAsync(string key, CancellationToken ct) => inner.ExistsAsync(key, ct);
+        public Func<Task>? BeforeExists { get; set; }
+
+        public async Task<bool> ExistsAsync(string key, CancellationToken ct)
+        {
+            if (BeforeExists is not null)
+                await BeforeExists();
+            return await inner.ExistsAsync(key, ct);
+        }
 
         public Task DeleteAsync(string key, CancellationToken ct)
         {
@@ -51,7 +58,7 @@ public sealed class FileDeletionServiceTests : IDisposable
         new DbContextOptionsBuilder<MusicHubDbContext>().UseSqlite(_connection).Options);
 
     private FileDeletionService CreateService(MusicHubDbContext db) =>
-        new(db, _storage, _tracker, TimeProvider.System, NullLogger<FileDeletionService>.Instance);
+        new(db, _storage, _tracker, NullLogger<FileDeletionService>.Instance);
 
     private async Task<int> AddAsync(FileStatus status, bool withObject = true, int? trackId = null)
     {
@@ -86,19 +93,17 @@ public sealed class FileDeletionServiceTests : IDisposable
     [InlineData(FileStatus.Expired, false)]
     [InlineData(FileStatus.Pending, false)]
     [InlineData(FileStatus.Uploading, true)]
-    public async Task Delete_AnyStatus_RemovesObjectAndLeavesTombstone(FileStatus status, bool withObject)
+    public async Task Delete_AnyStatus_RemovesObjectAndRecord(FileStatus status, bool withObject)
     {
         var id = await AddAsync(status, withObject);
+        var key = (await LoadAsync(id)).StorageKey;
         using var db = CreateDb();
 
         var outcome = await CreateService(db).DeleteAsync(id, CancellationToken.None);
 
         Assert.Equal(FileDeletionOutcome.Deleted, outcome);
-        var record = await LoadAsync(id);
-        Assert.Equal(FileStatus.Deleted, record.Status);
-        Assert.NotNull(record.DeletedAt);
-        Assert.Null(record.DeletionError);
-        Assert.False(await _storage.ExistsAsync(record.StorageKey, CancellationToken.None));
+        Assert.False(await RecordExistsAsync(id));
+        Assert.False(await _storage.ExistsAsync(key, CancellationToken.None));
     }
 
     [Fact]
@@ -108,7 +113,7 @@ public sealed class FileDeletionServiceTests : IDisposable
         using var db = CreateDb();
 
         Assert.Equal(FileDeletionOutcome.Deleted, await CreateService(db).DeleteAsync(id, CancellationToken.None));
-        Assert.Equal(FileStatus.Deleted, (await LoadAsync(id)).Status);
+        Assert.False(await RecordExistsAsync(id));
     }
 
     [Fact]
@@ -126,21 +131,18 @@ public sealed class FileDeletionServiceTests : IDisposable
         var failed = await LoadAsync(id);
         Assert.Equal(FileStatus.Deleting, failed.Status);
         Assert.Contains("IOException", failed.DeletionError);
-        Assert.Null(failed.DeletedAt);
         Assert.True(await _storage.ExistsAsync(failed.StorageKey, CancellationToken.None));
 
         _storage.FailDelete = false;
         using (var db = CreateDb())
             Assert.Equal(FileDeletionOutcome.Deleted, await CreateService(db).DeleteAsync(id, CancellationToken.None));
 
-        var done = await LoadAsync(id);
-        Assert.Equal(FileStatus.Deleted, done.Status);
-        Assert.Null(done.DeletionError);
-        Assert.False(await _storage.ExistsAsync(done.StorageKey, CancellationToken.None));
+        Assert.False(await RecordExistsAsync(id));
+        Assert.False(await _storage.ExistsAsync(failed.StorageKey, CancellationToken.None));
     }
 
     [Fact]
-    public async Task Delete_ObjectSurvivesTheDelete_IsNotMarkedDeleted()
+    public async Task Delete_ObjectSurvivesTheDelete_KeepsTheRecordAsDeleting()
     {
         var id = await AddAsync(FileStatus.Stored);
         _storage.IgnoreDelete = true;
@@ -152,25 +154,22 @@ public sealed class FileDeletionServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task Delete_Twice_IsIdempotentAndKeepsTheTombstone()
+    public async Task Delete_Twice_SecondIsNotFoundAndTouchesNothing()
     {
         var id = await AddAsync(FileStatus.Stored);
         using var db = CreateDb();
         var service = CreateService(db);
 
-        await service.DeleteAsync(id, CancellationToken.None);
-        var first = await LoadAsync(id);
-        var calls = _storage.DeleteCalls;
         Assert.Equal(FileDeletionOutcome.Deleted, await service.DeleteAsync(id, CancellationToken.None));
+        var calls = _storage.DeleteCalls;
+        Assert.Equal(FileDeletionOutcome.NotFound, await service.DeleteAsync(id, CancellationToken.None));
 
-        var second = await LoadAsync(id);
-        Assert.Equal(FileStatus.Deleted, second.Status);
-        Assert.Equal(first.DeletedAt, second.DeletedAt);
+        Assert.False(await RecordExistsAsync(id));
         Assert.Equal(calls, _storage.DeleteCalls);
     }
 
     [Fact]
-    public async Task Delete_ConcurrentDuplicates_AllSucceedAndLeaveOneTombstone()
+    public async Task Delete_ConcurrentDuplicates_DeleteOnceAndTheRestFindItGone()
     {
         var id = await AddAsync(FileStatus.Stored);
 
@@ -180,9 +179,10 @@ public sealed class FileDeletionServiceTests : IDisposable
             return await CreateService(db).DeleteAsync(id, CancellationToken.None);
         }));
 
-        Assert.All(outcomes, o => Assert.Equal(FileDeletionOutcome.Deleted, o));
+        Assert.Equal(1, outcomes.Count(o => o == FileDeletionOutcome.Deleted));
+        Assert.All(outcomes, o => Assert.True(o is FileDeletionOutcome.Deleted or FileDeletionOutcome.NotFound));
         Assert.Equal(1, _storage.DeleteCalls);
-        Assert.Equal(FileStatus.Deleted, (await LoadAsync(id)).Status);
+        Assert.False(await RecordExistsAsync(id));
     }
 
     [Fact]
@@ -208,7 +208,7 @@ public sealed class FileDeletionServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task Delete_KeepsCatalogLinkAndTrack_AndFileIsNeverReacquired()
+    public async Task Delete_LinkedFile_RemovesRecordButKeepsTheTrack()
     {
         int trackId;
         using (var db = CreateDb())
@@ -223,27 +223,29 @@ public sealed class FileDeletionServiceTests : IDisposable
             await CreateService(db).DeleteAsync(id, CancellationToken.None);
 
         using var read = CreateDb();
-        var record = await read.Files.AsNoTracking().SingleAsync(f => f.Id == id);
-        Assert.Equal(trackId, record.TrackId);
+        Assert.False(await read.Files.AnyAsync(f => f.Id == id));
         Assert.Equal("Kept", (await read.Tracks.SingleAsync(t => t.Id == trackId)).Title);
     }
 
     [Fact]
-    public async Task Delete_FailedFile_KeepsItsFailureDiagnostics()
+    public async Task Delete_RecordRemovedByAnotherProcessMeanwhile_StillSucceeds()
     {
-        var id = await AddAsync(FileStatus.Failed);
-        using (var db = CreateDb())
+        var id = await AddAsync(FileStatus.Stored);
+        using var db = CreateDb();
+        var service = CreateService(db);
+        _storage.BeforeExists = async () =>
         {
-            var record = await db.Files.SingleAsync(f => f.Id == id);
-            record.FailureReason = UploadIntegrityFailure.StorageError;
-            record.StatusDetail = "The storage backend failed (X).";
-            await db.SaveChangesAsync();
-        }
-        using (var db = CreateDb())
-            await CreateService(db).DeleteAsync(id, CancellationToken.None);
+            using var other = CreateDb();
+            await other.Files.Where(f => f.Id == id).ExecuteDeleteAsync();
+        };
 
-        var done = await LoadAsync(id);
-        Assert.Equal(UploadIntegrityFailure.StorageError, done.FailureReason);
-        Assert.Equal("The storage backend failed (X).", done.StatusDetail);
+        Assert.Equal(FileDeletionOutcome.Deleted, await service.DeleteAsync(id, CancellationToken.None));
+        Assert.False(await RecordExistsAsync(id));
+    }
+
+    private async Task<bool> RecordExistsAsync(int id)
+    {
+        using var db = CreateDb();
+        return await db.Files.AnyAsync(f => f.Id == id);
     }
 }
