@@ -51,11 +51,11 @@ export function FilesView({
     <section
       aria-labelledby="files-heading"
       className={cn(
-        "flex min-h-0 min-w-0 flex-col rounded-xl border bg-card",
+        "flex min-h-0 min-w-0 flex-col overflow-hidden rounded-xl border bg-card",
         className
       )}
     >
-      <div className="flex flex-wrap items-center gap-3 p-4">
+      <div className="flex shrink-0 flex-wrap items-center gap-3 p-4">
         <h1 id="files-heading" className="text-xl font-semibold">
           Files
         </h1>
@@ -88,7 +88,10 @@ export function FilesView({
       </div>
 
       {uploads.length > 0 && (
-        <ul aria-label="Uploads" className="flex flex-col gap-2 border-t p-4">
+        <ul
+          aria-label="Uploads"
+          className="flex max-h-[30%] shrink-0 flex-col gap-2 overflow-y-auto border-t p-4"
+        >
           {uploads.map((upload) => (
             <UploadRow
               key={upload.key}
@@ -100,12 +103,12 @@ export function FilesView({
       )}
 
       {loadError && (
-        <p role="alert" className="border-t p-4 text-sm text-destructive">
+        <p role="alert" className="shrink-0 border-t p-4 text-sm text-destructive">
           {loadError}
         </p>
       )}
 
-      <div className="min-h-0 flex-1 overflow-auto border-t">
+      <div className="min-h-0 flex-1 overflow-auto border-t [&_[data-slot=table-container]]:overflow-visible">
         <Table className="min-w-[36rem] text-sm">
           <TableHeader className="sticky top-0 z-10 bg-card">
             <TableRow className="hover:bg-transparent">
