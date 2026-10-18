@@ -1,3 +1,4 @@
+using MusicHub.Api.Ingestion;
 using MusicHub.Api.Storage;
 using System.Text.Json;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
@@ -12,6 +13,9 @@ builder.Services.AddControllers();
 // Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
 builder.Services.AddOpenApi();
 builder.Services.AddFileStorage(builder.Configuration);
+builder.Services.Configure<FileIngestionOptions>(
+    builder.Configuration.GetSection(FileIngestionOptions.SectionName));
+builder.Services.AddScoped<FileIngestionService>();
 
 // The connection string is built per context, from the Database__* configuration. Nothing connects at startup.
 builder.Services.Configure<DatabaseOptions>(builder.Configuration.GetSection(DatabaseOptions.SectionName));

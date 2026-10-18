@@ -1,6 +1,7 @@
 using System.Net;
 using Amazon.S3;
 using Amazon.S3.Model;
+using Amazon.S3.Transfer;
 using Microsoft.Extensions.Options;
 
 namespace MusicHub.Api.Storage;
@@ -11,7 +12,9 @@ internal sealed class S3FileStorage(IAmazonS3 s3, IOptions<FileStorageOptions> o
 
     public async Task PutAsync(string key, Stream content, string? contentType, CancellationToken cancellationToken)
     {
-        var request = new PutObjectRequest
+        // TransferUtility handles both seekable and non-seekable streams via multipart upload.
+        using var transfer = new TransferUtility(s3);
+        var request = new TransferUtilityUploadRequest
         {
             BucketName = _bucket,
             Key = key,
@@ -19,11 +22,8 @@ internal sealed class S3FileStorage(IAmazonS3 s3, IOptions<FileStorageOptions> o
             AutoCloseStream = false,
         };
         if (contentType is not null)
-        {
             request.ContentType = contentType;
-        }
-
-        await s3.PutObjectAsync(request, cancellationToken);
+        await transfer.UploadAsync(request, cancellationToken);
     }
 
     public async Task<Stream> OpenReadAsync(string key, CancellationToken cancellationToken)
