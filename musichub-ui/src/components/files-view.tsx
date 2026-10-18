@@ -1,0 +1,203 @@
+import { RefreshCw, Upload, X } from "lucide-react"
+import { useRef } from "react"
+
+import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table"
+import type { FileStatus } from "@/lib/files-api"
+import { formatBytes } from "@/lib/format"
+import type { FilesState, Upload as UploadItem } from "@/lib/use-files"
+import { cn } from "@/lib/utils"
+
+const statusClassNames: Record<FileStatus, string> = {
+  Stored: "bg-success text-success-foreground",
+  Failed: "bg-destructive text-white",
+  Uploading: "bg-primary text-primary-foreground",
+  Pending: "bg-warning text-warning-foreground",
+}
+
+const statusHints: Record<FileStatus, string> = {
+  Stored: "Storage confirmed",
+  Failed: "Not stored: upload it again",
+  Uploading: "Upload in progress or interrupted: not confirmed as stored",
+  Pending: "Registered, not confirmed as stored",
+}
+
+export function FilesView({
+  state,
+  className,
+}: {
+  state: FilesState
+  className?: string
+}) {
+  const { files, loadError, refreshing, uploads, refresh, start, dismiss } =
+    state
+  const input = useRef<HTMLInputElement>(null)
+
+  const onSelect = (selected: FileList | null) => {
+    if (!selected) return
+    Array.from(selected).forEach(start)
+    if (input.current) input.current.value = ""
+  }
+
+  return (
+    <section
+      aria-labelledby="files-heading"
+      className={cn(
+        "flex min-h-0 min-w-0 flex-col rounded-xl border bg-card",
+        className
+      )}
+    >
+      <div className="flex flex-wrap items-center gap-3 p-4">
+        <h1 id="files-heading" className="text-xl font-semibold">
+          Files
+        </h1>
+        <span className="text-muted-foreground">
+          Uploaded files as stored, not the music catalog
+        </span>
+        <div className="ml-auto flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="lg"
+            onClick={() => void refresh()}
+            disabled={refreshing}
+          >
+            <RefreshCw data-icon="inline-start" />
+            Refresh
+          </Button>
+          <Button size="lg" onClick={() => input.current?.click()}>
+            <Upload data-icon="inline-start" />
+            Upload files
+          </Button>
+          <input
+            ref={input}
+            type="file"
+            multiple
+            hidden
+            aria-label="Choose files to upload"
+            onChange={(event) => onSelect(event.target.files)}
+          />
+        </div>
+      </div>
+
+      {uploads.length > 0 && (
+        <ul aria-label="Uploads" className="flex flex-col gap-2 border-t p-4">
+          {uploads.map((upload) => (
+            <UploadRow
+              key={upload.key}
+              upload={upload}
+              onDismiss={() => dismiss(upload.key)}
+            />
+          ))}
+        </ul>
+      )}
+
+      {loadError && (
+        <p role="alert" className="border-t p-4 text-sm text-destructive">
+          {loadError}
+        </p>
+      )}
+
+      <div className="min-h-0 flex-1 overflow-auto border-t">
+        <Table className="min-w-[36rem] text-sm">
+          <TableHeader className="sticky top-0 z-10 bg-card">
+            <TableRow className="hover:bg-transparent">
+              <TableHead className="pl-4">Filename</TableHead>
+              <TableHead>Size</TableHead>
+              <TableHead>Status</TableHead>
+              <TableHead className="pr-4">Started</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {files?.map((file) => (
+              <TableRow key={file.id}>
+                <TableCell className="max-w-80 truncate pl-4" title={file.originalFilename}>
+                  {file.originalFilename}
+                </TableCell>
+                <TableCell>
+                  {file.sizeBytes === null ? "Unknown" : formatBytes(file.sizeBytes)}
+                </TableCell>
+                <TableCell>
+                  <Badge
+                    title={statusHints[file.status]}
+                    className={statusClassNames[file.status]}
+                  >
+                    {file.status}
+                  </Badge>
+                </TableCell>
+                <TableCell className="pr-4">
+                  {new Date(file.startedAt).toLocaleString()}
+                </TableCell>
+              </TableRow>
+            ))}
+            {files?.length === 0 && (
+              <TableRow className="hover:bg-transparent">
+                <TableCell colSpan={4} className="p-6 text-center text-muted-foreground">
+                  No files yet. Upload one to see it here.
+                </TableCell>
+              </TableRow>
+            )}
+          </TableBody>
+        </Table>
+      </div>
+    </section>
+  )
+}
+
+function UploadRow({
+  upload,
+  onDismiss,
+}: {
+  upload: UploadItem
+  onDismiss: () => void
+}) {
+  const percent = upload.size === 0 ? 100 : Math.floor((upload.loaded / upload.size) * 100)
+  const active = upload.state === "uploading" || upload.state === "sent"
+
+  return (
+    <li className="flex items-center gap-3 text-sm">
+      <div className="min-w-0 flex-1">
+        <div className="truncate" title={upload.name}>
+          {upload.name}
+        </div>
+        {active ? (
+          <>
+            <progress
+              value={upload.loaded}
+              max={upload.size || 1}
+              aria-label={`Transfer progress of ${upload.name}`}
+              className="h-1.5 w-full"
+            />
+            <div className="text-xs text-muted-foreground">
+              {upload.state === "sent"
+                ? "All bytes sent. Waiting for the server to confirm storage…"
+                : `Sending ${percent}% (${formatBytes(upload.loaded)} of ${formatBytes(upload.size)}). Not stored yet.`}
+            </div>
+          </>
+        ) : (
+          <div role="alert" className="text-xs text-destructive">
+            {upload.state === "cancelled"
+              ? "Cancelled. Storage was not confirmed; check the list, then upload it again if needed."
+              : `Failed: ${upload.error}`}
+          </div>
+        )}
+      </div>
+      {upload.cancel ? (
+        <Button variant="outline" size="sm" onClick={upload.cancel}>
+          Cancel
+        </Button>
+      ) : (
+        <Button variant="ghost" size="icon-sm" aria-label="Dismiss" onClick={onDismiss}>
+          <X />
+        </Button>
+      )}
+    </li>
+  )
+}
