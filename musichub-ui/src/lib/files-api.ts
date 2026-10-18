@@ -1,4 +1,11 @@
-export type FileStatus = "Pending" | "Uploading" | "Stored" | "Failed" | "Expired"
+export type FileStatus =
+  | "Pending"
+  | "Uploading"
+  | "Stored"
+  | "Failed"
+  | "Expired"
+  | "Deleting"
+  | "Deleted"
 
 // One row of GET /api/files: a persisted registration, not a track.
 export interface FileRegistration {
@@ -8,6 +15,22 @@ export interface FileRegistration {
   status: FileStatus
   startedAt: string
   statusDetail: string | null
+  deletionError: string | null
+}
+
+// DELETE /api/files/{id}: removes the stored object and leaves a Deleted tombstone. Safe to repeat.
+export async function deleteFile(id: string) {
+  const response = await fetch(`/api/files/${id}`, { method: "DELETE" })
+  if (response.ok) return
+  let detail: string | undefined
+  try {
+    detail = ((await response.json()) as { detail?: string }).detail
+  } catch {
+    // Not a problem document: fall through.
+  }
+  throw new Error(
+    detail ?? `The file could not be deleted (HTTP ${response.status}).`
+  )
 }
 
 export async function listFiles(signal?: AbortSignal) {

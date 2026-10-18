@@ -1,5 +1,5 @@
-import { RefreshCw, Upload, X } from "lucide-react"
-import { useRef } from "react"
+import { RefreshCw, Trash2, Upload, X } from "lucide-react"
+import { useRef, useState } from "react"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -13,7 +13,11 @@ import {
 } from "@/components/ui/table"
 import type { FileStatus } from "@/lib/files-api"
 import { formatBytes } from "@/lib/format"
-import type { FilesState, Upload as UploadItem } from "@/lib/use-files"
+import type {
+  DeleteState,
+  FilesState,
+  Upload as UploadItem,
+} from "@/lib/use-files"
 import { cn } from "@/lib/utils"
 
 const statusClassNames: Record<FileStatus, string> = {
@@ -22,6 +26,8 @@ const statusClassNames: Record<FileStatus, string> = {
   Uploading: "bg-primary text-primary-foreground",
   Pending: "bg-warning text-warning-foreground",
   Expired: "bg-muted text-muted-foreground",
+  Deleting: "bg-warning text-warning-foreground",
+  Deleted: "bg-muted text-muted-foreground",
 }
 
 const statusHints: Record<FileStatus, string> = {
@@ -30,6 +36,8 @@ const statusHints: Record<FileStatus, string> = {
   Uploading: "Upload in progress or interrupted: not confirmed as stored",
   Pending: "Registered, not confirmed as stored",
   Expired: "Never finished and not stored: upload it again",
+  Deleting: "Deletion not finished: delete it again to retry",
+  Deleted: "Deleted on purpose; the registration is kept",
 }
 
 export function FilesView({
@@ -39,9 +47,19 @@ export function FilesView({
   state: FilesState
   className?: string
 }) {
-  const { files, loadError, refreshing, uploads, refresh, start, dismiss } =
-    state
+  const {
+    files,
+    loadError,
+    refreshing,
+    uploads,
+    deletions,
+    refresh,
+    start,
+    dismiss,
+    remove,
+  } = state
   const input = useRef<HTMLInputElement>(null)
+  const [confirming, setConfirming] = useState<string | null>(null)
 
   const onSelect = (selected: FileList | null) => {
     if (!selected) return
@@ -117,7 +135,10 @@ export function FilesView({
               <TableHead className="pl-4">Filename</TableHead>
               <TableHead>Size</TableHead>
               <TableHead>Status</TableHead>
-              <TableHead className="pr-4">Started</TableHead>
+              <TableHead>Started</TableHead>
+              <TableHead className="pr-4">
+                <span className="sr-only">Actions</span>
+              </TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -131,20 +152,38 @@ export function FilesView({
                 </TableCell>
                 <TableCell>
                   <Badge
-                    title={file.statusDetail ?? statusHints[file.status]}
+                    title={
+                      file.deletionError ??
+                      file.statusDetail ??
+                      statusHints[file.status]
+                    }
                     className={statusClassNames[file.status]}
                   >
                     {file.status}
                   </Badge>
                 </TableCell>
+                <TableCell>{new Date(file.startedAt).toLocaleString()}</TableCell>
                 <TableCell className="pr-4">
-                  {new Date(file.startedAt).toLocaleString()}
+                  {file.status !== "Deleted" && (
+                    <DeleteControl
+                      name={file.originalFilename}
+                      state={deletions[file.id]}
+                      retry={file.status === "Deleting"}
+                      confirming={confirming === file.id}
+                      onAsk={() => setConfirming(file.id)}
+                      onCancel={() => setConfirming(null)}
+                      onConfirm={() => {
+                        setConfirming(null)
+                        remove(file.id)
+                      }}
+                    />
+                  )}
                 </TableCell>
               </TableRow>
             ))}
             {files?.length === 0 && (
               <TableRow className="hover:bg-transparent">
-                <TableCell colSpan={4} className="p-6 text-center text-muted-foreground">
+                <TableCell colSpan={5}className="p-6 text-center text-muted-foreground">
                   No files yet. Upload one to see it here.
                 </TableCell>
               </TableRow>
@@ -153,6 +192,72 @@ export function FilesView({
         </Table>
       </div>
     </section>
+  )
+}
+
+// Delete with an inline confirmation. The registration stays in the list as Deleted; catalog entries are kept.
+function DeleteControl({
+  name,
+  state,
+  retry,
+  confirming,
+  onAsk,
+  onCancel,
+  onConfirm,
+}: {
+  name: string
+  state: DeleteState | undefined
+  retry: boolean
+  confirming: boolean
+  onAsk: () => void
+  onCancel: () => void
+  onConfirm: () => void
+}) {
+  if (state?.pending) {
+    return (
+      <span role="status" className="text-xs text-muted-foreground">
+        Deleting…
+      </span>
+    )
+  }
+  if (confirming) {
+    return (
+      <span
+        role="group"
+        aria-label={`Confirm deleting ${name}`}
+        className="flex items-center gap-1.5"
+      >
+        <span className="text-xs">Delete the stored file?</span>
+        <Button
+          variant="destructive"
+          size="sm"
+          aria-label={`Confirm delete of ${name}`}
+          onClick={onConfirm}
+        >
+          Delete
+        </Button>
+        <Button variant="outline" size="sm" onClick={onCancel}>
+          Keep
+        </Button>
+      </span>
+    )
+  }
+  return (
+    <span className="flex items-center gap-2">
+      {state && (
+        <span role="alert" className="text-xs text-destructive">
+          {state.error}
+        </span>
+      )}
+      <Button
+        variant="ghost"
+        size="icon-sm"
+        aria-label={`${retry || state ? "Retry delete of" : "Delete"} ${name}`}
+        onClick={onAsk}
+      >
+        <Trash2 />
+      </Button>
+    </span>
   )
 }
 
