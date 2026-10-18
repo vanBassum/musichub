@@ -133,10 +133,12 @@ public class FileIngestionServiceTests
         var storage = new FakeFileStorage(onPut: _ => throw new InvalidOperationException("storage down"));
         var service = new FileIngestionService(db, storage);
 
-        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+        var ex = await Assert.ThrowsAsync<FileIngestionException>(() =>
             service.IngestAsync(new MemoryStream([1, 2]), "a.mp3", null, CancellationToken.None));
+        Assert.IsType<InvalidOperationException>(ex.InnerException);
 
         var saved = Assert.Single(db.Files.AsNoTracking());
+        Assert.Equal(saved.Id, ex.FileId);
         Assert.Equal(FileStatus.Failed, saved.Status);
         Assert.Null(saved.ContentHash);
         Assert.Null(saved.SizeBytes);

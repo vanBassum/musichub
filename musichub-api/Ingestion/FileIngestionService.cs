@@ -1,3 +1,4 @@
+using Microsoft.EntityFrameworkCore;
 using MusicHub.Api.Data;
 using MusicHub.Api.Storage;
 
@@ -50,11 +51,19 @@ public sealed class FileIngestionService(MusicHubDbContext db, IFileStorage stor
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             await TryMarkFailedAsync(record);
-            throw;
+            throw new FileIngestionException(record.Id, ex);
         }
 
         return record;
     }
+
+    /// <summary>Lists persisted file registrations, newest first (Id breaks ties).</summary>
+    public async Task<IReadOnlyList<FileRecord>> ListAsync(CancellationToken cancellationToken) =>
+        await db.Files
+            .AsNoTracking()
+            .OrderByDescending(f => f.StartedAt)
+            .ThenByDescending(f => f.Id)
+            .ToListAsync(cancellationToken);
 
     private async Task TryMarkFailedAsync(FileRecord record)
     {
