@@ -76,7 +76,7 @@ public class RecordingIdentifierTests
         Assert.Equal(["An Artist"], result.Identity.Artists);
         Assert.Equal("An Album", result.Identity.Album);
         Assert.Null(result.UnresolvedReason);
-        Assert.Single(result.Evidence);
+        Assert.Contains(result.Evidence, e => e.Source == "file-metadata");
     }
 
     [Fact]

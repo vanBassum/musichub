@@ -3,13 +3,14 @@ using MusicHub.Api.Metadata;
 namespace MusicHub.Api.Identification;
 
 /// <summary>
-/// The deterministic resolver; it needs no AI provider. Its only tool for now is the embedded file metadata:
-/// a title and at least one artist are required, otherwise the file stays unresolved.
+/// The deterministic resolver; it needs no AI provider. It runs every evidence provider and proposes an identity
+/// only when all candidates agree on one recording (same title and artists, ignoring case). No candidate, or
+/// candidates that disagree, leave the file unresolved. All evidence is kept per source either way.
 /// </summary>
-public sealed class RuleBasedRecordingIdentifier(IAudioMetadataReader metadataReader) : IRecordingIdentifier
+public sealed class RuleBasedRecordingIdentifier(
+    IAudioMetadataReader metadataReader,
+    IEnumerable<IIdentificationEvidenceProvider> providers) : IRecordingIdentifier
 {
-    private const string FileMetadataSource = "file-metadata";
-
     public async Task<IdentificationResult> IdentifyAsync(Stream audio, string? fileNameHint, CancellationToken ct)
     {
         AudioMetadata metadata;
@@ -22,18 +23,50 @@ public sealed class RuleBasedRecordingIdentifier(IAudioMetadataReader metadataRe
             return IdentificationResult.Unresolved("The file is not readable audio.");
         }
 
-        var tags = metadata.Tags;
-        var artists = tags.Artists.Where(a => !string.IsNullOrWhiteSpace(a)).ToList();
-        if (string.IsNullOrWhiteSpace(tags.Title) || artists.Count == 0)
+        var reports = new List<EvidenceReport>();
+        foreach (var provider in providers)
         {
-            return IdentificationResult.Unresolved("The embedded tags have no title and artist.");
+            if (audio.CanSeek)
+            {
+                audio.Position = 0;
+            }
+            reports.Add(await provider.CollectAsync(new IdentificationContext(audio, fileNameHint, metadata), ct));
         }
 
-        var evidence = new IdentificationEvidence(
-            FileMetadataSource,
-            $"Embedded tags (untrusted) name \"{tags.Title}\" by {string.Join(", ", artists)}.");
-        return IdentificationResult.Identified(
-            new ProposedRecordingIdentity(tags.Title, artists, string.IsNullOrWhiteSpace(tags.Album) ? null : tags.Album),
-            [evidence]);
+        var evidence = reports.SelectMany(Describe).ToList();
+        var candidates = reports.SelectMany(r => r.Candidates.Select(c => (r.Source, Candidate: c))).ToList();
+        if (candidates.Count == 0)
+        {
+            return IdentificationResult.Unresolved("No identification tool produced a candidate.", evidence);
+        }
+
+        var identities = candidates.GroupBy(c => IdentityKey(c.Candidate)).ToList();
+        if (identities.Count > 1)
+        {
+            var conflicts = identities.Select(g =>
+                $"{Format(g.First().Candidate)} ({string.Join(", ", g.Select(c => c.Source).Distinct())})");
+            return IdentificationResult.Unresolved(
+                $"The evidence names {identities.Count} different recordings: {string.Join("; ", conflicts)}.",
+                evidence);
+        }
+
+        var agreed = identities[0].Select(c => c.Candidate).ToList();
+        var first = agreed[0];
+        var album = agreed.Select(c => c.Album).FirstOrDefault(a => !string.IsNullOrWhiteSpace(a));
+        return IdentificationResult.Identified(new ProposedRecordingIdentity(first.Title, first.Artists, album), evidence);
     }
+
+    private static IEnumerable<IdentificationEvidence> Describe(EvidenceReport report) => report.Availability switch
+    {
+        EvidenceAvailability.Provided => report.Candidates.Select(c =>
+            new IdentificationEvidence(report.Source, $"{report.Note} Candidate {Format(c)}.")),
+        EvidenceAvailability.NothingFound => [new IdentificationEvidence(report.Source, $"Found nothing. {report.Note}")],
+        _ => [new IdentificationEvidence(report.Source, $"Unavailable. {report.Note}")],
+    };
+
+    private static string Format(EvidenceCandidate c) => $"\"{c.Title}\" by {string.Join(", ", c.Artists)}";
+
+    private static string IdentityKey(EvidenceCandidate c) =>
+        c.Title.Trim().ToUpperInvariant() + "\u001f" +
+        string.Join("\u001e", c.Artists.Select(a => a.Trim().ToUpperInvariant()).Order(StringComparer.Ordinal));
 }
