@@ -72,8 +72,8 @@ cmd_prepare() {
   # A new repository that only fetches from the trusted checkout: its .git holds no
   # credentials and nothing of the runner.
   git init -q "$dir/repo"
-  git -C "$dir/repo" fetch -q --no-tags "$checkout" "+HEAD:refs/heads/base"
-  git -C "$dir/repo" fetch -q --no-tags "$checkout" "+refs/remotes/origin/main:refs/remotes/origin/main" 2>/dev/null || true
+  git -C "$dir/repo" fetch -q --no-tags --update-shallow "$checkout" "+HEAD:refs/heads/base"
+  git -C "$dir/repo" fetch -q --no-tags --update-shallow "$checkout" "+refs/remotes/origin/main:refs/remotes/origin/main" 2>/dev/null || true
   git -C "$dir/repo" checkout -q base
 }
 

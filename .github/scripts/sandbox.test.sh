@@ -43,6 +43,13 @@ DIR="$WORK/sb"
 [ -d "$DIR/in" ] && [ -d "$DIR/out" ] && [ -d "$DIR/home" ] && [ -d "$DIR/trusted" ] && ok "and makes in, out, home and trusted" || no "and makes in, out, home and trusted"
 git -C "$DIR/repo" config --local --get-regexp 'remote|extraheader|credential' >/dev/null && no "the copy has no remote or credentials" || ok "the copy has no remote or credentials"
 
+# actions/checkout fetches one commit by default: a shallow checkout.
+echo b >"$WORK/checkout/b" && $G -C "$WORK/checkout" add -A && $G -C "$WORK/checkout" commit -qm two
+git clone -q --depth 1 "file://$WORK/checkout" "$WORK/shallow"
+bash "$SCRIPT" prepare "$WORK/sb-shallow" "$WORK/shallow" >"$WORK/out" 2>&1 \
+  && [ "$(git -C "$WORK/sb-shallow/repo" rev-parse HEAD)" = "$(git -C "$WORK/checkout" rev-parse HEAD)" ] \
+  && ok "prepare copies a shallow checkout too" || no "prepare copies a shallow checkout too"
+
 # --- run ----------------------------------------------------------------------
 : >"$CALLS"
 CLAUDE_CODE_OAUTH_TOKEN=claude-secret SANDBOX_ISSUE=12 AUTOPILOT_TOKEN=pat-secret AUTOPILOT_BOARD_TOKEN=board-secret \
