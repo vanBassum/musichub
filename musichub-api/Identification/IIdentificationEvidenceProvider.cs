@@ -47,7 +47,18 @@ public enum EvidenceAvailability
 }
 
 /// <summary>A recording a tool suggests. A suggestion, not an identity.</summary>
-public sealed record EvidenceCandidate(string Title, IReadOnlyList<string> Artists, string? Album);
+/// <param name="Reference">Where the source names this candidate, when it does.</param>
+public sealed record EvidenceCandidate(
+    string Title, IReadOnlyList<string> Artists, string? Album, EvidenceSourceReference? Reference = null);
+
+/// <summary>A candidate as the source identifies it: its identifiers and URLs, and what the source says about it.</summary>
+/// <param name="RecordingId">The source's identifier for the recording.</param>
+/// <param name="RecordingUrl">A URL for the recording at the source.</param>
+/// <param name="ReleaseId">The source's identifier for the release the candidate is on, if any.</param>
+/// <param name="ReleaseUrl">A URL for that release at the source.</param>
+/// <param name="Detail">Source-specific evidence, e.g. disambiguation, release status and date, the source's own match score.</param>
+public sealed record EvidenceSourceReference(
+    string RecordingId, string RecordingUrl, string? ReleaseId, string? ReleaseUrl, string Detail);
 
 /// <summary>One provider's outcome, with the source preserved.</summary>
 /// <param name="Source">The provider's name.</param>

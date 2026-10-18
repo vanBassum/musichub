@@ -8,12 +8,29 @@ internal static class EvidenceFormatting
     public static IEnumerable<IdentificationEvidence> Describe(EvidenceReport report) => report.Availability switch
     {
         EvidenceAvailability.Provided => report.Candidates.Select(c =>
-            new IdentificationEvidence(report.Source, $"{report.Note} Candidate {Format(c)}.")),
+            new IdentificationEvidence(report.Source, $"{report.Note} Candidate {FormatWithReference(c)}.")),
         EvidenceAvailability.NothingFound => [new IdentificationEvidence(report.Source, $"Found nothing. {report.Note}")],
         _ => [new IdentificationEvidence(report.Source, $"Unavailable. {report.Note}")],
     };
 
     public static string Format(EvidenceCandidate c) => $"\"{c.Title}\" by {string.Join(", ", c.Artists)}";
+
+    /// <summary>The candidate with what the source says about it: album, URLs and detail.</summary>
+    public static string FormatWithReference(EvidenceCandidate c)
+    {
+        var text = Format(c);
+        if (!string.IsNullOrWhiteSpace(c.Album))
+        {
+            text += $" on \"{c.Album}\"";
+        }
+        if (c.Reference is { } r)
+        {
+            text += $" [recording {r.RecordingUrl}";
+            text += r.ReleaseUrl is null ? "" : $", release {r.ReleaseUrl}";
+            text += string.IsNullOrWhiteSpace(r.Detail) ? "]" : $"; {r.Detail}]";
+        }
+        return text;
+    }
 
     /// <summary>Runs one tool with the audio stream rewound to the start, so every tool reads the whole file.</summary>
     public static async Task<EvidenceReport> CollectFromStartAsync(
