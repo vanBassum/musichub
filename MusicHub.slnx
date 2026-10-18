@@ -2,4 +2,7 @@
   <Folder Name="/musichub-api/">
     <Project Path="musichub-api/MusicHub.Api.csproj" />
   </Folder>
+  <Folder Name="/musichub-api.Tests/">
+    <Project Path="musichub-api.Tests/MusicHub.Api.Tests.csproj" />
+  </Folder>
 </Solution>
