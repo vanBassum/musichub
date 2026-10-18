@@ -2,6 +2,7 @@ using System.Text;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using MusicHub.Api.Controllers;
 using MusicHub.Api.Data;
@@ -114,6 +115,127 @@ public class FilesControllerTests
 
         Assert.Equal(StatusCodes.Status413PayloadTooLarge, ex.StatusCode);
         Assert.Equal(FileStatus.Failed, Assert.Single(db.Files.AsNoTracking()).Status);
+    }
+
+    private static async Task<int> UploadAsync(FilesController controller, MusicHubDbContext db, string filename)
+    {
+        await controller.Upload(filename, CancellationToken.None);
+        return db.Files.AsNoTracking().OrderByDescending(f => f.Id).First().Id;
+    }
+
+    private static async Task<byte[]> ReadAllAsync(FileStreamResult result)
+    {
+        using var buffer = new MemoryStream();
+        await result.FileStream.CopyToAsync(buffer);
+        return buffer.ToArray();
+    }
+
+    [Fact]
+    public async Task Download_ReturnsExactBytesAsAttachmentNamedAfterOriginalFilename()
+    {
+        using var db = CreateDb(nameof(Download_ReturnsExactBytesAsAttachmentNamedAfterOriginalFilename));
+        var bytes = Enumerable.Range(0, 1000).Select(i => (byte)(i * 7)).ToArray();
+        var controller = CreateController(db, new FakeFileStorage(), bytes);
+        var id = await UploadAsync(controller, db, "Café – 日本語.mp3");
+
+        var result = Assert.IsType<FileStreamResult>(await controller.Download(id, CancellationToken.None));
+
+        Assert.Equal(bytes, await ReadAllAsync(result));
+        Assert.Equal("Café – 日本語.mp3", result.FileDownloadName);
+        Assert.Equal("application/octet-stream", result.ContentType);
+    }
+
+    [Fact]
+    public async Task Download_ContentDispositionIsAttachmentWithEncodedUnicodeName()
+    {
+        using var db = CreateDb(nameof(Download_ContentDispositionIsAttachmentWithEncodedUnicodeName));
+        var controller = CreateController(db, new FakeFileStorage());
+        var id = await UploadAsync(controller, db, "Café.mp3");
+        var result = Assert.IsType<FileStreamResult>(await controller.Download(id, CancellationToken.None));
+
+        var context = new ActionContext(new DefaultHttpContext(), new Microsoft.AspNetCore.Routing.RouteData(), new Microsoft.AspNetCore.Mvc.Abstractions.ActionDescriptor());
+        context.HttpContext.RequestServices = new ServiceCollection()
+            .AddLogging().AddControllers().Services.BuildServiceProvider();
+        context.HttpContext.Response.Body = new MemoryStream();
+        await result.ExecuteResultAsync(context);
+
+        var header = context.HttpContext.Response.Headers.ContentDisposition.ToString();
+        Assert.StartsWith("attachment", header);
+        Assert.Contains("filename*=UTF-8''Caf%C3%A9.mp3", header);
+    }
+
+    [Theory]
+    [InlineData("../../etc/passwd", "passwd")]
+    [InlineData("C:\\music\\song.mp3", "song.mp3")]
+    [InlineData("a/b/c.mp3", "c.mp3")]
+    [InlineData("evil\r\nSet-Cookie: x=1.mp3", "evilSet-Cookie: x=1.mp3")]
+    [InlineData("..", "download")]
+    [InlineData("a/", "download")]
+    [InlineData("", "download")]
+    public void SafeDownloadName_StripsPathsAndControlCharacters(string original, string expected)
+    {
+        Assert.Equal(expected, FilesController.SafeDownloadName(original));
+    }
+
+    [Fact]
+    public async Task Download_WhenRegistrationMissing_Returns404()
+    {
+        using var db = CreateDb(nameof(Download_WhenRegistrationMissing_Returns404));
+        var controller = CreateController(db, new FakeFileStorage());
+
+        Assert.IsType<NotFoundResult>(await controller.Download(42, CancellationToken.None));
+    }
+
+    [Theory]
+    [InlineData(FileStatus.Pending)]
+    [InlineData(FileStatus.Uploading)]
+    [InlineData(FileStatus.Failed)]
+    public async Task Download_WhenNotStored_Returns404WithoutTouchingStorage(FileStatus status)
+    {
+        using var db = CreateDb($"{nameof(Download_WhenNotStored_Returns404WithoutTouchingStorage)}-{status}");
+        var record = NewRecord("x.mp3", DateTimeOffset.UtcNow, status);
+        db.Files.Add(record);
+        await db.SaveChangesAsync();
+        var controller = CreateController(db, new ThrowingReadStorage(new InvalidOperationException("must not be read")));
+
+        Assert.IsType<NotFoundResult>(await controller.Download(record.Id, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task Download_WhenStoredObjectIsMissing_Returns404()
+    {
+        using var db = CreateDb(nameof(Download_WhenStoredObjectIsMissing_Returns404));
+        var record = NewRecord("x.mp3", DateTimeOffset.UtcNow, FileStatus.Stored);
+        db.Files.Add(record);
+        await db.SaveChangesAsync();
+        var controller = CreateController(db, new FakeFileStorage());
+
+        Assert.IsType<NotFoundResult>(await controller.Download(record.Id, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task Download_WhenStorageFails_Returns502WithoutLeakingDetails()
+    {
+        using var db = CreateDb(nameof(Download_WhenStorageFails_Returns502WithoutLeakingDetails));
+        var record = NewRecord("x.mp3", DateTimeOffset.UtcNow, FileStatus.Stored);
+        db.Files.Add(record);
+        await db.SaveChangesAsync();
+        var controller = CreateController(db, new ThrowingReadStorage(new InvalidOperationException("secret-host:9000 down")));
+
+        var result = Assert.IsType<ObjectResult>(await controller.Download(record.Id, CancellationToken.None));
+
+        Assert.Equal(StatusCodes.Status502BadGateway, result.StatusCode);
+        var problem = Assert.IsType<ProblemDetails>(result.Value);
+        Assert.DoesNotContain("secret-host", problem.Detail);
+        Assert.DoesNotContain(record.StorageKey, problem.Detail);
+    }
+
+    private sealed class ThrowingReadStorage(Exception error) : IFileStorage
+    {
+        public Task PutAsync(string key, Stream content, string? contentType, CancellationToken ct) => Task.CompletedTask;
+        public Task<Stream> OpenReadAsync(string key, CancellationToken ct) => throw error;
+        public Task<bool> ExistsAsync(string key, CancellationToken ct) => Task.FromResult(false);
+        public Task DeleteAsync(string key, CancellationToken ct) => Task.CompletedTask;
     }
 
     private static FileRecord NewRecord(string name, DateTimeOffset startedAt, FileStatus status) => new()

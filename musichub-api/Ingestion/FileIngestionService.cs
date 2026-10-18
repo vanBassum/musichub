@@ -75,6 +75,22 @@ public sealed class FileIngestionService(MusicHubDbContext db, IFileStorage stor
             .ThenByDescending(f => f.Id)
             .ToListAsync(cancellationToken);
 
+    /// <summary>
+    /// Opens the stored bytes of registration <paramref name="id"/> for reading.
+    /// Returns null when the registration does not exist or is not Stored.
+    /// The caller owns the returned stream. Throws <see cref="FileNotFoundException"/> when a Stored
+    /// record has no object in storage.
+    /// </summary>
+    public async Task<(FileRecord Record, Stream Content)?> OpenStoredAsync(int id, CancellationToken cancellationToken)
+    {
+        var record = await db.Files.AsNoTracking().FirstOrDefaultAsync(f => f.Id == id, cancellationToken);
+        if (record is not { Status: FileStatus.Stored })
+            return null;
+
+        var content = await storage.OpenReadAsync(record.StorageKey, cancellationToken);
+        return (record, content);
+    }
+
     private async Task TryMarkFailedAsync(FileRecord record)
     {
         try
