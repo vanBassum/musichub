@@ -1,6 +1,6 @@
 name: Claude PR review
 # The watchdog (autopilot-watchdog.yml) finds the PR by this name.
-run-name: Claude PR review #${{ github.event.pull_request.number }}
+run-name: "Claude PR review #${{ github.event.pull_request.number }}"
 
 # Runs one Claude reviewer per focus area (matrix) on every PR against main, then
 # merges the PR when the fail-closed gate in .github/scripts/review-gate.sh agrees.

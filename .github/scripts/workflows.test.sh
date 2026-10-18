@@ -265,6 +265,18 @@ grep -qF 'for v in CLAUDE_CODE_OAUTH_TOKEN ANTHROPIC_API_KEY $(compgen -e | grep
 grep -qE 'docker\.sock|--privileged|--network host' "$HERE/sandbox.sh" \
   && no "the sandbox never gets the Docker socket, privileges or the host network" || ok "the sandbox never gets the Docker socket, privileges or the host network"
 
+# --- the run names the watchdog reads ----------------------------------------------
+# autopilot-watchdog.yml finds the issue or PR of a failed run by its name (see
+# autopilot.sh, cmd_watchdog). Unquoted, YAML reads ` #…` as a comment, and the name
+# loses its number: the watchdog then retries and stops nothing.
+# run_name_ok <workflow> <name prefix>: its run-name is quoted and starts with the
+# prefix, followed by the number.
+run_name_ok() { grep -qxE "run-name: \"$2#\\$\\{\\{ [^\"]+ \\}\\}\"\r?" "$WORKFLOWS/$1"; }
+run_name_ok autopilot.yml 'Autopilot ' && ok "autopilot.yml's run name keeps the issue number" || no "autopilot.yml's run name keeps the issue number"
+run_name_ok autopilot-fix.yml 'Autopilot fix for PR ' && ok "autopilot-fix.yml's run name keeps the PR number" || no "autopilot-fix.yml's run name keeps the PR number"
+run_name_ok claude-review.yml 'Claude PR review ' && ok "claude-review.yml's run name keeps the PR number" || no "claude-review.yml's run name keeps the PR number"
+expect_none "no unquoted run-name has a ' #' that YAML would cut off" "$(grep -hE '^run-name: [^"'"'"'].* #' "$WORKFLOWS"/*.yml || true)"
+
 # --- the check catches what it should ------------------------------------------
 fixture() { printf '%s\n' "$2" >"$WORK/$1.yml"; echo "$WORK/$1.yml"; }
 
