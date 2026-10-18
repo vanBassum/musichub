@@ -58,13 +58,16 @@ function DemoSwitch({
 }
 
 // One layout for local and external artists. All data is demo data, served by
-// useDemoSection: each section has its own state and never blocks the others.
+// useDemoSection: the header, tracks and albums each have their own state, and
+// none of them is hidden by another's loading, empty or error state.
 export function ArtistPage({ className }: { className?: string }) {
   const [tab, setTab] = useState<Tab>("overview")
   const artist = useDemoSection<Artist | null>(mockArtist, null)
   const tracks = useDemoSection(mockPopularTracks, [])
   const albums = useDemoSection(mockAlbums, [])
-  const name = artist.state.status === "ready" ? artist.state.data?.name : undefined
+  // Only seeds the cover art; the sections render whatever the header state is.
+  const name =
+    artist.state.status === "ready" ? (artist.state.data?.name ?? "") : ""
 
   return (
     <div
@@ -108,14 +111,14 @@ export function ArtistPage({ className }: { className?: string }) {
           </TabsTrigger>
         </TabsList>
         <TabsContent value={tab} className="space-y-6">
-          {name && (tab === "overview" || tab === "tracks") && (
+          {(tab === "overview" || tab === "tracks") && (
             <ArtistPopularTracks
               artistName={name}
               state={tracks.state}
               onRetry={tracks.retry}
             />
           )}
-          {name && (tab === "overview" || tab === "albums") && (
+          {(tab === "overview" || tab === "albums") && (
             <ArtistAlbums
               artistName={name}
               state={albums.state}
