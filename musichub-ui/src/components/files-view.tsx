@@ -51,11 +51,11 @@ export function FilesView({
     <section
       aria-labelledby="files-heading"
       className={cn(
-        "flex min-h-0 min-w-0 flex-col rounded-xl border bg-card",
+        "flex min-h-0 min-w-0 flex-col overflow-hidden rounded-xl border bg-card",
         className
       )}
     >
-      <div className="flex flex-wrap items-center gap-3 p-4">
+      <div className="flex shrink-0 flex-wrap items-center gap-3 p-4">
         <h1 id="files-heading" className="text-xl font-semibold">
           Files
         </h1>
@@ -88,7 +88,10 @@ export function FilesView({
       </div>
 
       {uploads.length > 0 && (
-        <ul aria-label="Uploads" className="flex flex-col gap-1.5 border-t p-4">
+        <ul
+          aria-label="Uploads"
+          className="flex max-h-[30%] shrink-0 flex-col gap-1.5 overflow-y-auto border-t p-4"
+        >
           {uploads.map((upload) => (
             <UploadRow
               key={upload.key}
@@ -100,12 +103,12 @@ export function FilesView({
       )}
 
       {loadError && (
-        <p role="alert" className="border-t p-4 text-sm text-destructive">
+        <p role="alert" className="shrink-0 border-t p-4 text-sm text-destructive">
           {loadError}
         </p>
       )}
 
-      <div className="min-h-0 flex-1 overflow-auto border-t">
+      <div className="min-h-0 flex-1 overflow-auto border-t [&_[data-slot=table-container]]:overflow-visible">
         <Table className="min-w-[36rem] text-sm">
           <TableHeader className="sticky top-0 z-10 bg-card">
             <TableRow className="hover:bg-transparent">
@@ -151,6 +154,29 @@ export function FilesView({
   )
 }
 
+function describeUpload(upload: UploadItem, percent: number) {
+  switch (upload.state) {
+    case "uploading":
+      return {
+        label: `Uploading ${percent}%`,
+        detail: `Sending ${percent}% (${formatBytes(upload.loaded)} of ${formatBytes(upload.size)}). Not stored yet.`,
+      }
+    case "sent":
+      return {
+        label: "Confirming…",
+        detail: "All bytes sent. Waiting for the server to confirm storage.",
+      }
+    case "cancelled":
+      return {
+        label: "Cancelled",
+        detail:
+          "Cancelled. Storage was not confirmed; check the list, then upload it again if needed.",
+      }
+    default:
+      return { label: "Failed", detail: `Failed: ${upload.error}` }
+  }
+}
+
 function UploadRow({
   upload,
   onDismiss,
@@ -161,20 +187,7 @@ function UploadRow({
   const percent = upload.size === 0 ? 100 : Math.floor((upload.loaded / upload.size) * 100)
   const active = upload.state === "uploading" || upload.state === "sent"
 
-  const detail = active
-    ? upload.state === "sent"
-      ? "All bytes sent. Waiting for the server to confirm storage."
-      : `Sending ${percent}% (${formatBytes(upload.loaded)} of ${formatBytes(upload.size)}). Not stored yet.`
-    : upload.state === "cancelled"
-      ? "Cancelled. Storage was not confirmed; check the list, then upload it again if needed."
-      : `Failed: ${upload.error}`
-  const label = active
-    ? upload.state === "sent"
-      ? "Confirming…"
-      : `Uploading ${percent}%`
-    : upload.state === "cancelled"
-      ? "Cancelled"
-      : "Failed"
+  const { label, detail } = describeUpload(upload, percent)
 
   return (
     <li className="flex min-w-0 items-center gap-2 text-sm sm:gap-3">
