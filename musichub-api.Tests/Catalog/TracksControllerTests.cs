@@ -199,6 +199,17 @@ public sealed class TracksControllerTests : IDisposable
         Assert.Equal(2, last.PageSize);
     }
 
+    [Fact]
+    public async Task List_WithHugePage_ReturnsEmptyPage()
+    {
+        await Create("A");
+
+        var result = await List(page: int.MaxValue, pageSize: TracksController.MaxPageSize);
+
+        Assert.Empty(result.Items);
+        Assert.Equal(1, result.Total);
+    }
+
     [Theory]
     [InlineData(0, 25)]
     [InlineData(1, 0)]
@@ -229,7 +240,7 @@ public sealed class TracksControllerTests : IDisposable
     {
         var withAudio = await Create("With");
         var failedOnly = await Create("Failed");
-        var without = await Create("Without");
+        await Create("Without");
         await AddStoredFile(withAudio.Id);
         await AddStoredFile(failedOnly.Id, FileStatus.Failed);
 
@@ -241,7 +252,6 @@ public sealed class TracksControllerTests : IDisposable
         Assert.Equal(["With"], (await List(hasAudio: true)).Items.Select(t => t.Title));
         Assert.Equal(["Failed", "Without"], (await List(hasAudio: false)).Items.Select(t => t.Title));
         Assert.True(Body<TrackResponse>(await GetDetail(withAudio.Id)).HasAudio);
-        _ = without;
     }
 
     private async Task<IActionResult> GetDetail(int id)

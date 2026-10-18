@@ -54,7 +54,7 @@ public class TracksController(MusicHubDbContext db) : ControllerBase
         var total = await query.CountAsync(cancellationToken);
         var items = await query
             .OrderBy(t => t.Title).ThenBy(t => t.Id)
-            .Skip((page - 1) * pageSize).Take(pageSize)
+            .Skip((int)Math.Min((long)(page - 1) * pageSize, int.MaxValue)).Take(pageSize)
             .Select(TrackResponse.Projection)
             .ToListAsync(cancellationToken);
 
