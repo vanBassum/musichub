@@ -23,6 +23,8 @@ namespace MusicHub.Api.Migrations
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
+            // Only the schema comes back: the Deleted rows removed by Up() are not restored, and DeletedAt
+            // returns empty. Rolling back cannot recover the deleted history.
             migrationBuilder.AddColumn<DateTimeOffset>(
                 name: "DeletedAt",
                 table: "Files",
