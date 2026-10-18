@@ -18,12 +18,29 @@ public class FilesController(FileIngestionService ingestion, IOptions<FileIngest
     /// Streams the raw request body into managed storage and returns the registered file record.
     /// </summary>
     /// <param name="filename">Original filename. Falls back to "upload" when not supplied.</param>
+    /// <param name="expectedLength">Declared byte length of the body. Requires <paramref name="expectedSha256"/>.</param>
+    /// <param name="expectedSha256">Declared SHA-256 (hex) of the body. Given with the length, the upload is Stored only if both match.</param>
     [HttpPost]
     [DisableRequestSizeLimit]
     public async Task<IActionResult> Upload(
         [FromQuery] string? filename,
+        [FromQuery] long? expectedLength,
+        [FromQuery] string? expectedSha256,
         CancellationToken cancellationToken)
     {
+        UploadExpectation? expected = null;
+        if (expectedLength is not null || expectedSha256 is not null)
+        {
+            expected = expectedLength is { } length && expectedSha256 is not null
+                ? UploadExpectation.TryCreate(length, expectedSha256)
+                : null;
+            if (expected is null)
+                return Problem(
+                    title: "Invalid upload verification values",
+                    detail: "expectedLength (a non-negative byte count) and expectedSha256 (64 hex characters) must be given together.",
+                    statusCode: StatusCodes.Status400BadRequest);
+        }
+
         var limitResult = EnforceUploadLimit();
         if (limitResult is not null)
             return limitResult;
@@ -33,7 +50,18 @@ public class FilesController(FileIngestionService ingestion, IOptions<FileIngest
         try
         {
             record = await ingestion.IngestAsync(
-                Request.Body, effectiveFilename, Request.ContentType, cancellationToken);
+                Request.Body, effectiveFilename, Request.ContentType, expected, cancellationToken);
+        }
+        catch (UploadIntegrityException ex)
+        {
+            // The bytes that arrived are not the bytes the client declared; the record is Failed.
+            return Problem(
+                title: "Upload verification failed",
+                detail: ex.Failure == UploadIntegrityFailure.Incomplete
+                    ? "Fewer bytes arrived than declared. The file was not stored; upload it again."
+                    : "The received bytes do not match the declared length and SHA-256. The file was not stored; upload it again.",
+                statusCode: StatusCodes.Status422UnprocessableEntity,
+                extensions: new Dictionary<string, object?> { ["fileId"] = ex.FileId, ["reason"] = ex.Failure.ToString() });
         }
         catch (FileIngestionException ex)
         {

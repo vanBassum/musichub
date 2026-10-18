@@ -33,7 +33,7 @@ public class FilesControllerTests
         using var db = CreateDb(nameof(Upload_WhenStored_Returns201WithStoredRecord));
         var controller = CreateController(db, new FakeFileStorage());
 
-        var result = await controller.Upload("a.mp3", CancellationToken.None);
+        var result = await controller.Upload("a.mp3", null, null, CancellationToken.None);
 
         var objectResult = Assert.IsType<ObjectResult>(result);
         Assert.Equal(StatusCodes.Status201Created, objectResult.StatusCode);
@@ -46,7 +46,7 @@ public class FilesControllerTests
         using var db = CreateDb(nameof(Upload_WhenStorageFails_ReturnsNon2xxWithFileId));
         var controller = CreateController(db, new FakeFileStorage(_ => throw new InvalidOperationException("storage down")));
 
-        var result = await controller.Upload("a.mp3", CancellationToken.None);
+        var result = await controller.Upload("a.mp3", null, null, CancellationToken.None);
 
         var objectResult = Assert.IsType<ObjectResult>(result);
         Assert.Equal(StatusCodes.Status502BadGateway, objectResult.StatusCode);
@@ -54,6 +54,51 @@ public class FilesControllerTests
         var saved = Assert.Single(db.Files.AsNoTracking());
         Assert.Equal(FileStatus.Failed, saved.Status);
         Assert.Equal(saved.Id, problem.Extensions["fileId"]);
+    }
+
+    private static string Sha256Hex(byte[] bytes) => Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(bytes));
+
+    [Fact]
+    public async Task Upload_WhenDeclaredValuesMatch_Returns201()
+    {
+        using var db = CreateDb(nameof(Upload_WhenDeclaredValuesMatch_Returns201));
+        byte[] body = [1, 2, 3];
+        var controller = CreateController(db, new FakeFileStorage(), body);
+
+        var result = await controller.Upload("a.mp3", 3, Sha256Hex(body), CancellationToken.None);
+
+        Assert.Equal(StatusCodes.Status201Created, Assert.IsType<ObjectResult>(result).StatusCode);
+    }
+
+    [Fact]
+    public async Task Upload_WhenBodyIsShorterThanDeclared_Returns422AndFailed()
+    {
+        using var db = CreateDb(nameof(Upload_WhenBodyIsShorterThanDeclared_Returns422AndFailed));
+        var controller = CreateController(db, new FakeFileStorage(), [1, 2]);
+
+        var result = await controller.Upload("a.mp3", 3, Sha256Hex([1, 2, 3]), CancellationToken.None);
+
+        var objectResult = Assert.IsType<ObjectResult>(result);
+        Assert.Equal(StatusCodes.Status422UnprocessableEntity, objectResult.StatusCode);
+        var problem = Assert.IsType<ProblemDetails>(objectResult.Value);
+        Assert.Equal("Incomplete", problem.Extensions["reason"]);
+        Assert.Equal(FileStatus.Failed, Assert.Single(db.Files.AsNoTracking()).Status);
+    }
+
+    [Theory]
+    [InlineData(null, "abc")]
+    [InlineData(3L, null)]
+    [InlineData(3L, "not-a-digest")]
+    [InlineData(-1L, "0000000000000000000000000000000000000000000000000000000000000000")]
+    public async Task Upload_WhenDeclaredValuesAreIncompleteOrMalformed_Returns400AndRegistersNothing(long? length, string? sha)
+    {
+        using var db = CreateDb(nameof(Upload_WhenDeclaredValuesAreIncompleteOrMalformed_Returns400AndRegistersNothing) + length + sha);
+        var controller = CreateController(db, new FakeFileStorage());
+
+        var result = await controller.Upload("a.mp3", length, sha, CancellationToken.None);
+
+        Assert.Equal(StatusCodes.Status400BadRequest, Assert.IsType<ObjectResult>(result).StatusCode);
+        Assert.Empty(db.Files);
     }
 
     [Fact]
@@ -68,7 +113,7 @@ public class FilesControllerTests
         }));
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
-            controller.Upload("a.mp3", cts.Token));
+            controller.Upload("a.mp3", null, null, cts.Token));
 
         Assert.NotEqual(FileStatus.Stored, Assert.Single(db.Files.AsNoTracking()).Status);
     }
@@ -111,7 +156,7 @@ public class FilesControllerTests
             throw new BadHttpRequestException("Request body too large.", StatusCodes.Status413PayloadTooLarge)));
 
         var ex = await Assert.ThrowsAsync<BadHttpRequestException>(() =>
-            controller.Upload("a.mp3", CancellationToken.None));
+            controller.Upload("a.mp3", null, null, CancellationToken.None));
 
         Assert.Equal(StatusCodes.Status413PayloadTooLarge, ex.StatusCode);
         Assert.Equal(FileStatus.Failed, Assert.Single(db.Files.AsNoTracking()).Status);
@@ -119,7 +164,7 @@ public class FilesControllerTests
 
     private static async Task<int> UploadAsync(FilesController controller, MusicHubDbContext db, string filename)
     {
-        await controller.Upload(filename, CancellationToken.None);
+        await controller.Upload(filename, null, null, CancellationToken.None);
         return db.Files.AsNoTracking().OrderByDescending(f => f.Id).First().Id;
     }
 
