@@ -20,7 +20,13 @@ public sealed class TagLibAudioMetadataReader : IAudioMetadataReader
         try
         {
             using var file = TagLib.File.Create(new ReadOnlyStreamAbstraction(audio, fileNameHint), ReadStyle.Average);
-            return Task.FromResult(new AudioMetadata(ReadTechnical(file), ReadTags(file.Tag)));
+            var technical = ReadTechnical(file);
+            if (technical.SampleRateHz is null || technical.Channels is null || technical.Duration is null)
+            {
+                throw new UnsupportedAudioException("The input contains no valid audio stream.");
+            }
+
+            return Task.FromResult(new AudioMetadata(technical, ReadTags(file.Tag)));
         }
         catch (Exception ex) when (ex is not OperationCanceledException and not UnsupportedAudioException)
         {
