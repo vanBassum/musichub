@@ -1,3 +1,5 @@
+using MusicHub.Api.Catalog;
+
 namespace MusicHub.Api.Ingestion;
 
 /// <summary>
@@ -16,4 +18,8 @@ public class FileRecord
     public long? SizeBytes { get; set; }
     public required string Source { get; set; }
     public DateTimeOffset StartedAt { get; set; }
+
+    /// <summary>The catalog track this file is an encoding of; null while unidentified. At most one track per file.</summary>
+    public int? TrackId { get; set; }
+    public Track? Track { get; set; }
 }
