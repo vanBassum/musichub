@@ -69,9 +69,11 @@ public sealed class StaleUploadCleanup(
             return false;
 
         // The candidate was loaded before the storage round trip: a deletion (or an upload that finished) may have
-        // changed it since. Re-read it so a Deleting/Deleted tombstone is never overwritten with Expired.
-        await db.Entry(record).ReloadAsync(cancellationToken);
-        if (record.Status is not (FileStatus.Pending or FileStatus.Uploading))
+        // changed it since. Re-read it so a Deleting file is never overwritten with Expired.
+        // Reload detaches the entry when the row is gone (deleted meanwhile).
+        var entry = db.Entry(record);
+        await entry.ReloadAsync(cancellationToken);
+        if (entry.State == EntityState.Detached || record.Status is not (FileStatus.Pending or FileStatus.Uploading))
             return false;
 
         record.Status = FileStatus.Expired;

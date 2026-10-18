@@ -7,8 +7,9 @@ namespace MusicHub.Api.Ingestion;
 
 public enum FileDeletionOutcome
 {
-    /// <summary>The owned object is gone and the registration is a Deleted tombstone (also when it already was).</summary>
+    /// <summary>The owned object is gone and the registration is removed.</summary>
     Deleted,
+    /// <summary>No registration with this id: never existed, or already deleted. Nothing was changed.</summary>
     NotFound,
     /// <summary>An upload for this file is still running in this process; nothing was changed.</summary>
     UploadInProgress,
@@ -27,15 +28,14 @@ public sealed class FileDeletionException(int fileId, string detail, Exception? 
 /// <summary>
 /// The one place a file is deleted, whatever its status. The registration is first made Deleting (durable intent, so
 /// an interrupted deletion is visible and retryable), then the owned object is removed and its absence confirmed, and
-/// only then the registration becomes the Deleted tombstone. The catalog link (<see cref="FileRecord.TrackId"/>) and the
-/// tracks and artists are never touched. Idempotent: deleting a Deleting or Deleted file resumes or succeeds.
+/// only then the registration row is deleted: no tombstone remains. Tracks and artists are never touched. Idempotent:
+/// deleting a Deleting file resumes, and deleting a file that is already gone is NotFound.
 /// Concurrent requests for one file are serialized in this process, and a file whose upload is running here is refused.
 /// </summary>
 public sealed class FileDeletionService(
     MusicHubDbContext db,
     IFileStorage storage,
     ActiveUploadTracker activeUploads,
-    TimeProvider time,
     ILogger<FileDeletionService> logger)
 {
     private static readonly ConcurrentDictionary<int, SemaphoreSlim> Locks = new();
@@ -59,8 +59,6 @@ public sealed class FileDeletionService(
         var record = await db.Files.FirstOrDefaultAsync(f => f.Id == id, cancellationToken);
         if (record is null)
             return FileDeletionOutcome.NotFound;
-        if (record.Status == FileStatus.Deleted)
-            return FileDeletionOutcome.Deleted;
         if (activeUploads.IsActive(record.StorageKey))
             return FileDeletionOutcome.UploadInProgress;
 
@@ -87,11 +85,19 @@ public sealed class FileDeletionService(
             throw failure;
         }
 
-        record.Status = FileStatus.Deleted;
-        record.DeletedAt = time.GetUtcNow();
-        record.DeletionError = null;
-        await db.SaveChangesAsync(cancellationToken);
-        logger.LogInformation("File {FileId} deleted; its registration remains as a tombstone.", id);
+        // The object is confirmed gone: remove the registration. If another process already did, the goal is met.
+        db.Files.Remove(record);
+        try
+        {
+            await db.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            logger.LogInformation("File {FileId} was already removed by another request.", id);
+            return FileDeletionOutcome.Deleted;
+        }
+
+        logger.LogInformation("File {FileId} deleted: object and registration removed.", id);
         return FileDeletionOutcome.Deleted;
     }
 }

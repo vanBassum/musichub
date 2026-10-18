@@ -197,28 +197,46 @@ public class StaleUploadCleanupTests
         Assert.Equal(FileStatus.Stored, (await checkDb.Files.AsNoTracking().SingleAsync()).Status);
     }
 
-    [Theory]
-    [InlineData(FileStatus.Deleting)]
-    [InlineData(FileStatus.Deleted)]
-    public async Task Run_FileDeletedAfterItWasLoaded_KeepsTheTombstone(FileStatus deletion)
+    [Fact]
+    public async Task Run_FileMarkedDeletingAfterItWasLoaded_KeepsDeleting()
     {
-        var dbName = $"{nameof(Run_FileDeletedAfterItWasLoaded_KeepsTheTombstone)}-{deletion}";
+        var dbName = nameof(Run_FileMarkedDeletingAfterItWasLoaded_KeepsDeleting);
         using var db = CreateDb(dbName);
         var record = await AddAsync(db, FileStatus.Uploading, TimeSpan.FromHours(2));
 
-        // The deletion lands while the sweep waits for storage, after the candidate was loaded.
+        // The deletion starts while the sweep waits for storage, after the candidate was loaded.
         var storage = new DeletingDuringExistsStorage(async () =>
         {
             using var other = CreateDb(dbName);
-            (await other.Files.SingleAsync(f => f.Id == record.Id)).Status = deletion;
+            (await other.Files.SingleAsync(f => f.Id == record.Id)).Status = FileStatus.Deleting;
             await other.SaveChangesAsync();
         });
 
         Assert.Equal(0, await CreateCleanup(db, storage).RunAsync(CancellationToken.None));
 
         var stored = await db.Files.AsNoTracking().SingleAsync();
-        Assert.Equal(deletion, stored.Status);
+        Assert.Equal(FileStatus.Deleting, stored.Status);
         Assert.Null(stored.StatusDetail);
+    }
+
+    [Fact]
+    public async Task Run_FileDeletedAfterItWasLoaded_DoesNotExpireOrResurrectIt()
+    {
+        var dbName = nameof(Run_FileDeletedAfterItWasLoaded_DoesNotExpireOrResurrectIt);
+        using var db = CreateDb(dbName);
+        var record = await AddAsync(db, FileStatus.Uploading, TimeSpan.FromHours(2));
+
+        // The deletion completes (row removed) while the sweep waits for storage.
+        var storage = new DeletingDuringExistsStorage(async () =>
+        {
+            using var other = CreateDb(dbName);
+            other.Files.Remove(await other.Files.SingleAsync(f => f.Id == record.Id));
+            await other.SaveChangesAsync();
+        });
+
+        Assert.Equal(0, await CreateCleanup(db, storage).RunAsync(CancellationToken.None));
+
+        Assert.False(await db.Files.AsNoTracking().AnyAsync());
     }
 
     private sealed class DeletingDuringExistsStorage(Func<Task> beforeExists) : IFileStorage

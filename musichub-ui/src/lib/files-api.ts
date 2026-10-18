@@ -5,7 +5,6 @@ export type FileStatus =
   | "Failed"
   | "Expired"
   | "Deleting"
-  | "Deleted"
 
 // One row of GET /api/files: a persisted registration, not a track.
 export interface FileRegistration {
@@ -18,10 +17,11 @@ export interface FileRegistration {
   deletionError: string | null
 }
 
-// DELETE /api/files/{id}: removes the stored object and leaves a Deleted tombstone. Safe to repeat.
+// DELETE /api/files/{id}: removes the stored object and the registration. Safe to repeat:
+// 404 means it is already gone, which is what was asked for.
 export async function deleteFile(id: string) {
   const response = await fetch(`/api/files/${id}`, { method: "DELETE" })
-  if (response.ok) return
+  if (response.ok || response.status === 404) return
   let detail: string | undefined
   try {
     detail = ((await response.json()) as { detail?: string }).detail

@@ -112,8 +112,8 @@ public class FilesController(
     }
 
     /// <summary>
-    /// Deletes the file whatever its status: removes its object and leaves a Deleted tombstone (204). Retrying a
-    /// Deleting or Deleted file is safe. 409 while an upload for it is running, 502 when storage could not be cleaned.
+    /// Deletes the file whatever its status: removes its object and its registration (204), so it leaves the list.
+    /// Retrying a Deleting file is safe; a file that is already gone is 404. 409 while an upload for it is running, 502 when storage could not be cleaned.
     /// </summary>
     [HttpDelete("{id:int}")]
     public async Task<IActionResult> Delete(int id, CancellationToken cancellationToken)
