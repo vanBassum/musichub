@@ -1,0 +1,5 @@
+# Changes to the pipeline and the local guards need Bas's review before they
+# merge (the "Protect main" ruleset requires code owner review).
+/.github/ @vanBassum
+/.claude/ @vanBassum
+/.githooks/ @vanBassum
