@@ -68,6 +68,12 @@ public sealed class StaleUploadCleanup(
         if (activeUploads.IsActive(record.StorageKey))
             return false;
 
+        // The candidate was loaded before the storage round trip: a deletion (or an upload that finished) may have
+        // changed it since. Re-read it so a Deleting/Deleted tombstone is never overwritten with Expired.
+        await db.Entry(record).ReloadAsync(cancellationToken);
+        if (record.Status is not (FileStatus.Pending or FileStatus.Uploading))
+            return false;
+
         record.Status = FileStatus.Expired;
         record.StatusDetail = ExpiredDetail;
         await db.SaveChangesAsync(cancellationToken);

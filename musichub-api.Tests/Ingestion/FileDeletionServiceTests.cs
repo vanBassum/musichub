@@ -226,7 +226,6 @@ public sealed class FileDeletionServiceTests : IDisposable
         var record = await read.Files.AsNoTracking().SingleAsync(f => f.Id == id);
         Assert.Equal(trackId, record.TrackId);
         Assert.Equal("Kept", (await read.Tracks.SingleAsync(t => t.Id == trackId)).Title);
-        Assert.True(record.IsDeletionIntended);
     }
 
     [Fact]

@@ -35,12 +35,6 @@ public class FileRecord
     /// <summary>Why the last deletion attempt did not finish while Deleting; a safe kind-only sentence, never exception text.</summary>
     public string? DeletionError { get; set; }
 
-    /// <summary>
-    /// True once deletion was requested (Deleting) or completed (Deleted). The acquisition/download pipeline must
-    /// not fetch such a file again just because its object is missing.
-    /// </summary>
-    public bool IsDeletionIntended => Status is FileStatus.Deleting or FileStatus.Deleted;
-
     /// <summary>The catalog track this file is an encoding of; null while unidentified. At most one track per file.</summary>
     public int? TrackId { get; set; }
     public Track? Track { get; set; }
