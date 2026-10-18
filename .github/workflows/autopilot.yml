@@ -199,7 +199,7 @@ jobs:
           cp .github/scripts/sandbox-job.sh .github/scripts/claude-usage.sh .github/scripts/shadcn-components.sh \
              .github/scripts/add-package.sh .github/autopilot/build.md .github/autopilot/admission.md "$RUNNER_TEMP/sandbox/trusted/"
           cp .github/reviewers/understanding.md "$RUNNER_TEMP/sandbox/trusted/reviewer-understanding.md"
-          gh issue view "$ISSUE" --repo "${{ github.repository }}" --comments >"$RUNNER_TEMP/sandbox/in/issue.md"
+          bash .github/scripts/thread-markdown.sh issue "${{ github.repository }}" "$ISSUE" >"$RUNNER_TEMP/sandbox/in/issue.md"
           gh pr list --repo "${{ github.repository }}" --state open --limit 100 >"$RUNNER_TEMP/sandbox/in/open-prs.md"
           bash .github/scripts/understanding-pending-logs.sh understanding understanding-pending-logs.md
           mv understanding-pending-logs.md "$RUNNER_TEMP/sandbox/in/"

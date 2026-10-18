@@ -44,6 +44,7 @@ jobs:
       - run: bash .github/scripts/review-gate.test.sh
       - run: bash .github/scripts/autopilot.test.sh
       - run: bash .github/scripts/issue-images.test.sh
+      - run: bash .github/scripts/thread-markdown.test.sh
       - run: bash .github/scripts/workflows.test.sh
       - run: bash .github/scripts/shadcn-components.test.sh
       - run: bash .github/scripts/add-package.test.sh
