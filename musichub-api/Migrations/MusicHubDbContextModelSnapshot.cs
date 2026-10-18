@@ -37,12 +37,19 @@ namespace MusicHub.Api.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
+                    b.Property<long?>("SizeBytes")
+                        .HasColumnType("bigint");
+
                     b.Property<string>("Source")
                         .IsRequired()
                         .HasColumnType("text");
 
                     b.Property<DateTimeOffset>("StartedAt")
                         .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasColumnType("text");
 
                     b.Property<string>("StorageKey")
                         .IsRequired()

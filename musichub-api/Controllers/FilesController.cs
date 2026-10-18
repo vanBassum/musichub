@@ -38,7 +38,9 @@ public class FilesController(FileIngestionService ingestion, IOptions<FileIngest
             record.OriginalFilename,
             record.StorageLocation,
             record.StorageKey,
+            Status = record.Status.ToString(),
             record.ContentHash,
+            record.SizeBytes,
             record.Source,
             record.StartedAt,
         });

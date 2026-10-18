@@ -14,6 +14,9 @@ internal sealed class Sha256HashingStream : Stream
 
     public Sha256HashingStream(Stream inner) => _inner = inner;
 
+    /// <summary>Number of bytes read through this stream so far.</summary>
+    public long BytesRead { get; private set; }
+
     public override bool CanRead => true;
     public override bool CanSeek => false;
     public override bool CanWrite => false;
@@ -34,14 +37,14 @@ internal sealed class Sha256HashingStream : Stream
     public override async Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken)
     {
         var n = await _inner.ReadAsync(buffer, offset, count, cancellationToken);
-        if (n > 0) _hasher.AppendData(buffer, offset, n);
+        if (n > 0) { _hasher.AppendData(buffer, offset, n); BytesRead += n; }
         return n;
     }
 
     public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
     {
         var n = await _inner.ReadAsync(buffer, cancellationToken);
-        if (n > 0) _hasher.AppendData(buffer.Span[..n]);
+        if (n > 0) { _hasher.AppendData(buffer.Span[..n]); BytesRead += n; }
         return n;
     }
 
