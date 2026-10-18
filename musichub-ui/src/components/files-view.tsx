@@ -21,6 +21,7 @@ const statusClassNames: Record<FileStatus, string> = {
   Failed: "bg-destructive text-white",
   Uploading: "bg-primary text-primary-foreground",
   Pending: "bg-warning text-warning-foreground",
+  Expired: "bg-muted text-muted-foreground",
 }
 
 const statusHints: Record<FileStatus, string> = {
@@ -28,6 +29,7 @@ const statusHints: Record<FileStatus, string> = {
   Failed: "Not stored: upload it again",
   Uploading: "Upload in progress or interrupted: not confirmed as stored",
   Pending: "Registered, not confirmed as stored",
+  Expired: "Never finished and not stored: upload it again",
 }
 
 export function FilesView({
@@ -129,7 +131,7 @@ export function FilesView({
                 </TableCell>
                 <TableCell>
                   <Badge
-                    title={statusHints[file.status]}
+                    title={file.statusDetail ?? statusHints[file.status]}
                     className={statusClassNames[file.status]}
                   >
                     {file.status}

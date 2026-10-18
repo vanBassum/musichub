@@ -17,7 +17,6 @@ public class MusicHubDbContext(DbContextOptions<MusicHubDbContext> options) : Db
         {
             file.Property(f => f.Status).HasConversion<string>();
             file.Property(f => f.FailureReason).HasConversion<string>();
-            file.Property(f => f.StatusDetail).HasMaxLength(500);
             // Files outlive tracks: deleting a track leaves its files unassociated.
             file.HasOne(f => f.Track).WithMany(t => t.Files)
                 .HasForeignKey(f => f.TrackId).OnDelete(DeleteBehavior.SetNull);

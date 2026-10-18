@@ -16,7 +16,11 @@ builder.Services.AddOpenApi();
 builder.Services.AddFileStorage(builder.Configuration);
 builder.Services.Configure<FileIngestionOptions>(
     builder.Configuration.GetSection(FileIngestionOptions.SectionName));
+builder.Services.AddSingleton<ActiveUploadTracker>();
 builder.Services.AddScoped<FileIngestionService>();
+builder.Services.AddSingleton(TimeProvider.System);
+builder.Services.AddScoped<StaleUploadCleanup>();
+builder.Services.AddHostedService<StaleUploadCleanupService>();
 
 // The connection string is built per context, from the Database__* configuration. Nothing connects at startup.
 builder.Services.Configure<DatabaseOptions>(builder.Configuration.GetSection(DatabaseOptions.SectionName));

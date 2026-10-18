@@ -15,7 +15,10 @@ namespace MusicHub.Api.Ingestion;
 /// match the bytes received; the mere existence of an object proves nothing.
 /// </summary>
 public sealed class FileIngestionService(
-    MusicHubDbContext db, IFileStorage storage, ILogger<FileIngestionService>? logger = null)
+    MusicHubDbContext db,
+    IFileStorage storage,
+    ActiveUploadTracker activeUploads,
+    ILogger<FileIngestionService>? logger = null)
 {
     /// <summary>
     /// Returns only a record with status Stored; every other outcome throws.
@@ -30,6 +33,10 @@ public sealed class FileIngestionService(
         var id = Guid.NewGuid();
         var idStr = id.ToString("D"); // e.g. "5f8a2c91-7b43-4c90-a831-1d23e4567890"
         var storageKey = $"library/{idStr[..2]}/{idStr}";
+
+        // Registered before the record exists and released only when this call ends, so the stale-upload
+        // cleanup can never expire a registration whose upload is still running.
+        using var active = activeUploads.Begin(storageKey);
 
         var record = new FileRecord
         {

@@ -19,7 +19,7 @@ public class FilesControllerTests
     private static FilesController CreateController(MusicHubDbContext db, IFileStorage storage, byte[]? body = null)
     {
         var controller = new FilesController(
-            new FileIngestionService(db, storage), Options.Create(new FileIngestionOptions()))
+            new FileIngestionService(db, storage, new ActiveUploadTracker()),Options.Create(new FileIngestionOptions()))
         {
             ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext() },
         };

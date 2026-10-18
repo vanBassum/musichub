@@ -15,13 +15,6 @@ namespace MusicHub.Api.Migrations
                 table: "Files",
                 type: "text",
                 nullable: true);
-
-            migrationBuilder.AddColumn<string>(
-                name: "StatusDetail",
-                table: "Files",
-                type: "character varying(500)",
-                maxLength: 500,
-                nullable: true);
         }
 
         /// <inheritdoc />
@@ -29,10 +22,6 @@ namespace MusicHub.Api.Migrations
         {
             migrationBuilder.DropColumn(
                 name: "FailureReason",
-                table: "Files");
-
-            migrationBuilder.DropColumn(
-                name: "StatusDetail",
                 table: "Files");
         }
     }

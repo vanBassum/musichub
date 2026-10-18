@@ -12,7 +12,7 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace MusicHub.Api.Migrations
 {
     [DbContext(typeof(MusicHubDbContext))]
-    [Migration("20261018182031_AddFileFailureReason")]
+    [Migration("20261018201337_AddFileFailureReason")]
     partial class AddFileFailureReason
     {
         /// <inheritdoc />
@@ -136,8 +136,7 @@ namespace MusicHub.Api.Migrations
                         .HasColumnType("text");
 
                     b.Property<string>("StatusDetail")
-                        .HasMaxLength(500)
-                        .HasColumnType("character varying(500)");
+                        .HasColumnType("text");
 
                     b.Property<string>("StorageKey")
                         .IsRequired()

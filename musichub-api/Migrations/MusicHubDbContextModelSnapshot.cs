@@ -133,8 +133,7 @@ namespace MusicHub.Api.Migrations
                         .HasColumnType("text");
 
                     b.Property<string>("StatusDetail")
-                        .HasMaxLength(500)
-                        .HasColumnType("character varying(500)");
+                        .HasColumnType("text");
 
                     b.Property<string>("StorageKey")
                         .IsRequired()
