@@ -30,7 +30,7 @@ public class FilesControllerTests
     public async Task Upload_WhenStored_Returns201WithStoredRecord()
     {
         using var db = CreateDb(nameof(Upload_WhenStored_Returns201WithStoredRecord));
-        var controller = CreateController(db, new StubStorage());
+        var controller = CreateController(db, new FakeFileStorage());
 
         var result = await controller.Upload("a.mp3", CancellationToken.None);
 
@@ -43,7 +43,7 @@ public class FilesControllerTests
     public async Task Upload_WhenStorageFails_ReturnsNon2xxWithFileId()
     {
         using var db = CreateDb(nameof(Upload_WhenStorageFails_ReturnsNon2xxWithFileId));
-        var controller = CreateController(db, new StubStorage(fail: true));
+        var controller = CreateController(db, new FakeFileStorage(_ => throw new InvalidOperationException("storage down")));
 
         var result = await controller.Upload("a.mp3", CancellationToken.None);
 
@@ -60,7 +60,11 @@ public class FilesControllerTests
     {
         using var db = CreateDb(nameof(Upload_WhenCancelled_DoesNotReportSuccess));
         using var cts = new CancellationTokenSource();
-        var controller = CreateController(db, new StubStorage(onPut: () => cts.Cancel(), cancelAfterPut: true));
+        var controller = CreateController(db, new FakeFileStorage(_ =>
+        {
+            cts.Cancel();
+            throw new OperationCanceledException(cts.Token);
+        }));
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
             controller.Upload("a.mp3", cts.Token));
@@ -79,18 +83,37 @@ public class FilesControllerTests
             NewRecord("tie-b.mp3", t.AddMinutes(1), FileStatus.Uploading),
             NewRecord("new.mp3", t.AddMinutes(2), FileStatus.Pending));
         await db.SaveChangesAsync();
-        var controller = CreateController(db, new StubStorage());
+        var controller = CreateController(db, new FakeFileStorage());
 
         var result = Assert.IsType<OkObjectResult>(await controller.List(CancellationToken.None));
 
-        var items = ((IEnumerable<object>)result.Value!).Select(o => o.ToString()!).ToList();
-        string[] names = ["new.mp3", "tie-b.mp3", "tie-a.mp3", "old.mp3"];
-        string[] statuses = ["Pending", "Uploading", "Failed", "Stored"];
-        for (var i = 0; i < names.Length; i++)
-        {
-            Assert.Contains($"OriginalFilename = {names[i]}", items[i]);
-            Assert.Contains($"Status = {statuses[i]}", items[i]);
-        }
+        var items = Assert.IsAssignableFrom<IEnumerable<FileListItem>>(result.Value).ToList();
+        Assert.Equal(["new.mp3", "tie-b.mp3", "tie-a.mp3", "old.mp3"], items.Select(i => i.OriginalFilename));
+        Assert.Equal(["Pending", "Uploading", "Failed", "Stored"], items.Select(i => i.Status));
+        Assert.Equal(t.AddMinutes(2), items[0].StartedAt);
+        Assert.True(items[1].Id > items[2].Id);
+    }
+
+    [Fact]
+    public void ListItem_ExposesOnlyIdFilenameSizeStatusStartedAt()
+    {
+        Assert.Equal(
+            ["Id", "OriginalFilename", "SizeBytes", "StartedAt", "Status"],
+            typeof(FileListItem).GetProperties().Select(p => p.Name).Order());
+    }
+
+    [Fact]
+    public async Task Upload_WhenBodyExceedsLimit_PropagatesClientErrorInsteadOf502()
+    {
+        using var db = CreateDb(nameof(Upload_WhenBodyExceedsLimit_PropagatesClientErrorInsteadOf502));
+        var controller = CreateController(db, new FakeFileStorage(_ =>
+            throw new BadHttpRequestException("Request body too large.", StatusCodes.Status413PayloadTooLarge)));
+
+        var ex = await Assert.ThrowsAsync<BadHttpRequestException>(() =>
+            controller.Upload("a.mp3", CancellationToken.None));
+
+        Assert.Equal(StatusCodes.Status413PayloadTooLarge, ex.StatusCode);
+        Assert.Equal(FileStatus.Failed, Assert.Single(db.Files.AsNoTracking()).Status);
     }
 
     private static FileRecord NewRecord(string name, DateTimeOffset startedAt, FileStatus status) => new()
@@ -103,21 +126,4 @@ public class FilesControllerTests
         Status = status,
     };
 
-    private sealed class StubStorage(bool fail = false, Action? onPut = null, bool cancelAfterPut = false) : IFileStorage
-    {
-        public async Task PutAsync(string key, Stream content, string? contentType, CancellationToken ct)
-        {
-            await content.CopyToAsync(Stream.Null, ct);
-            onPut?.Invoke();
-            if (fail) throw new InvalidOperationException("storage down");
-            if (cancelAfterPut) ct.ThrowIfCancellationRequested();
-        }
-
-        public Task<Stream> OpenReadAsync(string key, CancellationToken ct) =>
-            Task.FromResult<Stream>(new MemoryStream(Encoding.UTF8.GetBytes("")));
-
-        public Task<bool> ExistsAsync(string key, CancellationToken ct) => Task.FromResult(false);
-
-        public Task DeleteAsync(string key, CancellationToken ct) => Task.CompletedTask;
-    }
 }

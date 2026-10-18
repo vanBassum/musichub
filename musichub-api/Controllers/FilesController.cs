@@ -53,16 +53,8 @@ public class FilesController(FileIngestionService ingestion, IOptions<FileIngest
     public async Task<IActionResult> List(CancellationToken cancellationToken)
     {
         var records = await ingestion.ListAsync(cancellationToken);
-        return Ok(records.Select(r => new
-        {
-            r.Id,
-            r.OriginalFilename,
-            r.SizeBytes,
-            Status = r.Status.ToString(),
-            r.StartedAt,
-            r.StorageKey,
-            r.ContentHash,
-        }));
+        return Ok(records.Select(r => new FileListItem(
+            r.Id, r.OriginalFilename, r.SizeBytes, r.Status.ToString(), r.StartedAt)));
     }
 
     private static object ToResponse(FileRecord record) => new

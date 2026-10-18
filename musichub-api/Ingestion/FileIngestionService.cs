@@ -51,6 +51,13 @@ public sealed class FileIngestionService(MusicHubDbContext db, IFileStorage stor
             record.SizeBytes = hashingStream.BytesRead;
             await db.SaveChangesAsync(cancellationToken);
         }
+        catch (Exception ex) when (ex is BadHttpRequestException)
+        {
+            // A client error while reading the body (e.g. Kestrel's 413 for an over-limit chunked
+            // upload): the file is not stored, but it is not a storage failure either.
+            await TryMarkFailedAsync(record);
+            throw;
+        }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             await TryMarkFailedAsync(record);
