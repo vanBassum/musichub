@@ -11,9 +11,12 @@ import {
 import { Input } from "@/components/ui/input"
 import { Slider } from "@/components/ui/slider"
 import { trackStatuses, type Track } from "@/data/mock-tracks"
+import { cn } from "@/lib/utils"
 
 interface FilterSidebarProps {
   tracks: Track[]
+  // Extra classes, e.g. to drop the card chrome inside the mobile sheet.
+  className?: string
 }
 
 interface FilterGroupProps {
@@ -46,7 +49,7 @@ function FilterGroup({
   )
 }
 
-export function FilterSidebar({ tracks }: FilterSidebarProps) {
+export function FilterSidebar({ tracks, className }: FilterSidebarProps) {
   const counts = trackStatuses.map((status) => ({
     ...status,
     count: tracks.filter((track) => track.status === status.value).length,
@@ -55,7 +58,10 @@ export function FilterSidebar({ tracks }: FilterSidebarProps) {
   return (
     <aside
       aria-label="Filters"
-      className="flex min-h-0 flex-col gap-4 rounded-xl border bg-card p-4"
+      className={cn(
+        "flex min-h-0 flex-col gap-4 rounded-xl border bg-card p-4",
+        className
+      )}
     >
       <div className="flex items-center justify-between">
         <h2 className="text-lg font-semibold">Filters</h2>

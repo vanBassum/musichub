@@ -1,5 +1,6 @@
 import { Database, ListMusic, Music, Settings, UserRound } from "lucide-react"
 
+import { BuildInfoSheet } from "@/components/build-info-sheet"
 import { Button } from "@/components/ui/button"
 
 export function AppHeader() {
@@ -29,6 +30,7 @@ export function AppHeader() {
         </Button>
       </nav>
       <div className="ml-auto flex items-center gap-4">
+        <BuildInfoSheet />
         <Button variant="ghost" size="lg" disabled title="Not available yet">
           <Settings data-icon="inline-start" />
           <span className="hidden sm:inline">Settings</span>
