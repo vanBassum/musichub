@@ -1,8 +1,7 @@
 import { cn } from "@/lib/utils"
-import type { Track } from "@/data/mock-tracks"
 
 interface CoverArtProps {
-  track: Track
+  track: { album: string; artist: string }
   className?: string
 }
 

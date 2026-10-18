@@ -10,7 +10,7 @@ import {
 import { BuildInfoSheet } from "@/components/build-info-sheet"
 import { Button } from "@/components/ui/button"
 
-export type AppView = "library" | "files"
+export type AppView = "library" | "files" | "artists"
 
 interface AppHeaderProps {
   view: AppView
@@ -51,7 +51,13 @@ export function AppHeader({ view, onNavigate }: AppHeaderProps) {
           <ListMusic data-icon="inline-start" />
           Playlists
         </Button>
-        <Button variant="ghost" size="lg" disabled title="Not available yet">
+        <Button
+          variant={view === "artists" ? "secondary" : "ghost"}
+          size="lg"
+          aria-current={view === "artists" ? "page" : undefined}
+          className={view === "artists" ? activeClassName : undefined}
+          onClick={() => onNavigate("artists")}
+        >
           <UserRound data-icon="inline-start" />
           Artists
         </Button>
