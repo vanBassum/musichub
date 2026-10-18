@@ -6,6 +6,12 @@ import { ArtistPopularTracks } from "@/components/artist-popular-tracks"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from "@/components/ui/tabs"
+import {
   mockAlbums,
   mockArtist,
   mockPopularTracks,
@@ -86,54 +92,38 @@ export function ArtistPage({ className }: { className?: string }) {
         </div>
       </div>
       <ArtistHeader state={artist.state} onRetry={artist.retry} />
-      <div role="tablist" aria-label="Artist sections" className="flex gap-1 border-b">
-        {tabs.map(({ id, label }) => (
-          <Button
-            key={id}
-            role="tab"
-            id={`artist-tab-${id}`}
-            aria-selected={tab === id}
-            aria-controls="artist-tabpanel"
-            variant="ghost"
-            className={cn(
-              "rounded-b-none",
-              tab === id && "border-b-2 border-primary text-primary"
-            )}
-            onClick={() => setTab(id)}
+      <Tabs value={tab} onValueChange={(value) => setTab(value as Tab)}>
+        <TabsList variant="line" aria-label="Artist sections">
+          {tabs.map(({ id, label }) => (
+            <TabsTrigger key={id} value={id}>
+              {label}
+            </TabsTrigger>
+          ))}
+          <TabsTrigger
+            value="similar"
+            disabled
+            title="Demo only: not available yet"
           >
-            {label}
-          </Button>
-        ))}
-        <Button
-          variant="ghost"
-          className="rounded-b-none"
-          disabled
-          title="Demo only: not available yet"
-        >
-          Similar artists
-        </Button>
-      </div>
-      <div
-        role="tabpanel"
-        id="artist-tabpanel"
-        aria-labelledby={`artist-tab-${tab}`}
-        className="space-y-6"
-      >
-        {(tab === "overview" || tab === "tracks") && (
-          <ArtistPopularTracks
-            artistName={name}
-            state={tracks.state}
-            onRetry={tracks.retry}
-          />
-        )}
-        {(tab === "overview" || tab === "albums") && (
-          <ArtistAlbums
-            artistName={name}
-            state={albums.state}
-            onRetry={albums.retry}
-          />
-        )}
-      </div>
+            Similar artists
+          </TabsTrigger>
+        </TabsList>
+        <TabsContent value={tab} className="space-y-6">
+          {(tab === "overview" || tab === "tracks") && (
+            <ArtistPopularTracks
+              artistName={name}
+              state={tracks.state}
+              onRetry={tracks.retry}
+            />
+          )}
+          {(tab === "overview" || tab === "albums") && (
+            <ArtistAlbums
+              artistName={name}
+              state={albums.state}
+              onRetry={albums.retry}
+            />
+          )}
+        </TabsContent>
+      </Tabs>
     </div>
   )
 }

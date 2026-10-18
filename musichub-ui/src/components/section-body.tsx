@@ -53,9 +53,3 @@ export function SectionBody<T>({
   }
   return <>{children(state.data)}</>
 }
-
-export function SkeletonBar({ className }: { className: string }) {
-  return (
-    <div className={`animate-pulse rounded-md bg-muted ${className}`} />
-  )
-}

@@ -2,8 +2,9 @@ import { EllipsisVertical, ListPlus, Play } from "lucide-react"
 
 import { AvailabilityBadge } from "@/components/availability-badge"
 import { CoverArt } from "@/components/cover-art"
-import { SectionBody, SkeletonBar } from "@/components/section-body"
+import { SectionBody } from "@/components/section-body"
 import { Button } from "@/components/ui/button"
+import { Skeleton } from "@/components/ui/skeleton"
 import type { PopularTrack, SectionState } from "@/lib/artist"
 
 interface ArtistPopularTracksProps {
@@ -35,7 +36,7 @@ export function ArtistPopularTracks({
         loading={
           <div className="space-y-2">
             {[0, 1, 2, 3, 4].map((row) => (
-              <SkeletonBar key={row} className="h-12 w-full" />
+              <Skeleton key={row} className="h-12 w-full" />
             ))}
           </div>
         }

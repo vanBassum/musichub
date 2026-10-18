@@ -1,6 +1,7 @@
 import { AvailabilityBadge } from "@/components/availability-badge"
 import { CoverArt } from "@/components/cover-art"
-import { SectionBody, SkeletonBar } from "@/components/section-body"
+import { SectionBody } from "@/components/section-body"
+import { Skeleton } from "@/components/ui/skeleton"
 import type { ArtistAlbum, SectionState } from "@/lib/artist"
 
 interface ArtistAlbumsProps {
@@ -27,7 +28,7 @@ export function ArtistAlbums({
         loading={
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
             {[0, 1, 2, 3].map((card) => (
-              <SkeletonBar key={card} className="h-44 w-full" />
+              <Skeleton key={card} className="h-44 w-full" />
             ))}
           </div>
         }

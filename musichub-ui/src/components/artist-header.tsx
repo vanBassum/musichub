@@ -1,6 +1,7 @@
 import { CoverArt } from "@/components/cover-art"
-import { SectionBody, SkeletonBar } from "@/components/section-body"
+import { SectionBody } from "@/components/section-body"
 import { Badge } from "@/components/ui/badge"
+import { Skeleton } from "@/components/ui/skeleton"
 import type { Artist, SectionState } from "@/lib/artist"
 
 interface ArtistHeaderProps {
@@ -21,11 +22,11 @@ export function ArtistHeader({ state, onRetry }: ArtistHeaderProps) {
         onRetry={onRetry}
         loading={
           <div className="flex items-center gap-4">
-            <SkeletonBar className="size-24 rounded-full sm:size-28" />
+            <Skeleton className="size-24 rounded-full sm:size-28" />
             <div className="flex-1 space-y-2">
-              <SkeletonBar className="h-7 w-48 max-w-full" />
-              <SkeletonBar className="h-4 w-32" />
-              <SkeletonBar className="h-4 w-full max-w-md" />
+              <Skeleton className="h-7 w-48 max-w-full" />
+              <Skeleton className="h-4 w-32" />
+              <Skeleton className="h-4 w-full max-w-md" />
             </div>
           </div>
         }
