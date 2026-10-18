@@ -13,6 +13,12 @@ public interface IAudioFingerprintMatcher
     Task<IReadOnlyList<EvidenceCandidate>> MatchAsync(Stream audio, string? fileNameHint, CancellationToken ct);
 }
 
+/// <summary>
+/// The matcher could not produce a verdict (missing dependency, unreadable audio, no credentials, timeout, rate
+/// limit, service error). The message is shown as evidence, so it never contains secrets.
+/// </summary>
+public sealed class FingerprintUnavailableException(string message) : Exception(message);
+
 /// <summary>Reports itself unavailable when no <see cref="IAudioFingerprintMatcher"/> is registered.</summary>
 public sealed class AudioFingerprintEvidenceProvider(IAudioFingerprintMatcher? matcher = null) : IIdentificationEvidenceProvider
 {
@@ -22,10 +28,19 @@ public sealed class AudioFingerprintEvidenceProvider(IAudioFingerprintMatcher? m
     {
         if (matcher is null)
         {
-            return EvidenceReport.Unavailable(Source, "No audio fingerprint service is configured.");
+            return EvidenceReport.Unavailable(Source, "No audio fingerprint service is configured (set AcoustId__ApiKey to use AcoustID).");
         }
 
-        var candidates = await matcher.MatchAsync(context.Audio, context.FileNameHint, ct);
+        IReadOnlyList<EvidenceCandidate> candidates;
+        try
+        {
+            candidates = await matcher.MatchAsync(context.Audio, context.FileNameHint, ct);
+        }
+        catch (FingerprintUnavailableException ex)
+        {
+            return EvidenceReport.Unavailable(Source, ex.Message);
+        }
+
         return candidates.Count == 0
             ? EvidenceReport.NothingFound(Source, "The fingerprint matched no recording.")
             : EvidenceReport.Provided(Source, candidates, "Fingerprint match.");
