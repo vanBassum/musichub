@@ -47,9 +47,21 @@ variables, or the `Database` section of the configuration); no credentials live 
 The API starts without a reachable database (or without these keys); the readiness
 check then reports unhealthy.
 
-**Migrations** are a separate step. Normal startup never migrates. Run the migration
-once per deployment, with the same `Database__*` environment, and it exits when done
-(non-zero on failure, without printing connection details):
+**Migrations** are applied by the API itself on every start. Only pending migrations
+run, so a start with nothing pending changes nothing. Until they have run, `/api/*`
+answers 503 and `/health/ready` is unhealthy (liveness stays healthy, the UI is served).
+
+- An unreachable database is retried without a limit: 5, 10, 20, 40, then every 60
+  seconds, each with up to 20% jitter.
+- Any other migration failure (a SQL or schema error) is logged as critical and stops
+  the API with a non-zero exit code. Fix the cause and restart.
+- Instances starting together take turns: Npgsql holds a PostgreSQL advisory lock
+  around the migration.
+- Migrations are additive only. An older instance still running during a rollout keeps
+  using the old schema, so a migration must not break the previous version.
+
+`--migrate` runs the same migration once, without retries, and exits (non-zero on
+failure, without printing connection details). It is no longer required:
 
 ```bash
 docker run --rm -e Database__Host=… -e Database__Database=… -e Database__Username=… -e Database__Password=… <image> --migrate
