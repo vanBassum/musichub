@@ -119,9 +119,10 @@ git config core.hooksPath .githooks   # refuses pushes to main
    squash-merged automatically. A PR that changes `.github/`, `.githooks/` or
    `.claude/`, or carries the `no-automerge` label, is merged by hand.
 
-The `autopilot` label on an issue lets Claude analyse, build and open the PR by
-itself; `autopilot:analysis-only` together with it asks for an investigation report
-only.
+The `autopilot` label on an issue lets Claude judge, build and open the PR by
+itself, and fix what the review finds (up to three rounds); `autopilot:analysis-only`
+together with it asks for an investigation report only. Use the "Work for autopilot"
+issue form.
 
 Every push to `main` publishes `ghcr.io/vanbassum/musichub:sha-<12 hex>` (and the
 moving `:main`). Environments pin a `sha-…` tag; there are no release tags.

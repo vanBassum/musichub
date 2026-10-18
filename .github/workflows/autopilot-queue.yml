@@ -1,0 +1,43 @@
+name: Autopilot queue
+
+# An issue that got the `autopilot` label while Claude's usage status didn't allow
+# a new attempt keeps its label and waits (stage `waiting`, see
+# .github/scripts/autopilot.sh). Every 30 minutes this starts the waiting issue with
+# the lowest number again, through autopilot.yml's workflow_dispatch. That run
+# probes Claude's usage itself: still not allowed, and the issue simply keeps
+# waiting, without a new comment. One issue per tick, so a backlog doesn't spend the
+# whole allowance at once.
+#
+# A workflow_dispatch made with GITHUB_TOKEN does start a run (unlike most events
+# it causes). The job runs no Claude and no code of any PR.
+
+on:
+  schedule:
+    - cron: '*/30 * * * *'
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: autopilot-queue
+  cancel-in-progress: false
+
+jobs:
+  queue:
+    if: vars.PIPELINE_MODE == 'full' || vars.PIPELINE_MODE == 'analysis-only'
+    runs-on: [self-hosted, strato]
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: read
+      # To dispatch autopilot.yml.
+      actions: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          sparse-checkout: .github/scripts
+          persist-credentials: false
+      - env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: bash .github/scripts/autopilot.sh queue
