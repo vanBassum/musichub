@@ -18,12 +18,25 @@ public class FilesController(FileIngestionService ingestion, IOptions<FileIngest
     /// Streams the raw request body into managed storage and returns the registered file record.
     /// </summary>
     /// <param name="filename">Original filename. Falls back to "upload" when not supplied.</param>
+    /// <param name="expectedLength">Declared byte length of the body (required).</param>
+    /// <param name="expectedSha256">Declared SHA-256 (hex) of the body (required). The upload is Stored only if length and digest both match.</param>
     [HttpPost]
     [DisableRequestSizeLimit]
     public async Task<IActionResult> Upload(
         [FromQuery] string? filename,
+        [FromQuery] long? expectedLength,
+        [FromQuery] string? expectedSha256,
         CancellationToken cancellationToken)
     {
+        var expected = expectedLength is { } length && expectedSha256 is not null
+            ? UploadExpectation.TryCreate(length, expectedSha256)
+            : null;
+        if (expected is null)
+            return Problem(
+                title: "Invalid upload verification values",
+                detail: "expectedLength (a non-negative byte count) and expectedSha256 (64 hex characters) are required.",
+                statusCode: StatusCodes.Status400BadRequest);
+
         var limitResult = EnforceUploadLimit();
         if (limitResult is not null)
             return limitResult;
@@ -33,7 +46,16 @@ public class FilesController(FileIngestionService ingestion, IOptions<FileIngest
         try
         {
             record = await ingestion.IngestAsync(
-                Request.Body, effectiveFilename, Request.ContentType, cancellationToken);
+                Request.Body, effectiveFilename, Request.ContentType, expected, cancellationToken);
+        }
+        catch (UploadIntegrityException ex)
+        {
+            // The bytes that arrived are not the bytes the client declared; the record is Failed.
+            return Problem(
+                title: "Upload verification failed",
+                detail: $"{ex.Detail} The file was not stored; upload it again.",
+                statusCode: StatusCodes.Status422UnprocessableEntity,
+                extensions: new Dictionary<string, object?> { ["fileId"] = ex.FileId, ["reason"] = ex.Failure.ToString() });
         }
         catch (FileIngestionException ex)
         {
@@ -42,7 +64,7 @@ public class FilesController(FileIngestionService ingestion, IOptions<FileIngest
                 title: "File upload failed",
                 detail: "The file could not be stored. Check its status in GET /api/files and upload it again.",
                 statusCode: StatusCodes.Status502BadGateway,
-                extensions: new Dictionary<string, object?> { ["fileId"] = ex.FileId });
+                extensions: new Dictionary<string, object?> { ["fileId"] = ex.FileId, ["reason"] = UploadIntegrityFailure.StorageError.ToString() });
         }
 
         return StatusCode(StatusCodes.Status201Created, ToResponse(record));
@@ -54,7 +76,8 @@ public class FilesController(FileIngestionService ingestion, IOptions<FileIngest
     {
         var records = await ingestion.ListAsync(cancellationToken);
         return Ok(records.Select(r => new FileListItem(
-            r.Id, r.OriginalFilename, r.SizeBytes, r.Status.ToString(), r.StartedAt, r.StatusDetail)));
+            r.Id, r.OriginalFilename, r.SizeBytes, r.Status.ToString(), r.StartedAt,
+            r.FailureReason?.ToString(), r.StatusDetail)));
     }
 
     /// <summary>Streams the original bytes of a Stored file as an attachment named after its original filename.</summary>

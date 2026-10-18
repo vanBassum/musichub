@@ -16,10 +16,17 @@ public class FileRecord
     public FileStatus Status { get; set; }
     public string? ContentHash { get; set; }
     public long? SizeBytes { get; set; }
+
+    /// <summary>Why the upload is Failed; null otherwise.</summary>
+    public UploadIntegrityFailure? FailureReason { get; set; }
+
     public required string Source { get; set; }
     public DateTimeOffset StartedAt { get; set; }
 
-    /// <summary>Why the upload is Failed or Expired and what to do next; null otherwise.</summary>
+    /// <summary>
+    /// Why the upload is Failed or Expired and what to do next; null otherwise. A fixed, safe sentence that
+    /// explains <see cref="FailureReason"/>; never exception text.
+    /// </summary>
     public string? StatusDetail { get; set; }
 
     /// <summary>The catalog track this file is an encoding of; null while unidentified. At most one track per file.</summary>

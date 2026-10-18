@@ -181,7 +181,7 @@ public class StaleUploadCleanupTests
 
         using var uploadDb = CreateDb(dbName);
         var upload = new FileIngestionService(uploadDb, storage, tracker)
-            .IngestAsync(new MemoryStream([1, 2, 3]), "a.mp3", null, CancellationToken.None);
+            .IngestAsync(new MemoryStream([1, 2, 3]), "a.mp3", null, null, CancellationToken.None);
         await started.Task;
 
         // Hours later the upload is still running: the sweep must not touch it.

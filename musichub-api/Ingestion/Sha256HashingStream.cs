@@ -17,6 +17,9 @@ internal sealed class Sha256HashingStream : Stream
     /// <summary>Number of bytes read through this stream so far.</summary>
     public long BytesRead { get; private set; }
 
+    /// <summary>True once a read returned 0 bytes: the whole inner stream was consumed.</summary>
+    public bool ReachedEnd { get; private set; }
+
     public override bool CanRead => true;
     public override bool CanSeek => false;
     public override bool CanWrite => false;
@@ -30,28 +33,32 @@ internal sealed class Sha256HashingStream : Stream
     public override int Read(byte[] buffer, int offset, int count)
     {
         var n = _inner.Read(buffer, offset, count);
-        Record(buffer.AsSpan(offset, n));
+        Record(buffer.AsSpan(offset, n), count);
         return n;
     }
 
     public override async Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken)
     {
         var n = await _inner.ReadAsync(buffer, offset, count, cancellationToken);
-        Record(buffer.AsSpan(offset, n));
+        Record(buffer.AsSpan(offset, n), count);
         return n;
     }
 
     public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
     {
         var n = await _inner.ReadAsync(buffer, cancellationToken);
-        Record(buffer.Span[..n]);
+        Record(buffer.Span[..n], buffer.Length);
         return n;
     }
 
     // Hash and byte count must advance together, so every read path goes through here.
-    private void Record(ReadOnlySpan<byte> data)
+    private void Record(ReadOnlySpan<byte> data, int requested)
     {
-        if (data.IsEmpty) return;
+        if (data.IsEmpty)
+        {
+            if (requested > 0) ReachedEnd = true;
+            return;
+        }
         _hasher.AppendData(data);
         BytesRead += data.Length;
     }
