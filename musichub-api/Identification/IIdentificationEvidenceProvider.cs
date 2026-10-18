@@ -6,7 +6,20 @@ namespace MusicHub.Api.Identification;
 /// <param name="Audio">The audio content; positioned at the start, only read, never disposed.</param>
 /// <param name="FileNameHint">The file name, used only for its extension; may be null.</param>
 /// <param name="Metadata">The metadata read from the file; its tags are untrusted.</param>
-public sealed record IdentificationContext(Stream Audio, string? FileNameHint, AudioMetadata Metadata);
+public sealed record IdentificationContext(Stream Audio, string? FileNameHint, AudioMetadata Metadata)
+{
+    /// <summary>
+    /// The title and artists the embedded tags name, as a hint. False unless there is a title and at least one
+    /// non-blank artist.
+    /// </summary>
+    public bool TryGetTagHint(out string title, out IReadOnlyList<string> artists)
+    {
+        var tags = Metadata.Tags;
+        artists = tags.Artists.Where(a => !string.IsNullOrWhiteSpace(a)).ToList();
+        title = tags.Title ?? "";
+        return !string.IsNullOrWhiteSpace(title) && artists.Count > 0;
+    }
+}
 
 /// <summary>
 /// An independent identification tool. It yields candidates and says what it did; it never decides which identity

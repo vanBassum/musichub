@@ -52,7 +52,7 @@ public class EvidenceProviderTests
 
         var result = await Resolve().IdentifyAsync(stream, "song.mp3", CancellationToken.None);
 
-        Assert.Equal(IdentificationStatus.Identified, result.Status);
+        Assert.Equal(IdentificationStatus.Unresolved, result.Status);
         Assert.Contains(result.Evidence, e => e.Source == "candidate-search" && e.Description.StartsWith("Unavailable"));
         Assert.Contains(result.Evidence, e => e.Source == "audio-fingerprint" && e.Description.StartsWith("Unavailable"));
     }
@@ -150,7 +150,49 @@ public class EvidenceProviderTests
         var result = await Resolve(s => s.AddSingleton<ICandidateSearch>(new FakeSearch()))
             .IdentifyAsync(stream, "song.mp3", CancellationToken.None);
 
-        Assert.Equal(IdentificationStatus.Identified, result.Status);
+        Assert.Equal(IdentificationStatus.Unresolved, result.Status);
         Assert.Contains(result.Evidence, e => e.Source == "fake-search" && e.Description.StartsWith("Found nothing"));
+    }
+
+    [Fact]
+    public async Task Tags_alone_never_identify_but_stay_in_the_evidence()
+    {
+        using var stream = TaggedStream("A Title", "An Artist");
+
+        var result = await Resolve().IdentifyAsync(stream, "song.mp3", CancellationToken.None);
+
+        Assert.Equal(IdentificationStatus.Unresolved, result.Status);
+        Assert.Null(result.Identity);
+        Assert.Contains("embedded tags", result.UnresolvedReason);
+        Assert.Contains(result.Evidence, e => e.Source == "file-metadata" && e.Description.Contains("A Title"));
+    }
+
+    [Fact]
+    public async Task A_non_tag_source_agreeing_with_the_tags_identifies()
+    {
+        using var stream = TaggedStream("A Title", "An Artist");
+
+        var result = await Resolve(s =>
+            s.AddSingleton<IAudioFingerprintMatcher>(new FakeFingerprint(Candidate("A Title", "An Artist"))))
+            .IdentifyAsync(stream, "song.mp3", CancellationToken.None);
+
+        Assert.Equal(IdentificationStatus.Identified, result.Status);
+    }
+
+    [Fact]
+    public async Task Blank_artists_are_not_a_hint_for_the_search_or_the_tags()
+    {
+        using var stream = new MemoryStream(AudioSamples.TaggedMp3(tag =>
+        {
+            tag.Title = "A Title";
+            tag.Performers = [" "];
+        }));
+
+        var result = await Resolve(s => s.AddSingleton<ICandidateSearch>(new FakeSearch(Candidate("A Title", "X"))))
+            .IdentifyAsync(stream, "song.mp3", CancellationToken.None);
+
+        Assert.Equal(IdentificationStatus.Unresolved, result.Status);
+        Assert.Contains(result.Evidence, e => e.Source == "fake-search" && e.Description.StartsWith("Found nothing"));
+        Assert.Contains(result.Evidence, e => e.Source == "file-metadata" && e.Description.StartsWith("Found nothing"));
     }
 }

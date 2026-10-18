@@ -4,8 +4,9 @@ namespace MusicHub.Api.Identification;
 
 /// <summary>
 /// The deterministic resolver; it needs no AI provider. It runs every evidence provider and proposes an identity
-/// only when all candidates agree on one recording (same title and artists, ignoring case). No candidate, or
-/// candidates that disagree, leave the file unresolved. All evidence is kept per source either way.
+/// only when all candidates agree on one recording (same title and artists, ignoring case) and at least one of
+/// them comes from a source other than the embedded tags. No candidate, tags alone, or candidates that disagree,
+/// leave the file unresolved. All evidence is kept per source either way.
 /// </summary>
 public sealed class RuleBasedRecordingIdentifier(
     IAudioMetadataReader metadataReader,
@@ -47,6 +48,13 @@ public sealed class RuleBasedRecordingIdentifier(
                 $"{Format(g.First().Candidate)} ({string.Join(", ", g.Select(c => c.Source).Distinct())})");
             return IdentificationResult.Unresolved(
                 $"The evidence names {identities.Count} different recordings: {string.Join("; ", conflicts)}.",
+                evidence);
+        }
+
+        if (identities[0].All(c => c.Source == FileMetadataEvidenceProvider.SourceName))
+        {
+            return IdentificationResult.Unresolved(
+                "Only the embedded tags name this recording; tags are hints and need another source to agree.",
                 evidence);
         }
 

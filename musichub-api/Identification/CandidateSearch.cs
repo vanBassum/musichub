@@ -28,15 +28,13 @@ public sealed class CandidateSearchEvidenceProvider(ICandidateSearch? search = n
             return EvidenceReport.Unavailable(Source, "No candidate search service is configured.");
         }
 
-        var tags = context.Metadata.Tags;
-        var artists = tags.Artists.Where(a => !string.IsNullOrWhiteSpace(a)).ToList();
-        if (string.IsNullOrWhiteSpace(tags.Title) || artists.Count == 0)
+        if (!context.TryGetTagHint(out var title, out var artists))
         {
             return EvidenceReport.NothingFound(Source, "No title and artist hints to search for.");
         }
 
-        var query = $"\"{tags.Title}\" by {string.Join(", ", artists)}";
-        var candidates = await search.SearchAsync(tags.Title, artists, ct);
+        var query = $"\"{title}\" by {string.Join(", ", artists)}";
+        var candidates = await search.SearchAsync(title, artists, ct);
         return candidates.Count == 0
             ? EvidenceReport.NothingFound(Source, $"No match for {query}.")
             : EvidenceReport.Provided(Source, candidates, $"Search for {query}.");
