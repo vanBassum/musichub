@@ -107,6 +107,28 @@ To verify it, a consumer or test injects `IFileStorage` and does a put, exists, 
 delete round trip against a throwaway bucket. Never use production data or the NAS
 source collection for that.
 
+## AcoustID audio fingerprints
+
+The audio fingerprint evidence tool (`source` `acoustid`) makes a Chromaprint fingerprint
+with `fpcalc` and asks [AcoustID](https://acoustid.org) for matching recordings. It is
+registered only when an API key is configured (the `AcoustId` configuration section):
+
+| Key | Default |
+| --- | --- |
+| `AcoustId__ApiKey` | none; the application's AcoustID key (secret, never logged) |
+| `AcoustId__FpcalcPath` | `fpcalc` |
+| `AcoustId__TimeoutSeconds` | `30` (each for `fpcalc` and the AcoustID request) |
+| `AcoustId__FingerprintSeconds` | `120` (audio analysed by `fpcalc`) |
+| `AcoustId__MaxFileMegabytes` | `200` |
+| `AcoustId__MaxConcurrentFingerprints` | `2` |
+| `AcoustId__MinScore` | `0.8` (lower AcoustID scores are ignored) |
+
+Runtime dependency: `fpcalc` (Debian package `libchromaprint-tools`), installed in the
+Docker image; a local run needs it on the PATH. Without it, without a key, with
+unreadable audio, on a timeout or a rate limit the tool reports itself unavailable in the
+evidence and yields no candidate. AcoustID scores appear on the evidence as provenance;
+they are not MusicHub's identification confidence.
+
 ## Understanding
 
 Product understanding lives in the separate repo
