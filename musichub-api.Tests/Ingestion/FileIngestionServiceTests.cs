@@ -25,7 +25,7 @@ public class FileIngestionServiceTests
 
         using var db = CreateDb(nameof(IngestAsync_WithNonSeekableStream_ComputesCorrectSha256));
         var storage = new FakeFileStorage();
-        var service = new FileIngestionService(db, storage);
+        var service = new FileIngestionService(db, storage, new ActiveUploadTracker());
 
         var record = await service.IngestAsync(
             new NonSeekableStream(new MemoryStream(data)), "test.txt", null, CancellationToken.None);
@@ -39,7 +39,7 @@ public class FileIngestionServiceTests
         var data = new byte[] { 1, 2, 3 };
         using var db = CreateDb(nameof(IngestAsync_StorageKeyFollowsLibraryLayout));
         var storage = new FakeFileStorage();
-        var service = new FileIngestionService(db, storage);
+        var service = new FileIngestionService(db, storage, new ActiveUploadTracker());
 
         var record = await service.IngestAsync(
             new MemoryStream(data), "song.mp3", null, CancellationToken.None);
@@ -60,7 +60,7 @@ public class FileIngestionServiceTests
         var data = new byte[] { 42 };
         using var db = CreateDb(nameof(IngestAsync_SetsRequiredMetadata));
         var storage = new FakeFileStorage();
-        var service = new FileIngestionService(db, storage);
+        var service = new FileIngestionService(db, storage, new ActiveUploadTracker());
 
         var record = await service.IngestAsync(
             new MemoryStream(data), "track.flac", "audio/flac", CancellationToken.None);
@@ -87,7 +87,7 @@ public class FileIngestionServiceTests
                 .Select(f => (int?)f.Id)
                 .FirstOrDefault();
         });
-        var service = new FileIngestionService(db, storage);
+        var service = new FileIngestionService(db, storage, new ActiveUploadTracker());
 
         await service.IngestAsync(new MemoryStream(data), "f.mp3", null, CancellationToken.None);
 
@@ -100,7 +100,7 @@ public class FileIngestionServiceTests
     {
         var data = new byte[] { 1, 2, 3, 4, 5 };
         using var db = CreateDb(nameof(IngestAsync_OnSuccess_SetsStoredWithHashAndSize));
-        var service = new FileIngestionService(db, new FakeFileStorage());
+        var service = new FileIngestionService(db, new FakeFileStorage(), new ActiveUploadTracker());
 
         var record = await service.IngestAsync(new MemoryStream(data), "a.mp3", null, CancellationToken.None);
 
@@ -116,7 +116,7 @@ public class FileIngestionServiceTests
         using var db = CreateDb(nameof(IngestAsync_WhileStreaming_StatusIsUploadingWithoutHashOrSize));
         FileRecord? seen = null;
         var storage = new FakeFileStorage(onPut: key => seen = db.Files.AsNoTracking().Single(f => f.StorageKey == key));
-        var service = new FileIngestionService(db, storage);
+        var service = new FileIngestionService(db, storage, new ActiveUploadTracker());
 
         await service.IngestAsync(new MemoryStream([1]), "a.mp3", null, CancellationToken.None);
 
@@ -131,7 +131,7 @@ public class FileIngestionServiceTests
     {
         using var db = CreateDb(nameof(IngestAsync_WhenStorageFails_PersistsFailedWithoutHashOrSize));
         var storage = new FakeFileStorage(onPut: _ => throw new InvalidOperationException("storage down"));
-        var service = new FileIngestionService(db, storage);
+        var service = new FileIngestionService(db, storage, new ActiveUploadTracker());
 
         var ex = await Assert.ThrowsAsync<FileIngestionException>(() =>
             service.IngestAsync(new MemoryStream([1, 2]), "a.mp3", null, CancellationToken.None));
@@ -154,7 +154,7 @@ public class FileIngestionServiceTests
             cts.Cancel();
             throw new OperationCanceledException(cts.Token);
         });
-        var service = new FileIngestionService(db, storage);
+        var service = new FileIngestionService(db, storage, new ActiveUploadTracker());
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
             service.IngestAsync(new MemoryStream([1, 2]), "a.mp3", null, cts.Token));

@@ -19,6 +19,9 @@ public class FileRecord
     public required string Source { get; set; }
     public DateTimeOffset StartedAt { get; set; }
 
+    /// <summary>Why the upload is Failed or Expired and what to do next; null otherwise.</summary>
+    public string? StatusDetail { get; set; }
+
     /// <summary>The catalog track this file is an encoding of; null while unidentified. At most one track per file.</summary>
     public int? TrackId { get; set; }
     public Track? Track { get; set; }

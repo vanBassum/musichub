@@ -11,7 +11,7 @@ namespace MusicHub.Api.Ingestion;
 /// after storage confirms success, together with the byte count and status Stored.
 /// Cancellation or process termination may leave Pending or Uploading; that never means stored.
 /// </summary>
-public sealed class FileIngestionService(MusicHubDbContext db, IFileStorage storage)
+public sealed class FileIngestionService(MusicHubDbContext db, IFileStorage storage, ActiveUploadTracker activeUploads)
 {
     /// <summary>
     /// Returns only a record with status Stored; every other outcome throws.
@@ -25,6 +25,10 @@ public sealed class FileIngestionService(MusicHubDbContext db, IFileStorage stor
         var id = Guid.NewGuid();
         var idStr = id.ToString("D"); // e.g. "5f8a2c91-7b43-4c90-a831-1d23e4567890"
         var storageKey = $"library/{idStr[..2]}/{idStr}";
+
+        // Registered before the record exists and released only when this call ends, so the stale-upload
+        // cleanup can never expire a registration whose upload is still running.
+        using var active = activeUploads.Begin(storageKey);
 
         var record = new FileRecord
         {
@@ -96,6 +100,7 @@ public sealed class FileIngestionService(MusicHubDbContext db, IFileStorage stor
         try
         {
             record.Status = FileStatus.Failed;
+            record.StatusDetail = "The upload failed before storage was confirmed: upload the file again.";
             record.ContentHash = null;
             record.SizeBytes = null;
             await db.SaveChangesAsync(CancellationToken.None);
