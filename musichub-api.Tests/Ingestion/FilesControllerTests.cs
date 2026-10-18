@@ -19,7 +19,10 @@ public class FilesControllerTests
     private static FilesController CreateController(MusicHubDbContext db, IFileStorage storage, byte[]? body = null)
     {
         var controller = new FilesController(
-            new FileIngestionService(db, storage, new ActiveUploadTracker()),Options.Create(new FileIngestionOptions()))
+            new FileIngestionService(db, storage, new ActiveUploadTracker()),
+            new FileDeletionService(db, storage, new ActiveUploadTracker(), TimeProvider.System,
+                Microsoft.Extensions.Logging.Abstractions.NullLogger<FileDeletionService>.Instance),
+            Options.Create(new FileIngestionOptions()))
         {
             ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext() },
         };
@@ -162,8 +165,56 @@ public class FilesControllerTests
     public void ListItem_ExposesNeitherStorageKeyNorContentHash()
     {
         Assert.Equal(
-            ["FailureReason", "Id", "OriginalFilename", "SizeBytes", "StartedAt", "Status", "StatusDetail"],
+            ["DeletionError", "FailureReason", "Id", "OriginalFilename", "SizeBytes", "StartedAt", "Status", "StatusDetail"],
             typeof(FileListItem).GetProperties().Select(p => p.Name).Order());
+    }
+
+    [Fact]
+    public async Task Delete_StoredFile_Returns204AndListShowsDeleted()
+    {
+        using var db = CreateDb(nameof(Delete_StoredFile_Returns204AndListShowsDeleted));
+        var controller = CreateController(db, new FakeFileStorage());
+        await controller.Upload("a.mp3", 3, Sha256Hex([1, 2, 3]), CancellationToken.None);
+        var id = db.Files.AsNoTracking().Single().Id;
+
+        Assert.IsType<NoContentResult>(await controller.Delete(id, CancellationToken.None));
+        Assert.IsType<NoContentResult>(await controller.Delete(id, CancellationToken.None));
+
+        Assert.Equal(FileStatus.Deleted, db.Files.AsNoTracking().Single().Status);
+    }
+
+    [Fact]
+    public async Task Delete_UnknownFile_Returns404()
+    {
+        using var db = CreateDb(nameof(Delete_UnknownFile_Returns404));
+        var controller = CreateController(db, new FakeFileStorage());
+
+        Assert.IsType<NotFoundResult>(await controller.Delete(42, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task Delete_WhenStorageFails_Returns502AndFileStaysDeleting()
+    {
+        using var db = CreateDb(nameof(Delete_WhenStorageFails_Returns502AndFileStaysDeleting));
+        var storage = new FakeFileStorage();
+        var controller = CreateController(db, storage);
+        await controller.Upload("a.mp3", 3, Sha256Hex([1, 2, 3]), CancellationToken.None);
+        var id = db.Files.AsNoTracking().Single().Id;
+        var failing = CreateController(db, new ThrowingDeleteStorage(storage));
+
+        var result = Assert.IsType<ObjectResult>(await failing.Delete(id, CancellationToken.None));
+
+        Assert.Equal(StatusCodes.Status502BadGateway, result.StatusCode);
+        Assert.Equal(FileStatus.Deleting, db.Files.AsNoTracking().Single().Status);
+    }
+
+    private sealed class ThrowingDeleteStorage(IFileStorage inner) : IFileStorage
+    {
+        public Task PutAsync(string key, Stream content, string? contentType, CancellationToken ct) =>
+            inner.PutAsync(key, content, contentType, ct);
+        public Task<Stream> OpenReadAsync(string key, CancellationToken ct) => inner.OpenReadAsync(key, ct);
+        public Task<bool> ExistsAsync(string key, CancellationToken ct) => inner.ExistsAsync(key, ct);
+        public Task DeleteAsync(string key, CancellationToken ct) => throw new IOException("down");
     }
 
     [Fact]

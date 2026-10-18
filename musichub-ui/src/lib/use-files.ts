@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 
 import {
+  deleteFile,
   listFiles,
   uploadFile,
   UploadCancelled,
@@ -21,7 +22,12 @@ export interface Upload {
   cancel?: () => void
 }
 
+// A delete requested in this session: pending until the API answers; an error stays until retried.
+export type DeleteState = { pending: true } | { pending: false; error: string }
+
 export interface FilesState {
+  deletions: Record<string, DeleteState>
+  remove: (id: string) => void
   files: FileRegistration[] | null
   loadError: string | null
   refreshing: boolean
@@ -124,10 +130,51 @@ export function useFiles(): FilesState {
     [patch, refresh]
   )
 
+  const [deletions, setDeletions] = useState<Record<string, DeleteState>>({})
+  const inFlight = useRef(new Set<string>())
+
+  // One request per file at a time: a double click or a second confirm is ignored.
+  const remove = useCallback(
+    (id: string) => {
+      if (inFlight.current.has(id)) return
+      inFlight.current.add(id)
+      setDeletions((all) => ({ ...all, [id]: { pending: true } }))
+      deleteFile(id)
+        .then(
+          () =>
+            setDeletions((all) => {
+              const rest = { ...all }
+              delete rest[id]
+              return rest
+            }),
+          (error: Error) =>
+            setDeletions((all) => ({
+              ...all,
+              [id]: { pending: false, error: error.message },
+            }))
+        )
+        .finally(() => {
+          inFlight.current.delete(id)
+          void refresh()
+        })
+    },
+    [refresh]
+  )
+
   const dismiss = useCallback(
     (key: number) => setUploads((all) => all.filter((u) => u.key !== key)),
     []
   )
 
-  return { files, loadError, refreshing, uploads, refresh, start, dismiss }
+  return {
+    files,
+    loadError,
+    refreshing,
+    uploads,
+    deletions,
+    refresh,
+    start,
+    dismiss,
+    remove,
+  }
 }

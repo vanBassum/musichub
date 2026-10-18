@@ -17,7 +17,7 @@ public sealed class FileIngestionException(int fileId, Exception inner)
     /// </summary>
     public string Detail { get; } = $"The storage backend failed ({Describe(inner)}) and the object could not be verified.";
 
-    private static string Describe(Exception error)
+    internal static string Describe(Exception error)
     {
         for (Exception? current = error; current is not null; current = current.InnerException)
         {

@@ -12,7 +12,8 @@ namespace MusicHub.Api.Controllers;
 /// </summary>
 [ApiController]
 [Route("api/files")]
-public class FilesController(FileIngestionService ingestion, IOptions<FileIngestionOptions> options) : ControllerBase
+public class FilesController(
+    FileIngestionService ingestion, FileDeletionService deletion, IOptions<FileIngestionOptions> options) : ControllerBase
 {
     /// <summary>
     /// Streams the raw request body into managed storage and returns the registered file record.
@@ -77,7 +78,7 @@ public class FilesController(FileIngestionService ingestion, IOptions<FileIngest
         var records = await ingestion.ListAsync(cancellationToken);
         return Ok(records.Select(r => new FileListItem(
             r.Id, r.OriginalFilename, r.SizeBytes, r.Status.ToString(), r.StartedAt,
-            r.FailureReason?.ToString(), r.StatusDetail)));
+            r.FailureReason?.ToString(), r.StatusDetail, r.DeletionError)));
     }
 
     /// <summary>Streams the original bytes of a Stored file as an attachment named after its original filename.</summary>
@@ -108,6 +109,35 @@ public class FilesController(FileIngestionService ingestion, IOptions<FileIngest
         // FileStreamResult disposes the stream and builds Content-Disposition: attachment with an
         // RFC 5987 filename*, so Unicode survives and CR/LF or quotes cannot break the header.
         return File(opened.Value.Content, "application/octet-stream", SafeDownloadName(opened.Value.Record.OriginalFilename));
+    }
+
+    /// <summary>
+    /// Deletes the file whatever its status: removes its object and leaves a Deleted tombstone (204). Retrying a
+    /// Deleting or Deleted file is safe. 409 while an upload for it is running, 502 when storage could not be cleaned.
+    /// </summary>
+    [HttpDelete("{id:int}")]
+    public async Task<IActionResult> Delete(int id, CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await deletion.DeleteAsync(id, cancellationToken) switch
+            {
+                FileDeletionOutcome.Deleted => NoContent(),
+                FileDeletionOutcome.NotFound => NotFound(),
+                _ => Problem(
+                    title: "File is being uploaded",
+                    detail: "An upload for this file is still running. Wait for it to finish, then delete it.",
+                    statusCode: StatusCodes.Status409Conflict),
+            };
+        }
+        catch (FileDeletionException ex)
+        {
+            return Problem(
+                title: "File deletion failed",
+                detail: $"{ex.Detail} The file stays in the list as Deleting: delete it again to retry.",
+                statusCode: StatusCodes.Status502BadGateway,
+                extensions: new Dictionary<string, object?> { ["fileId"] = ex.FileId });
+        }
     }
 
     /// <summary>The persisted name is untrusted: keep only its last path segment, without control characters.</summary>

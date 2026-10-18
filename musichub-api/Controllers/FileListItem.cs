@@ -8,4 +8,5 @@ public sealed record FileListItem(
     string Status,
     DateTimeOffset StartedAt,
     string? FailureReason,
-    string? StatusDetail);
+    string? StatusDetail,
+    string? DeletionError);

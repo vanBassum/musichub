@@ -111,6 +111,12 @@ namespace MusicHub.Api.Migrations
                     b.Property<string>("ContentHash")
                         .HasColumnType("text");
 
+                    b.Property<DateTimeOffset?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("DeletionError")
+                        .HasColumnType("text");
+
                     b.Property<string>("FailureReason")
                         .HasColumnType("text");
 
