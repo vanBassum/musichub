@@ -1,4 +1,6 @@
 name: Claude PR review
+# The watchdog (autopilot-watchdog.yml) finds the PR by this name.
+run-name: Claude PR review #${{ github.event.pull_request.number }}
 
 # Runs one Claude reviewer per focus area (matrix) on every PR against main, then
 # merges the PR when the fail-closed gate in .github/scripts/review-gate.sh agrees.
@@ -23,6 +25,9 @@ name: Claude PR review
 # no workflows, so main would never be built or get its image. The autopilot job
 # moves the issue's card on the board (a user's project) with AUTOPILOT_BOARD_TOKEN,
 # a classic token with the `project` and `repo` scopes.
+#
+# A reviewer job that fails (a crash, a timeout, no verdict) is rerun once by the
+# watchdog (autopilot-watchdog.yml).
 
 on:
   pull_request_target:
@@ -104,6 +109,7 @@ jobs:
             PR NUMBER: ${{ github.event.pull_request.number }}
             FOCUS AREA: ${{ matrix.reviewer }}
             HEAD SHA: ${{ github.event.pull_request.head.sha }}
+            HEAD BRANCH: ${{ github.event.pull_request.head.ref }}
             UNDERSTANDING SHA: ${{ steps.understanding.outputs.sha }}
             PENDING ACCEPTED LOGS: understanding-pending-logs.md
 
@@ -160,7 +166,7 @@ jobs:
   automerge:
     needs: review
     runs-on: [self-hosted, strato]
-    timeout-minutes: 30
+    timeout-minutes: 45
     concurrency:
       group: claude-automerge-${{ github.event.pull_request.number }}
       cancel-in-progress: true
@@ -170,6 +176,9 @@ jobs:
       checks: read
       # For an autopilot PR the gate reads its issue (state, label, attempt).
       issues: read
+    # Why the gate refused, for the autopilot job's comment.
+    outputs:
+      reason: ${{ steps.gate.outputs.reason }}
     steps:
       - name: Check out the gate from main
         uses: actions/checkout@v4
@@ -181,6 +190,7 @@ jobs:
           fetch-depth: 1
 
       - name: Merge when every gate passes
+        id: gate
         working-directory: ${{ runner.temp }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -194,17 +204,19 @@ jobs:
           REVIEWERS: api ui understanding smells
           # Autopilot PRs merge only in full mode (see autopilot.yml).
           PIPELINE_MODE: ${{ vars.PIPELINE_MODE }}
+          # The build check runs the PR's tests in the sandbox, which takes a while.
+          BUILD_WAIT_SECONDS: '2400'
         run: bash "$GITHUB_WORKSPACE/trusted/.github/scripts/review-gate.sh" merge
 
   # An autopilot PR (branch autopilot/issue-N-rRUN, see autopilot.yml) reports how
-  # its review ended to its issue: merged -> Done. Blocked by reviewer findings a code
-  # change can address, on the attempt's first review -> its one fix round: the
-  # attempt moves to `fix` and this job dispatches autopilot-fix.yml, which pushes
-  # the fix to the same PR, so this workflow reviews it again in full. Anything else
-  # (also a second blocked review) -> the attempt stops, the PR is labelled
-  # no-automerge and kept, the issue goes back to To Do. It decides nothing about
-  # merging; the gate above already did, and it merges nothing while the attempt is
-  # in `fix`.
+  # its review ended to its issue: merged -> Done. Blocked by what a code change can
+  # address (blocking findings that need no decision, a failed build check, a
+  # conflict with main) -> a fix round, up to three per attempt: the attempt moves to
+  # `fix` and this job dispatches autopilot-fix.yml, which pushes the fix to the same
+  # PR, so this workflow reviews it again in full. Anything else -> the attempt
+  # stops, the PR is labelled no-automerge and kept, the issue goes back to To Do.
+  # It decides nothing about merging; the gate above already did, and it merges
+  # nothing while the attempt is in `fix`.
   autopilot:
     needs: [review, automerge]
     if: >-
@@ -255,6 +267,7 @@ jobs:
           HEAD_REF: ${{ github.event.pull_request.head.ref }}
           REVIEW_RESULT: ${{ needs.review.result }}
           AUTOMERGE_RESULT: ${{ needs.automerge.result }}
+          GATE_REASON: ${{ needs.automerge.outputs.reason }}
           # The fix round needs a verdict from each (keep in sync with the matrix)
           # and runs only in full mode.
           REVIEWERS: api ui understanding smells

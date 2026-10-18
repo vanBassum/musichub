@@ -38,7 +38,13 @@ chmod +x "$WORK/bin/gh"
 export PATH="$WORK/bin:$PATH"
 
 # --- scenario helpers ---------------------------------------------------------
-marker() { echo "<!-- claude-review: $1 sha=${3:-$SHA} blocking=$2 -->"; }
+# marker <reviewer> <blocking> [sha] [decisions]: the understanding reviewer's
+# marker always has decisions= (0 unless given).
+marker() {
+  local d=${4:-}
+  [ -n "$d" ] || [ "$1" != understanding ] || d=0
+  echo "<!-- claude-review: $1 sha=${3:-$SHA} blocking=$2${d:+ decisions=$d} -->"
+}
 
 # new_scenario: a PR that should merge. Cases then break one thing.
 new_scenario() {
@@ -319,6 +325,52 @@ drop_comments api
 if ! run_gate verdict api && grep -q "No verdict from api" "$SCENARIO/out"; then
   PASS=$((PASS + 1)); echo "ok    verdict fails a reviewer that posted none"
 else FAILED=$((FAILED + 1)); echo "FAIL  verdict fails a reviewer that posted none"; cat "$SCENARIO/out"; fi
+
+# --- decisions: findings that need a decision, not a code change -----------------
+# expect_verdict <description> <reviewer> <want line, or "fail: <pattern>">
+expect_verdict() {
+  if [[ $3 == fail:* ]]; then
+    if ! run_gate verdict "$2" && grep -qF -- "${3#fail: }" "$SCENARIO/out"; then
+      PASS=$((PASS + 1)); echo "ok    $1"
+    else FAILED=$((FAILED + 1)); echo "FAIL  $1"; sed 's/^/      /' "$SCENARIO/out"; fi
+  elif run_gate verdict "$2" && grep -qxF -- "$3" "$SCENARIO/out"; then
+    PASS=$((PASS + 1)); echo "ok    $1"
+  else FAILED=$((FAILED + 1)); echo "FAIL  $1"; sed 's/^/      /' "$SCENARIO/out"; fi
+}
+
+new_scenario decisions-reported
+drop_comments understanding; comment "$(marker understanding 3 "$SHA" 2)"
+expect_verdict "verdict reports the understanding reviewer's decisions" understanding "understanding: blocking=3 decisions=2 for $SHA"
+expect_refusal "and the gate refuses its blocking findings" "understanding reported 3 blocking"
+
+new_scenario decisions-default
+expect_verdict "another reviewer's marker without decisions= counts 0 decisions" api "api: blocking=0 decisions=0 for $SHA"
+
+new_scenario decisions-other-reviewer
+drop_comments smells; comment "$(marker smells 1 "$SHA" 0)"
+expect_verdict "another reviewer may write decisions=0" smells "smells: blocking=1 decisions=0 for $SHA"
+
+new_scenario decisions-missing
+drop_comments understanding; comment "<!-- claude-review: understanding sha=$SHA blocking=0 -->"
+expect_verdict "the understanding reviewer's marker without decisions= is malformed" understanding "fail: it has no decisions="
+expect_refusal "and the gate refuses it" "Malformed verdict from understanding"
+
+new_scenario decisions-too-many
+drop_comments understanding; comment "$(marker understanding 1 "$SHA" 2)"
+expect_verdict "more decisions than blocking findings is malformed" understanding "fail: decisions can't exceed blocking"
+
+new_scenario decisions-garbage
+drop_comments understanding; comment "<!-- claude-review: understanding sha=$SHA blocking=1 decisions=x -->"
+expect_verdict "decisions= that is not a number is malformed" understanding "fail: Malformed verdict from understanding"
+
+# --- the reason, for the autopilot job --------------------------------------------
+new_scenario reason
+drop_comments api; comment "$(marker api 2)"
+: >"$SCENARIO/github-output"
+GITHUB_OUTPUT="$SCENARIO/github-output" run_gate merge
+if grep -qxF "reason=api reported 2 blocking finding(s) for $SHA." "$SCENARIO/github-output"; then
+  PASS=$((PASS + 1)); echo "ok    a refusal writes its reason to GITHUB_OUTPUT"
+else FAILED=$((FAILED + 1)); echo "FAIL  a refusal writes its reason to GITHUB_OUTPUT"; cat "$SCENARIO/github-output"; fi
 
 echo "$PASS passed, $FAILED failed"
 [ "$FAILED" -eq 0 ]

@@ -7,8 +7,10 @@ UI under `musichub-ui/` is the ui reviewer's, except where it calls the API.
 Background: ASP.NET Core 10 with controllers (`AddControllers`, attribute routing
 under `/api/*`) and OpenAPI in development. `Program.cs` serves the built UI from
 `wwwroot` (copied in by the `Dockerfile`), returns 404 for any unknown `/api` path,
-and sends every other path to `index.html` for client-side routing. There is no
-database and no authentication yet.
+and sends every other path to `index.html` for client-side routing. Data lives in
+PostgreSQL through EF Core (`musichub-api/Data/`: the `DbContext`, migrations applied
+only by the `--migrate` mode), files in S3-compatible storage through `IFileStorage`
+(`musichub-api/Storage/`). There is no authentication yet.
 
 Look for:
 
