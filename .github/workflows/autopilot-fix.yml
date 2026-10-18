@@ -1,34 +1,40 @@
 name: Autopilot fix
 
-# The one fix round of an autopilot attempt (see autopilot.yml and "Autopilot" in
-# CLAUDE.md). When the first review of an attempt's PR blocks it with findings a code
-# change can address, the review's autopilot job (claude-review.yml, `autopilot.sh
-# outcome`) moves the attempt to `fix` and dispatches this workflow for that PR and
-# the commit the review blocked:
+# A fix round of an autopilot attempt (see autopilot.yml and "Autopilot" in
+# CLAUDE.md). When a review of an attempt's PR blocks it with something a code
+# change can address (blocking reviewer findings, a failed build check, a conflict
+# with main), the review's autopilot job (claude-review.yml, `autopilot.sh outcome`)
+# moves the attempt to `fix` and dispatches this workflow for that PR and the
+# commit the review blocked:
 #
 #   start -> fix -> publish
 #
 #   start    the attempt is still in `fix` for this PR at this commit, the label and
 #            PIPELINE_MODE full still hold, Claude's usage status allows it;
-#            collects the reviewers' findings
-#   fix      Claude fixes only those findings, on top of the reviewed commit
+#            collects what is to be fixed (findings.md)
+#   fix      in the sandbox: main merged into the PR, then Claude fixes what it can
+#            fix without a decision, on top of the reviewed commit
 #   publish  the same checks as autopilot.yml's publish, over the whole PR; moves the
-#            attempt back to `merge` and pushes the fix to the same PR branch
+#            attempt back to `merge`, records the finding keys Claude fixed, and
+#            pushes the fix to the same PR branch
 #
 # The push starts the review again: all four reviewers and the build check on the
 # new commit, then the ordinary merge gate. If that review blocks again, `outcome`
-# stops the attempt: an attempt has at most one fix round, counted by its `fix`
-# marker on the issue, which no rerun or later event can undo. While the attempt is
-# in `fix`, the gate merges nothing.
+# grants the next round, up to three per attempt, unless a finding needs a decision
+# or a finding this round reported fixed came back (see autopilot.sh, "FIX
+# ROUNDS"). While the attempt is in `fix`, the gate merges nothing.
 #
 # Anyone with write access can dispatch this by hand; that changes nothing unless the
-# attempt is in its fix round for that PR (every job checks the state first). Any
-# failure stops the attempt as autopilot.yml does: back to To Do, the PR labelled
+# attempt is in its fix round for that PR (every job checks the state first). A job
+# that fails is rerun once by the watchdog (autopilot-watchdog.yml); when it fails
+# again, the attempt stops as autopilot.yml's do: back to To Do, the PR labelled
 # `no-automerge` and kept.
 #
-# Tokens as in autopilot.yml: Claude only runs in the read-only `fix` job; its
-# commits travel to `publish` as a git bundle, and only `publish` holds
-# AUTOPILOT_PAT to push (a push with GITHUB_TOKEN would start no review).
+# Tokens as in autopilot.yml: Claude only runs in the sandbox of the read-only `fix`
+# job; its commits travel to `publish` as a git bundle, and only `publish` holds
+# AUTOPILOT_PAT to push (a push with GITHUB_TOKEN would start no review). The `fix`
+# job checks out the PR's code but runs nothing of it on the runner: the scripts it
+# runs come from main.
 
 on:
   workflow_dispatch:
@@ -54,7 +60,7 @@ concurrency:
 jobs:
   start:
     runs-on: [self-hosted, strato]
-    timeout-minutes: 5
+    timeout-minutes: 10
     permissions:
       contents: read
       issues: write
@@ -69,6 +75,7 @@ jobs:
     outputs:
       go: ${{ steps.start.outputs.go }}
       issue: ${{ steps.start.outputs.issue }}
+      round: ${{ steps.start.outputs.round }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -124,125 +131,93 @@ jobs:
     needs: start
     if: needs.start.outputs.go == 'true'
     runs-on: [self-hosted, strato]
-    timeout-minutes: 45
+    timeout-minutes: 75
     permissions:
       contents: read
       issues: read
       pull-requests: read
     steps:
-      # The PR at the commit the review blocked: that is what gets fixed.
+      # The PR at the commit the review blocked, with main: that is what gets fixed.
       - uses: actions/checkout@v4
         with:
           ref: ${{ inputs.sha }}
           persist-credentials: false
-          fetch-depth: 50
-      # The prompt and the usage script come from main, never from the PR.
+          fetch-depth: 0
+      # The scripts and prompts come from main, never from the PR.
       - uses: actions/checkout@v4
         with:
           ref: main
           path: trusted
           sparse-checkout: |
             .github/autopilot
+            .github/reviewers
             .github/scripts
+            .github/sandbox
           persist-credentials: false
-      - uses: actions/setup-dotnet@v4
+      - name: Check out the musichub understanding (read-only)
+        uses: actions/checkout@v4
         with:
-          dotnet-version: '10.0.x'
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
+          repository: vanBassum/musichub-understanding
+          ref: main
+          path: understanding
+          ssh-key: ${{ secrets.UNDERSTANDING_DEPLOY_KEY }}
+          persist-credentials: false
+          fetch-depth: 0
       - uses: actions/download-artifact@v4
         with:
           name: autopilot-fix-findings
-          path: ${{ runner.temp }}/autopilot
-      # Into WORK_DIR, with the script from main: see autopilot.yml's analysis job.
-      - name: Download the issue's images
+          path: ${{ runner.temp }}/findings
+
+      # Everything the run reads, from trusted sources (see autopilot.yml's build).
+      - name: Prepare the sandbox
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: bash trusted/.github/scripts/issue-images.sh "${{ github.repository }}" "${{ needs.start.outputs.issue }}" "${{ runner.temp }}/autopilot/images"
-      - name: Prepare the workspace
+          ISSUE: ${{ needs.start.outputs.issue }}
+          PR: ${{ inputs.pr }}
         run: |
-          # Kept outside the working tree, which Claude is about to change.
-          cp trusted/.github/autopilot/fix.md ${{ runner.temp }}/autopilot/fix.md
-          cp trusted/.github/scripts/claude-usage.sh ${{ runner.temp }}/claude-usage.sh
-          rm -rf trusted
-          git rev-parse HEAD >${{ runner.temp }}/autopilot/base
-          git config user.name "musichub autopilot"
-          git config user.email "autopilot@musichub.invalid"
-          git switch -c autopilot-fix
-          dotnet restore MusicHub.slnx
-          corepack enable
-          corepack prepare pnpm@10.28.1 --activate
-          pnpm --dir musichub-ui install --frozen-lockfile
+          T=trusted/.github
+          bash $T/scripts/sandbox.sh prepare "$RUNNER_TEMP/sandbox" "$GITHUB_WORKSPACE"
+          cp $T/scripts/sandbox-job.sh $T/scripts/claude-usage.sh $T/scripts/shadcn-components.sh \
+             $T/scripts/add-package.sh $T/autopilot/fix.md $T/autopilot/admission.md "$RUNNER_TEMP/sandbox/trusted/"
+          cp $T/reviewers/understanding.md "$RUNNER_TEMP/sandbox/trusted/reviewer-understanding.md"
+          cp ${{ runner.temp }}/findings/findings.md "$RUNNER_TEMP/sandbox/in/findings.md"
+          gh issue view "$ISSUE" --repo "${{ github.repository }}" --comments >"$RUNNER_TEMP/sandbox/in/issue.md"
+          gh pr view "$PR" --repo "${{ github.repository }}" --comments >"$RUNNER_TEMP/sandbox/in/pr.md"
+          gh pr diff "$PR" --repo "${{ github.repository }}" >"$RUNNER_TEMP/sandbox/in/pr.diff"
+          bash $T/scripts/understanding-pending-logs.sh understanding understanding-pending-logs.md
+          mv understanding-pending-logs.md "$RUNNER_TEMP/sandbox/in/"
+          cp -r understanding "$RUNNER_TEMP/sandbox/in/understanding" && rm -rf "$RUNNER_TEMP/sandbox/in/understanding/.git"
+          bash $T/scripts/issue-images.sh "${{ github.repository }}" "$ISSUE" "$RUNNER_TEMP/sandbox/in/images"
 
-      - name: Claude fix
-        id: claude
-        uses: anthropics/claude-code-action@v1
-        with:
-          anthropic_api_key: ${{ secrets.AUTOPILOT_ANTHROPIC_API_KEY }}
-          claude_code_oauth_token: ${{ secrets.AUTOPILOT_ANTHROPIC_API_KEY == '' && secrets.CLAUDE_CODE_OAUTH_TOKEN || '' }}
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          # `outcome` dispatches this workflow with the review run's GITHUB_TOKEN, so
-          # the actor is github-actions[bot], and the action refuses bot-started runs
-          # unless the bot is named here. That bot is no wider than a person with
-          # write access: the default token is read-only, and the only job that holds
-          # `actions: write` is claude-review.yml's shell job that runs `outcome`
-          # (no Claude job may hold it; see .github/scripts/workflows.test.sh). And
-          # `start` lets nothing through unless the attempt is in its fix round for
-          # this PR at this commit, however the run was started.
-          allowed_bots: github-actions
-          # See autopilot.yml's analysis step: no shared inline-comment buffer.
-          classify_inline_comments: "false"
-          prompt: |
-            REPO: ${{ github.repository }}
-            ISSUE: ${{ needs.start.outputs.issue }}
-            PR: ${{ inputs.pr }}
-
-            WORK_DIR: ${{ runner.temp }}/autopilot
-
-            Read <WORK_DIR>/fix.md and follow it exactly.
-          # The build step's permission policy (see autopilot.yml), plus reading the PR.
-          claude_args: |
-            --max-turns 100
-            --add-dir ${{ runner.temp }}/autopilot
-            --allowedTools "Read,Write,Edit,Grep,Glob,Bash(dotnet restore:*),Bash(dotnet build:*),Bash(pnpm --dir musichub-ui lint:*),Bash(pnpm --dir musichub-ui typecheck:*),Bash(pnpm --dir musichub-ui build:*),Bash(pnpm --dir musichub-ui format:*),Bash(git add:*),Bash(git commit:*),Bash(git mv:*),Bash(git rm:*),Bash(git status:*),Bash(git diff:*),Bash(git log:*),Bash(git show:*),Bash(gh issue view:*),Bash(gh pr view:*),Bash(gh pr diff:*)"
-
-      # Independent of what Claude reported: a clean tree and a clean build.
-      - name: Validate and bundle the commits
-        if: always()
+      - name: Claude fixes the findings, in the sandbox
         env:
-          EXEC: ${{ steps.claude.outputs.execution_file }}
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.AUTOPILOT_ANTHROPIC_API_KEY == '' && secrets.CLAUDE_CODE_OAUTH_TOKEN || '' }}
+          ANTHROPIC_API_KEY: ${{ secrets.AUTOPILOT_ANTHROPIC_API_KEY }}
+          SANDBOX_REPO: ${{ github.repository }}
+          SANDBOX_ISSUE: ${{ needs.start.outputs.issue }}
+          SANDBOX_PR: ${{ inputs.pr }}
+          SANDBOX_ROUND: ${{ needs.start.outputs.round }}
+        run: bash trusted/.github/scripts/sandbox.sh run "$RUNNER_TEMP/sandbox" 65 bash /work/trusted/sandbox-job.sh fix
+
+      # Only regular files, read as data: a link the run left could point anywhere
+      # on the runner.
+      - name: Keep the results
+        if: always()
         run: |
-          if [ -f "$EXEC" ]; then
-            bash ${{ runner.temp }}/claude-usage.sh "$EXEC" >${{ runner.temp }}/autopilot/usage-fix.json || rm -f ${{ runner.temp }}/autopilot/usage-fix.json
-          fi
-          base=$(cat ${{ runner.temp }}/autopilot/base)
-          if [ -n "$(git status --porcelain)" ]; then
-            echo "fail: Claude left uncommitted changes" >${{ runner.temp }}/autopilot/validation
-          elif ! dotnet build MusicHub.slnx --configuration Release; then
-            echo "fail: dotnet build MusicHub.slnx --configuration Release failed" >${{ runner.temp }}/autopilot/validation
-          elif ! pnpm --dir musichub-ui lint; then
-            echo "fail: pnpm --dir musichub-ui lint failed" >${{ runner.temp }}/autopilot/validation
-          elif ! pnpm --dir musichub-ui build; then
-            echo "fail: pnpm --dir musichub-ui build (tsc -b and vite build) failed" >${{ runner.temp }}/autopilot/validation
-          else
-            echo pass >${{ runner.temp }}/autopilot/validation
-          fi
-          if [ "$(git rev-list --count "$base..HEAD")" -gt 0 ]; then
-            git bundle create ${{ runner.temp }}/autopilot/autopilot.bundle "$base..HEAD"
-          fi
+          mkdir -p ${{ runner.temp }}/autopilot
+          for f in result.md base validation autopilot.bundle usage-fix.json claude-exit; do
+            if [ -f "$RUNNER_TEMP/sandbox/out/$f" ] && [ ! -L "$RUNNER_TEMP/sandbox/out/$f" ]; then cp "$RUNNER_TEMP/sandbox/out/$f" ${{ runner.temp }}/autopilot/; fi
+          done
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: autopilot-fix-build
-          path: |
-            ${{ runner.temp }}/autopilot/result.md
-            ${{ runner.temp }}/autopilot/base
-            ${{ runner.temp }}/autopilot/validation
-            ${{ runner.temp }}/autopilot/autopilot.bundle
-            ${{ runner.temp }}/autopilot/usage-fix.json
+          path: ${{ runner.temp }}/autopilot/
           if-no-files-found: ignore
           retention-days: 14
+      - name: Remove the sandbox
+        if: always()
+        run: bash trusted/.github/scripts/sandbox.sh clean "$RUNNER_TEMP/sandbox"
 
   publish:
     needs: [start, fix]

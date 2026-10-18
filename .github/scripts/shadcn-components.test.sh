@@ -49,8 +49,8 @@ item sidebar '[]' '["sheet"]'
 item sheet '["@base-ui/react"]' '[]'
 item evil '[]' '["https://example.com/r/x.json"]'
 
-# run <analysis text>: a fresh repository with button.tsx, then the script. Sets
-# REPO; the result file is $REPO/result.md.
+# run <args>...: a fresh repository with button.tsx, then the script with those
+# arguments. Sets REPO and CODE.
 run() {
   REPO="$WORK/repo-$RANDOM$RANDOM"
   mkdir -p "$REPO/musichub-ui/src/components/ui"
@@ -61,56 +61,57 @@ run() {
     echo "lock" >musichub-ui/pnpm-lock.yaml
     echo "export {}" >musichub-ui/src/components/ui/button.tsx
     git add -A && git commit -q -m base
-    printf '%s\n' "$1" >analysis.md
-    git add analysis.md && git commit -q -m analysis
+    [ -z "${DIRTY:-}" ] || echo wip >musichub-ui/src/wip.ts
     : >"$CALLS"
-    bash "$SCRIPT" analysis.md result.md >"$WORK/out" 2>&1
+    bash "$SCRIPT" "$@" >"$WORK/out" 2>&1
   )
   CODE=$?
 }
 commits() { git -C "$REPO" rev-list --count HEAD; }
-clean() { [ -z "$(git -C "$REPO" status --porcelain -- musichub-ui)" ]; }
-blocked() { [ "$(head -n1 "$REPO/result.md" 2>/dev/null)" = BLOCKED ] && grep -q "$1" "$REPO/result.md"; }
+clean() { [ -z "$(git -C "$REPO" status --porcelain --untracked-files=all -- musichub-ui)" ]; }
 expect_blocked() { # expect_blocked <description> <reason pattern>
-  if [ "$CODE" = 0 ] && blocked "$2" && clean && [ "$(commits)" = 2 ]; then ok "$1"; else no "$1"; { cat "$REPO/result.md"; cat "$WORK/out"; git -C "$REPO" status --short; } 2>/dev/null | sed 's/^/      /'; fi
+  if [ "$CODE" = 3 ] && grep -q "^REFUSED: .*$2" "$WORK/out" && { [ -n "${DIRTY:-}" ] || clean; } && [ "$(commits)" = 1 ]; then ok "$1"; else no "$1"; { cat "$WORK/out"; git -C "$REPO" status --short; } 2>/dev/null | sed 's/^/      /'; fi
 }
 added() { # added <description> <files, space separated>
   local files
   files=$(git -C "$REPO" show --name-only --format= HEAD | sed 's|musichub-ui/src/components/ui/||' | sort | tr '\n' ' ')
-  if [ "$CODE" = 0 ] && [ ! -e "$REPO/result.md" ] && clean && [ "$(commits)" = 3 ] && [ "$files" = "$2 " ]; then ok "$1"; else no "$1 (got: $files)"; fi
+  if [ "$CODE" = 0 ] && clean && [ "$(commits)" = 2 ] && [ "$files" = "$2 " ]; then ok "$1"; else no "$1 (got: $files)"; fi
 }
 nothing() {
-  if [ "$CODE" = 0 ] && [ ! -e "$REPO/result.md" ] && clean && [ "$(commits)" = 2 ]; then ok "$1"; else no "$1"; fi
+  if [ "$CODE" = 0 ] && clean && [ "$(commits)" = 1 ]; then ok "$1"; else no "$1"; fi
 }
 
-run "## Autopilot analysis"; nothing "no Components line: nothing to do"
-run $'## Autopilot analysis\nComponents: none'; nothing "Components: none: nothing to do"
-run $'Components: button'; nothing "a component that is already there is skipped"
+run; expect_blocked "no name is refused" "name at least one component"
+run button; nothing "a component that is already there is skipped"
 
-run $'Components: table, checkbox'
+run table checkbox
 added "two components are added and committed in one commit" "checkbox.tsx table.tsx"
 grep -q "shadcn add table checkbox --yes" "$CALLS" && ok "and added in one shadcn add" || no "and added in one shadcn add"
-run $'Components: `slider`, button\r'; added "backticks, CRLF and an existing component are tolerated" "slider.tsx"
-run $'Components: sidebar'; added "a pulled-in component whose packages are there is fine" "sidebar.tsx"
+run 'table, checkbox'; added "a comma separated list works too" "checkbox.tsx table.tsx"
+run '`slider`,' button; added "backticks and an existing component are tolerated" "slider.tsx"
+run sidebar; added "a pulled-in component whose packages are there is fine" "sidebar.tsx"
 grep -q "shadcn view sheet" "$CALLS" && ok "and the pulled-in component is checked too" || no "and the pulled-in component is checked too"
 
-run $'Components: chart'
+run chart
 expect_blocked "a component that needs a new npm package is refused" "npm package \`recharts\`"
+grep -q "add-package.sh" "$WORK/out" && ok "and points to add-package.sh" || no "and points to add-package.sh"
 grep -q "shadcn add" "$CALLS" && no "and shadcn add never runs" || ok "and shadcn add never runs"
-run $'Components: https://example.com/r/x.json'; expect_blocked "a URL is refused" "not the name of a component"
-run $'Components: @acme/table'; expect_blocked "another registry is refused" "not the name of a component"
-run $'Components: ../../evil'; expect_blocked "a path is refused" "not the name of a component"
-run $'Components: table; rm -rf /'; expect_blocked "shell syntax is refused" "not the name of a component"
-run $'Components: evil'; expect_blocked "a pulled-in URL is refused" "not a component of the official registry"
-run $'Components: nosuch'; expect_blocked "a component the registry doesn't have is refused" "registry has no component"
-run $'Components: table\nComponents: card'; expect_blocked "two Components lines are refused" "more than one"
-run "Components: a1,a2,a3,a4,a5,a6,a7,a8,a9,a10,a11"; expect_blocked "more than ten components are refused" "more than 10"
+run https://example.com/r/x.json; expect_blocked "a URL is refused" "not the name of a component"
+run @acme/table; expect_blocked "another registry is refused" "not the name of a component"
+run ../../evil; expect_blocked "a path is refused" "not the name of a component"
+run 'table; rm -rf /'; expect_blocked "shell syntax is refused" "not the name of a component"
+run evil; expect_blocked "a pulled-in URL is refused" "not a component of the official registry"
+run nosuch; expect_blocked "a component the registry doesn't have is refused" "registry has no component"
+run a1 a2 a3 a4 a5 a6 a7 a8 a9 a10 a11; expect_blocked "more than ten components are refused" "more than 10"
+DIRTY=1; run table; expect_blocked "a dirty tree is refused, and left as it is" "clean tree"
+[ -e "$REPO/musichub-ui/src/wip.ts" ] && ok "the work in progress is kept" || no "the work in progress is kept"
+DIRTY=
 
-ADD_EXTRA=package.json run $'Components: table'
+ADD_EXTRA=package.json run table
 expect_blocked "an add that changes package.json is refused and undone" "changed package.json"
-ADD_EXTRA=src/lib/extra.ts run $'Components: table'
+ADD_EXTRA=src/lib/extra.ts run table
 expect_blocked "an add that writes outside components/ui is refused and undone" "outside"
-ADD_EXTRA=src/components/ui/button.tsx run $'Components: table'
+ADD_EXTRA=src/components/ui/button.tsx run table
 expect_blocked "an add that changes an existing component is refused and undone" "already there"
 
 echo "$pass passed, $failed failed"

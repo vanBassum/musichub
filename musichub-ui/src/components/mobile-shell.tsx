@@ -1,6 +1,7 @@
 import { SlidersHorizontal } from "lucide-react"
 import { useCallback, useLayoutEffect, useRef, useState } from "react"
 
+import { BuildInfoSheet } from "@/components/build-info-sheet"
 import { FilterSidebar } from "@/components/filter-sidebar"
 import { MobileNav } from "@/components/mobile-nav"
 import { mobilePageIndex } from "@/components/mobile-pages"
@@ -84,12 +85,16 @@ export function MobileShell({
         ref={strip}
         className="flex min-h-0 flex-1 snap-x snap-mandatory [scrollbar-width:none] overflow-x-auto overflow-y-hidden overscroll-x-contain [&::-webkit-scrollbar]:hidden"
       >
-        <div inert={active !== libraryPage} className={cn(pageClassName, "gap-3 p-3")}>
+        <div
+          inert={active !== libraryPage}
+          className={cn(pageClassName, "gap-3 p-3")}
+        >
           <div className="flex items-center gap-2">
             <h1 className="text-xl font-semibold">Library</h1>
             <span className="text-muted-foreground">
               {tracks.length} tracks
             </span>
+            <BuildInfoSheet className="ml-auto" />
             <Sheet>
               <SheetTrigger
                 render={
@@ -97,7 +102,6 @@ export function MobileShell({
                     variant="outline"
                     size="icon-lg"
                     aria-label="Filters"
-                    className="ml-auto"
                   />
                 }
               >

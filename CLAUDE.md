@@ -37,8 +37,8 @@ something through).
    be in the PR. While the work is unfinished, open it as a draft: drafts are not
    reviewed.
 3. The PR is checked automatically:
-   - `build` (`.github/workflows/build.yml`): the guard tests, `dotnet build`,
-     `pnpm lint` and `pnpm build` of the UI. The Docker image is not built for a
+   - `build` (`.github/workflows/build.yml`): the guard tests, and `dotnet build`,
+     `dotnet test`, `pnpm lint` and `pnpm build` of the UI, in the sandbox. The Docker image is not built for a
      PR, only after the merge to `main`. The reviewers never build anything
      themselves: that is the pipeline's job.
    - Four Claude reviewers (`.github/workflows/claude-review.yml`), each with its own
@@ -50,7 +50,10 @@ something through).
      the new code, from the refactoring.guru catalog). They post inline comments plus
      one summary comment each, ending in a
      `<!-- claude-review: <reviewer> sha=<SHA> blocking=<N> -->` verdict for the
-     exact head commit. A reviewer job that posts no valid verdict fails.
+     exact head commit (the understanding reviewer's also says `decisions=<D>`: how
+     many of its blocking findings need a decision rather than a code change). Each
+     blocking finding carries a key, `<!-- finding: <reviewer>:<path>:<slug> -->`. A
+     reviewer job that posts no valid verdict fails; the watchdog reruns it once.
 4. The reviewers run by themselves when a PR is opened, reopened or marked ready for
    review, and again on every push. A newer push cancels the run in progress, and
    verdicts only count for the commit they name. There is nothing to trigger by
@@ -107,72 +110,85 @@ one autonomous attempt (`.github/workflows/autopilot.yml`, state machine in
 project of vanBassum, `AUTOPILOT_PROJECT_ID`) follows it:
 
 ```text
-To Do ─label─▶ Analysis ─ready─▶ Build ─PR─▶ Merge ─merged─▶ Done (closed)
-                  │                 │  ▲        │
-                  │                 │  └─ fix ◀─┤ first review blocked (at most once)
-                  └─────────────────┴───────────┴─▶ To Do, label removed, comment why
+To Do ─label─▶ Build ─PR─▶ Merge ─merged─▶ Done (closed)
+  ▲   (waits)    │   ▲        │
+  │              │   └─ fix ◀─┤ review blocked: up to 3 fix rounds
+  └──────────────┴────────────┴─▶ To Do, label removed, comment why
 ```
 
-- **Analysis** checks the issue against the understanding projections and admits it
-  only as `ready`; otherwise it labels it `autopilot:needs-design`, `:too-large` or
-  `:blocked`. It admits by risk, not by technology (`.github/autopilot/analysis.md`
-  2.6): API contracts, routing and serving, the build and the image are admitted
-  when the understanding supports them and the issue is clear, with acceptance
-  criteria for the care they need. Never autonomous: irreversible data loss,
-  widening what an audience can see, a security change whose rule the understanding
-  doesn't state, an unjustified or unsafe NuGet or npm dependency, and changes to
-  `.github/`, `.githooks/`, `.claude/`. Persistence and authentication don't exist
-  yet; introducing them is an architecture decision for the understanding first.
-  A missing official shadcn/ui component is no reason to reject: the analysis
-  names it on a `Components:` line.
-- **Build** implements only the admitted scope on `autopilot/issue-<N>-r<run>` and
-  opens a PR with `Fixes #N`. Before Claude starts, the workflow adds the
-  components on the `Components:` line with the shadcn CLI and commits them
-  (`.github/scripts/shadcn-components.sh`, tested by `shadcn-components.test.sh`):
-  plain official names only, and it stops the attempt when a component needs an
-  npm package `musichub-ui/package.json` doesn't have or writes outside
-  `src/components/ui/`. Claude's `--allowedTools` list is its whole permission
-  policy, since an unattended run can't approve anything. Claude may edit and write
-  files, move them with `git mv` and delete them with `git rm`, commit, and run
-  `dotnet restore`/`dotnet build` and `pnpm --dir musichub-ui lint|typecheck|build|format`.
-  It gets no other shell commands, no package-install commands, no network and no push.
-  A necessary, reviewed NuGet dependency may be added to the project file and
-  restored with `dotnet restore`. npm dependencies are permitted by policy too,
-  but the current restricted build cannot update `pnpm-lock.yaml`; analysis must
-  block an npm addition until a safe lockfile-update mechanism is available.
-  `.github/scripts/workflows.test.sh` pins the build's and the fix round's lists,
-  and a stop comment names any tool calls the permissions refused. The job then
-  checks a clean tree, `dotnet build` and the UI's lint and build itself. Before
-  pushing, publish refuses changes to `.github/`, `.githooks/` or `.claude/`, and
-  (once EF Core migrations exist under `musichub-api/Data/Migrations`) an edited or
-  removed existing migration and a new migration whose `Up()` drops, alters or
-  deletes existing data. The PR goes through the same four reviewers and gate.
+- **Build, in one step.** One Claude run (`.github/autopilot/build.md`) first judges
+  the issue against the understanding and the admission rules
+  (`.github/autopilot/admission.md`), and only when it may be built, builds it on
+  `autopilot/issue-<N>-r<run>`. Otherwise it labels the issue
+  `autopilot:needs-design`, `:too-large` or `:blocked` and says what would make it
+  ready. It admits by risk, not by technology (`admission.md` 2.6): API contracts,
+  routing and serving, the build and the image, the database and file storage, and
+  schema changes are admitted when the understanding (its projections and the
+  accepted logs newer than them) supports them and the issue is clear, with
+  acceptance criteria for the care they need. Never autonomous: irreversible data
+  loss, widening what an audience can see, a security change whose rule the
+  understanding doesn't state, an unapproved, unjustified or unsafe package, and
+  changes to `.github/`, `.githooks/`, `.claude/`. Authentication doesn't exist yet;
+  introducing it is an architecture decision for the understanding first.
+- **The sandbox.** Code that no person has merged never runs on the runner: Claude's
+  build and fix runs, and the PR's own restore, build, tests and lint (the `test`
+  job of `build.yml`), run in a throwaway container (`.github/scripts/sandbox.sh`,
+  image `.github/sandbox/Dockerfile`): no Docker socket, no runner files, no GitHub
+  token, no PAT, a read-only root filesystem, its own Docker network. The job's
+  trusted steps put the issue, the open PRs, the understanding and the issue's
+  images into it, and read back only regular files. Claude's `--allowedTools` list
+  (in `.github/scripts/sandbox-job.sh`, pinned by `workflows.test.sh`) is its whole
+  permission policy: edit and write files, `git mv`/`git rm`, commit, `dotnet
+  restore`/`build`/`ef`, `pnpm --dir musichub-ui lint|typecheck|build|format`, and two
+  scripts: `shadcn-components.sh` (official shadcn/ui components by name, no new
+  package, only new files in `src/components/ui/`) and `add-package.sh` (a NuGet or
+  npm package by name at an exact version, `pnpm-lock.yaml` included; no upgrade).
+  No test suite: the understanding has implementation agents address test failures
+  from CI results, so the pipeline runs the tests and a failure comes back as a fix
+  round. No GitHub access and no push.
+- **Publish** pushes the commits and opens the PR with `Fixes #N`. It stops on
+  uncommitted changes; a failed build, test or lint in the pipeline's own check
+  still becomes a PR, whose build check fails the same way and gets a fix round. It
+  refuses changes to `.github/`, `.githooks/` or `.claude/`, an edited or removed
+  existing migration, and a new migration whose `Up()` drops, alters or deletes
+  existing data. The PR goes through the same four reviewers and gate.
 - **Merge**: the gate also refuses an autopilot PR unless it is its issue's active
   attempt, the issue still has the label and `PIPELINE_MODE` is `full`.
-- **Fix round** (at most one per attempt): when the PR's first review blocks it, the
-  attempt gets one fix round, but only for findings a code change can address. All
-  four reviewer jobs must have succeeded, each with one well-formed verdict for the
-  head commit and at least one blocking. The understanding reviewer must not block
-  on an UNDOCUMENTED or CONTRADICTED change, which needs Bas, not code. The PR must
-  not touch `.github/`, `.githooks/` or `.claude/`, nor carry `no-automerge`, and the
-  label and `full` mode must still hold. The attempt then moves to `fix`, where
-  nothing merges, and `.github/workflows/autopilot-fix.yml` runs. It checks the
-  budgets again. Claude (`.github/autopilot/fix.md`, read-only token) fixes exactly
-  the blocking findings, or stops if any of them needs a decision. The same checks
-  as publish run over the whole PR, and the fix is pushed to the same PR. All four
-  reviewers and the build then run again on the new commit, and the ordinary gate
-  decides. The `fix` marker on the issue is the budget: no rerun, duplicate event
-  or later review grants a second round. Any other failed review, a second blocked
-  review or a failed fix stops the attempt: the PR gets `no-automerge` and is kept
-  for investigation. No retries. Adding the label again starts a new attempt, which
-  supersedes the old one.
-- **Images**: analysis, build and fix see the images attached to the issue and its
-  comments. Before Claude runs, `.github/scripts/issue-images.sh` downloads them
-  with the job's read-only `GITHUB_TOKEN` (through the signed URLs in the API's
-  rendered HTML) to a directory outside the checkout, with an `index.md` saying
-  where each one is. Claude looks at them with Read and gets no network access for
-  it. Only GitHub's own attachment hosts are fetched; an external image is listed,
-  not downloaded.
+- **Fix rounds** (up to three per attempt): when a review blocks the PR, the attempt
+  gets a fix round for what a code change can fix: blocking reviewer findings, a
+  failed build check (Claude gets the failed jobs' logs) and a conflict with main
+  (main is merged in first). All four reviewer jobs must have succeeded, each with
+  one well-formed verdict for the head commit. The attempt stops earlier when a
+  finding needs a decision (the understanding reviewer's `decisions=` is above 0:
+  UNDOCUMENTED, CONTRADICTED, or a change autopilot may not make on its own), when
+  a finding comes back that the previous round reported fixed in a file it changed
+  (the reviewers mark each blocking finding with a key, `<!-- finding: … -->`; a
+  failure of the build check gets one from its log), when Claude finds nothing left
+  it can fix, or when Claude's usage doesn't allow it. A new or different finding is
+  progress and gets the next round. Claude (`.github/autopilot/fix.md`) fixes what
+  it can and reports each key as `Fixed:` or `Needs decision:`. The same checks as
+  publish run over the whole PR, and the fix is pushed to the same PR; all four
+  reviewers and the build check run again. The `fix` markers on the issue are the
+  budget: no rerun, duplicate event or later review grants an extra round. While the
+  attempt is in `fix`, nothing merges. A stopped attempt's PR gets `no-automerge`
+  and is kept.
+- **Retries**: a job that fails (a crash, a timeout, a reviewer that left no verdict)
+  is rerun once by `.github/workflows/autopilot-watchdog.yml`; when it fails again,
+  the attempt stops with the jobs that failed. Nothing hangs silently. What Claude
+  decided is never retried.
+- **Resuming**: adding the label again while the stopped attempt's PR is still open
+  resumes that attempt on that PR: main is merged into it (or it is marked ready
+  again), it gets a full new review and three new fix rounds, and `no-automerge` is
+  removed (not when a person added it). Nothing is rebuilt. To start over instead,
+  close the PR first. Otherwise a new attempt supersedes any earlier one.
+- **Images**: build and fix see the images attached to the issue and its comments.
+  Before Claude runs, `.github/scripts/issue-images.sh` downloads them with the
+  job's read-only `GITHUB_TOKEN` (through the signed URLs in the API's rendered
+  HTML), with an `index.md` saying where each one is. Only GitHub's own attachment
+  hosts are fetched; an external image is listed, not downloaded.
+- **Issues**: the issue form "Work for autopilot" (`.github/ISSUE_TEMPLATE/`) asks for
+  what the build checks first: acceptance criteria, the understanding that supports
+  the change, exposure, packages and components.
 - Moving a card on the board starts nothing. Issues without the label stay manual.
 
 **Investigations: `autopilot:analysis-only`.** An issue that carries this label as
@@ -186,49 +202,53 @@ issue, removes `autopilot` (one shot; `autopilot:analysis-only` stays) and moves
 card back to To Do, so the issue is open for discussion. Follow-up work appears only
 as prose suggestions in the report; Bas decides which of it becomes an issue. A
 result other than `complete` also gets its `autopilot:<result>` label. A malformed
-report, a failure before the report is posted, or the label being added or removed
-during the analysis stops the attempt without posting a report. No branch, commit,
-PR or issue is ever made, and an investigation runs the same with `PIPELINE_MODE`
+report, a failure before the report is posted, or the label being removed during
+the analysis stops the attempt without posting a report. No branch, commit, PR or
+issue is ever made, and an investigation runs the same with `PIPELINE_MODE`
 `analysis-only` or `full`. Add `autopilot:analysis-only` before (or together with)
 `autopilot`.
 
 Only people with write access can start it (and, if the repository variable
 `AUTOPILOT_USERS` is set, only those listed). `PIPELINE_MODE` (repository variable)
-is `off` (default), `analysis-only` or `full`. Setting it back to `off` stops a
+is `off` (default), `analysis-only` (Claude judges the issue and says whether it
+would build it; nothing is built) or `full`. Setting it back to `off` stops a
 running attempt at its next step and keeps its PR from merging.
 
 **Budget**, the only limit on how much autopilot takes on (there is no cap on the
-number of issues); a refusal comments why, removes the label and leaves the issue
-in To Do. Running reviews and merges are never affected. A fix round is Claude work,
-so the budget is checked again before it; a refusal there stops the attempt. Every
-job runs on the self-hosted runner, which uses no GitHub Actions minutes, so there
-is no Actions budget.
+number of issues). Running reviews and merges are never affected. Every job runs on
+the self-hosted runner, which uses no GitHub Actions minutes, so there is no
+Actions budget.
 
 - *Claude*: the subscription's session and weekly usage can't be read as a number.
   Claude Code reports a status (its `rate_limit_event`) and warns, with a percentage,
-  only when usage is high for that point in the window. Before an attempt, a
-  one-line Claude Code probe (Haiku, no tools) reads that status. Autopilot starts
-  only on `allowed`, builds only if the analysis run still reported `allowed`, and
-  starts a fix round only after a fresh probe reports `allowed`. A warning, a
-  rejection, extra-usage credit or no status at all stops it. The label
+  only when usage is high for that point in the window. Before an attempt and
+  before each fix round, a one-line Claude Code probe (Haiku, no tools) reads that
+  status. Autopilot goes on only on `allowed`. A warning, a rejection, extra-usage
+  credit or no status at all makes a new attempt **wait**: the issue keeps its label
+  (stage `waiting`, card in To Do) and `.github/workflows/autopilot-queue.yml`
+  starts it again by itself (every 30 minutes, one issue per tick, through
+  autopilot.yml's `workflow_dispatch`). Before a fix round it stops the attempt
+  (resume it later by adding the label again). The label
   `autopilot:ignore-claude-warning` on the issue lets a warning through (not a
-  rejection). Each run is also
-  capped by `--max-turns` and its job timeout, against runaways. Each comment shows
-  the turns, tokens and estimated cost the runs measured (also per reviewer); those
-  are measurements, not the remaining allowance. Setting the secret
-  `AUTOPILOT_ANTHROPIC_API_KEY` moves analysis and build off the subscription onto
-  that key, which a Console workspace spend limit can cap hard.
+  rejection). Each run is also capped by `--max-turns` and a timeout, against
+  runaways. Each comment shows the turns, tokens and estimated cost the runs
+  measured (also per reviewer); those are measurements, not the remaining
+  allowance. Setting the secret `AUTOPILOT_ANTHROPIC_API_KEY` moves build, fix and
+  investigation off the subscription onto that key, which a Console workspace spend
+  limit can cap hard.
 
 **Tokens**: `AUTOPILOT_PAT` (secret) is a fine-grained personal access token of
 vanBassum. The repository belongs to a user, so a GitHub App token can't reach the
 board. It is passed only to the shell steps that need it: push the branch and open
-the PR, or merge a PR that passed the gate. A fine-grained token can't reach a user's project either, so the card is
-moved with `AUTOPILOT_BOARD_TOKEN` (secret), a classic token with the
-`project` and `repo` scopes (`project` alone can't add an issue of this private
-repository; set to expire, renew it then). It is needed because a PR opened or merged with `GITHUB_TOKEN`
-starts no workflows (a merge would never be built or published). Claude never runs
-in a job that holds either; `workflows.test.sh` checks that no Claude job references
-them.
+the PR, resume a PR, merge a PR that passed the gate, and rerun a failed run (the
+watchdog; with `Actions: read and write`, so that a rerun that fails again is
+watched too). A fine-grained token can't reach a user's project either, so the card
+is moved with `AUTOPILOT_BOARD_TOKEN` (secret), a classic token with the `project`
+and `repo` scopes (`project` alone can't add an issue of this private repository;
+set to expire, renew it then). It is needed because a PR opened or merged with
+`GITHUB_TOKEN` starts no workflows (a merge would never be built or published).
+Claude never runs in a job that holds either, and no job that holds either runs the
+sandbox or checks out a PR's code; `workflows.test.sh` checks both.
 
 Claude sessions don't add or remove the `autopilot` label unless Bas asks.
 
@@ -278,6 +298,8 @@ Watchtower recreate the container. No registry credential lives on that host.
 
 - Targets **.NET 10** (`MusicHub.slnx`) and Node 22 with pnpm 10 (`musichub-ui/`).
 - CI and autopilot run on the self-hosted runner (`[self-hosted, strato]`), which
-  needs bash, git, jq and Docker.
+  needs bash, git, jq and Docker. The PR checks and autopilot's Claude runs happen
+  in the sandbox container (`.github/sandbox/Dockerfile`, built on the runner the
+  first time it is needed).
 - The UI calls the API with relative `/api/...` paths: Vite proxies them in
   development, and in the image the API serves the UI itself.

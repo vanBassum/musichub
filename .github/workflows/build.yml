@@ -27,11 +27,14 @@ env:
 
 jobs:
   # The fail-closed merge gate of claude-review.yml, the autopilot state machine and
-  # autopilot's download of issue images (against a fake gh), the Claude action
-  # settings in the workflows, and the Claude guard in .claude/hooks/.
+  # autopilot's download of issue images (against a fake gh), the sandbox and the
+  # scripts autopilot's Claude adds components and packages with (against stubs),
+  # the Claude action settings in the workflows, and the Claude guard in .claude/hooks/.
+  # They run only scripts under .github/ and .claude/, which never change without
+  # Bas (the merge gate's trust boundary), so they run on the runner.
   guard-tests:
     runs-on: [self-hosted, strato]
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       # The self-hosted runner's system node may be too old for guard.js.
@@ -43,36 +46,32 @@ jobs:
       - run: bash .github/scripts/issue-images.test.sh
       - run: bash .github/scripts/workflows.test.sh
       - run: bash .github/scripts/shadcn-components.test.sh
+      - run: bash .github/scripts/add-package.test.sh
+      - run: bash .github/scripts/sandbox.test.sh
       - run: node .claude/hooks/guard.test.js
 
-  # The API and the UI, the same way autopilot validates its own work.
+  # The API and the UI, the same way autopilot validates its own work: restored,
+  # built, tested and linted in the sandbox (.github/scripts/sandbox.sh), a
+  # throwaway container. This is the PR's own code, so it never runs on the runner,
+  # which holds the Docker socket and, in other jobs, the PAT.
   test:
     runs-on: [self-hosted, strato]
     # A hung restore or build must not hold the runner for GitHub's 6-hour default.
-    timeout-minutes: 15
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: '10.0.x'
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-      - name: Restore
+          persist-credentials: false
+      - name: Prepare the sandbox
         run: |
-          dotnet restore MusicHub.slnx
-          corepack enable
-          corepack prepare pnpm@10.28.1 --activate
-          pnpm --dir musichub-ui install --frozen-lockfile
-      - name: Build the API
-        run: dotnet build MusicHub.slnx --configuration Release --no-restore
-      - name: Test the API
-        run: dotnet test MusicHub.slnx --configuration Release --no-build --no-restore
-      - name: Lint the UI
-        run: pnpm --dir musichub-ui lint
-      - name: Build the UI
-        run: pnpm --dir musichub-ui build
-      # Add a pnpm test step when the UI gains its first automated tests.
+          bash .github/scripts/sandbox.sh prepare "$RUNNER_TEMP/sandbox" "$GITHUB_WORKSPACE"
+          cp .github/scripts/sandbox-job.sh "$RUNNER_TEMP/sandbox/trusted/"
+      - name: Restore, build, test and lint, in the sandbox
+        run: bash .github/scripts/sandbox.sh run "$RUNNER_TEMP/sandbox" 25 bash /work/trusted/sandbox-job.sh ci
+      - name: Remove the sandbox
+        if: always()
+        run: bash .github/scripts/sandbox.sh clean "$RUNNER_TEMP/sandbox"
+      # Add a pnpm test step to sandbox-job.sh when the UI gains its first automated tests.
 
   # The check the merge gate waits for: green only when both kinds of tests are.
   build:

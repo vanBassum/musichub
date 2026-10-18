@@ -58,10 +58,11 @@ claude_steps() {
 claude_bots() { claude_step_setting allowed_bots "$@"; }
 
 # claude_jobs_with_write [<permission>] <workflow>...: prints "<file>:<job>" for every
-# job that runs claude-code-action and also has a write permission (given one, that
-# write permission), mints a GitHub App token or references AUTOPILOT_PAT or
-# AUTOPILOT_BOARD_TOKEN. Autopilot
-# runs Claude only in read-only jobs; shell jobs do the writing.
+# job that runs claude-code-action or the sandbox (sandbox.sh run: Claude's build and
+# fix, the PR's own code) and also has a write permission (given one, that write
+# permission), mints a GitHub App token or references AUTOPILOT_PAT or
+# AUTOPILOT_BOARD_TOKEN. Autopilot runs Claude and unmerged code only in read-only
+# jobs; shell jobs do the writing.
 claude_jobs_with_write() {
   local perm='[A-Za-z0-9_-]+'
   case $1 in *.yml) ;; *) perm=$1; shift ;; esac
@@ -76,6 +77,7 @@ claude_jobs_with_write() {
     job != "" && ind == 4 { inperm = ($0 ~ /^    permissions:/) }
     job != "" && inperm && ind > 4 && $0 ~ ("^ *" perm ":[[:space:]]*write") { write = 1 }
     job != "" && /uses:[[:space:]]*anthropics\/claude-code-action@/ { claude = 1 }
+    job != "" && /sandbox\.sh run / { claude = 1 }
     job != "" && /uses:[[:space:]]*actions\/create-github-app-token@/ { app = 1 }
     job != "" && /secrets\.AUTOPILOT_(PAT|BOARD_TOKEN)/ { app = 1 }
     END { flush() }
@@ -94,8 +96,8 @@ expect() {
 
 # --- the real workflows -------------------------------------------------------
 expect "the reviewers run Claude in one step" 1 all "$WORKFLOWS/claude-review.yml"
-expect "autopilot runs Claude in two steps (analysis, build)" 2 all "$WORKFLOWS/autopilot.yml"
-expect "the fix round runs Claude in one step" 1 all "$WORKFLOWS/autopilot-fix.yml"
+expect "autopilot runs claude-code-action in one step (the investigation; the build runs in the sandbox)" 1 all "$WORKFLOWS/autopilot.yml"
+expect "the fix round runs no claude-code-action (it runs in the sandbox)" 0 all "$WORKFLOWS/autopilot-fix.yml"
 expect "no claude-code-action step buffers inline comments" 0 buffered "$WORKFLOWS"/*.yml
 
 # expect_read_only <description> <want count> <workflow>...
@@ -104,14 +106,15 @@ expect_read_only() {
   got=$(claude_jobs_with_write "${@:3}" | grep -c .)
   if [ "$got" = "$2" ]; then ok "$1"; else no "$1 (found $got, want $2)"; claude_jobs_with_write "${@:3}" | sed 's/^/      /'; fi
 }
-expect_read_only "autopilot runs Claude only in jobs without write access, an App token or the PAT" 0 \
-  "$WORKFLOWS/autopilot.yml" "$WORKFLOWS/autopilot-fix.yml"
+expect_read_only "Claude and the sandbox run only in jobs without write access, an App token or the PAT" 0 \
+  "$WORKFLOWS/autopilot.yml" "$WORKFLOWS/autopilot-fix.yml" "$WORKFLOWS/build.yml"
 
 # --- which bots may start Claude ---------------------------------------------------
-# The action refuses a run started by a bot unless its step names the bot. The fix
-# round is dispatched by claude-review.yml's `outcome` with GITHUB_TOKEN, so it names
-# github-actions; that is safe only while no job that runs Claude can dispatch a
-# workflow (actions: write, an App token or the PAT), so Claude can't start Claude.
+# The action refuses a run started by a bot unless its step names the bot. A waiting
+# investigation is started again by the queue (autopilot-queue.yml) with
+# GITHUB_TOKEN, so it names github-actions; that is safe only while no job that runs
+# Claude can dispatch a workflow (actions: write, an App token or the PAT), so Claude
+# can't start Claude.
 # expect_no_dispatch <description> <want count> <workflow>...
 expect_no_dispatch() {
   local got
@@ -127,8 +130,7 @@ expect_bots() {
   if [ "$got" = "$2" ]; then ok "$1"; else no "$1"; claude_bots "${@:3}" | sed 's/^/      /'; fi
 }
 expect_bots "the reviewers allow no bot (the owner's PAT opens autopilot PRs)" - "$WORKFLOWS/claude-review.yml"
-expect_bots "autopilot's analysis and build allow no bot (a person adds the label)" $'-\n-' "$WORKFLOWS/autopilot.yml"
-expect_bots "the fix round allows only github-actions (outcome dispatches it)" github-actions "$WORKFLOWS/autopilot-fix.yml"
+expect_bots "autopilot's investigation allows only github-actions (the queue dispatches a waiting one)" github-actions "$WORKFLOWS/autopilot.yml"
 
 # --- autopilot's tool permissions --------------------------------------------------
 # In an unattended run --allowedTools is the whole permission policy: a tool that is
@@ -160,8 +162,11 @@ Bash(git log:*)
 Bash(git show:*)
 Bash(git status:*)
 Bash(git diff:*)'
-# The build and the fix round: the read tools, plus changing files in the checkout,
-# committing, and building and linting the API and the UI.
+# The build and the fix round (sandbox-job.sh): the read tools, plus changing files
+# in the checkout, committing, building and linting the API and the UI, and the two
+# scripts that add a shadcn/ui component or a package. Not the test suite: the
+# understanding has implementation agents address test failures from CI results
+# (architecture, "Delivery pipeline"); the pipeline runs the tests.
 WRITE_TOOLS="$READ_TOOLS
 Write
 Edit
@@ -171,10 +176,13 @@ Bash(git mv:*)
 Bash(git rm:*)
 Bash(dotnet restore:*)
 Bash(dotnet build:*)
+Bash(dotnet ef:*)
 Bash(pnpm --dir musichub-ui lint:*)
 Bash(pnpm --dir musichub-ui typecheck:*)
 Bash(pnpm --dir musichub-ui build:*)
-Bash(pnpm --dir musichub-ui format:*)"
+Bash(pnpm --dir musichub-ui format:*)
+Bash(bash /work/trusted/shadcn-components.sh:*)
+Bash(bash /work/trusted/add-package.sh:*)"
 # What a build needs to carry out any admitted change: create, change, move and
 # delete files, then commit.
 NEEDED='Read
@@ -185,23 +193,77 @@ Bash(git rm:*)
 Bash(git add:*)
 Bash(git commit:*)'
 
-lists=$(allowed_tools "$WORKFLOWS/autopilot.yml")
-analysis=$(sed -n 1p <<<"$lists"); build=$(sed -n 2p <<<"$lists"); fix=$(allowed_tools "$WORKFLOWS/autopilot-fix.yml")
-[ "$(grep -c . <<<"$lists")" = 2 ] && [ "$(grep -c . <<<"$fix")" = 1 ] \
-  && ok "each autopilot Claude step has one --allowedTools list" || no "each autopilot Claude step has one --allowedTools list"
-expect_none "the build may create, change, move and delete files and commit them" "$(missing "$NEEDED" "$build")"
-expect_none "and so may the fix round" "$(missing "$NEEDED" "$fix")"
-expect_none "the build has no tool beyond its approved set" "$(unapproved "$WRITE_TOOLS" "$build")"
-expect_none "nor has the fix round" "$(unapproved "$WRITE_TOOLS" "$fix")"
-expect_none "the fix round can do everything the build can" "$(missing "$(tr ',' '\n' <<<"$build")" "$fix")"
-expect_none "the analysis only reads" "$(unapproved "$READ_TOOLS" "$analysis")"
+analysis=$(allowed_tools "$WORKFLOWS/autopilot.yml")
+build=$(sed -nE 's/^TOOLS="([^"]*)"[[:space:]]*\r?$/\1/p' "$HERE/sandbox-job.sh")
+[ "$(grep -c . <<<"$analysis")" = 1 ] && [ "$(grep -c . <<<"$build")" = 1 ] \
+  && ok "the investigation and the sandbox's Claude runs each have one --allowedTools list" || no "the investigation and the sandbox's Claude runs each have one --allowedTools list"
+[ -z "$(allowed_tools "$WORKFLOWS/autopilot-fix.yml")" ] && ok "the fix round's list is the sandbox's" || no "the fix round's list is the sandbox's"
+grep -qF -- '--allowedTools "$TOOLS"' "$HERE/sandbox-job.sh" && ok "and sandbox-job.sh passes it to Claude" || no "and sandbox-job.sh passes it to Claude"
+expect_none "the build and the fix round may create, change, move and delete files and commit them" "$(missing "$NEEDED" "$build")"
+expect_none "they have no tool beyond their approved set" "$(unapproved "$WRITE_TOOLS" "$build")"
+expect_none "the investigation only reads" "$(unapproved "$READ_TOOLS" "$analysis")"
 expect_none "the build in issue #301's run lacked moves and deletes (the check sees it)" \
   "$([ -n "$(missing "$NEEDED" "Read,Write,Edit,Bash(git add:*),Bash(git commit:*)")" ] || echo "not caught")"
 for bad in 'Bash' 'Bash(*)' 'Bash(rm:*)' 'Bash(mv:*)' 'Bash(sed:*)' 'Bash(cp:*)' 'Bash(curl:*)' 'Bash(git push:*)' \
            'Bash(git config:*)' 'Bash(gh pr create:*)' 'Bash(gh api:*)' 'Bash(pnpm:*)' 'Bash(pnpm add:*)' 'Bash(pnpm install:*)' 'Bash(npx:*)' \
-           'WebFetch' 'WebSearch'; do
+           'Bash(bash:*)' 'Bash(dotnet:*)' 'Bash(dotnet add:*)' 'Bash(dotnet test:*)' 'WebFetch' 'WebSearch'; do
   expect_none "an approved set never lets '$bad' through" "$([ -z "$(unapproved "$WRITE_TOOLS" "Read,$bad")" ] && echo "let through")"
 done
+
+# --- the sandbox ------------------------------------------------------------------
+# Code that no person has merged runs only in the sandbox (sandbox.sh): the PR's
+# restore, build and tests, and Claude's build and fix. On the runner it could leave
+# something behind for a later job that holds the PAT.
+
+# run_lines <workflow>...: "<file>:<line> <text>" for every line of a `run:` step.
+run_lines() {
+  awk '
+    { sub(/\r$/, "") }
+    { match($0, /^ */); ind = RLENGTH }
+    inrun && ind <= rind && $0 !~ /^[[:space:]]*$/ { inrun = 0 }
+    inrun { print FILENAME ":" FNR " " $0; next }
+    /^ *(- )?run:/ {
+      line = $0; sub(/^ *(- )?run:[[:space:]]*/, "", line); rind = ind
+      if (line ~ /^[|>]/) inrun = 1; else print FILENAME ":" FNR " " line
+    }
+  ' "$@"
+}
+product=$(run_lines "$WORKFLOWS"/*.yml | grep -E 'dotnet (restore|build|test|publish|run|ef)|pnpm |corepack|npx |npm (install|ci|run)' \
+  | grep -vF 'npm install --global --silent @anthropic-ai/claude-code@' || true)
+expect_none "no workflow restores, builds or tests product code on the runner" "$product"
+probes=$(run_lines "$WORKFLOWS"/*.yml | grep -E '(^|[^a-z-])claude -p' || true)
+expect_none "a claude run on the runner is only the usage probe, without tools" "$(grep -vF -- '--tools ""' <<<"$probes")"
+[ "$(grep -c . <<<"$probes")" = 2 ] && ok "and there are two: autopilot's start and the fix round's" || no "the probes (found: $probes)"
+
+# jobs_with <pattern> <workflow>...: "<file>:<job>" for every job with a line that
+# matches <pattern>.
+jobs_with() {
+  awk -v pat="$1" '
+    FNR == 1 { injobs = 0; job = "" }
+    { sub(/\r$/, "") }
+    /^[[:space:]]*(#.*)?$/ { next }
+    { match($0, /^ */); ind = RLENGTH }
+    ind == 0 { injobs = ($0 ~ /^jobs:/); job = ""; next }
+    injobs && ind == 2 && /^  [A-Za-z0-9_-]+:[[:space:]]*$/ { job = $1; sub(/:$/, "", job); next }
+    job != "" && $0 ~ pat { print FILENAME ":" job }
+  ' "${@:2}" | sort -u
+}
+holders=$(jobs_with 'secrets[.]AUTOPILOT_(PAT|BOARD_TOKEN)' "$WORKFLOWS"/*.yml)
+sandboxed=$(jobs_with 'sandbox[.]sh run ' "$WORKFLOWS"/*.yml)
+expect_none "no job that holds the PAT or the board token runs the sandbox" "$(comm -12 <(echo "$holders") <(echo "$sandboxed"))"
+pr_code=$(jobs_with 'ref:.*(inputs[.]sha|pull_request[.]head)' "$WORKFLOWS"/*.yml)
+expect_none "no job that holds the PAT or the board token checks out a PR's code" "$(comm -12 <(echo "$holders") <(echo "$pr_code"))"
+[ "$(grep -c . <<<"$sandboxed")" = 3 ] && ok "three jobs run the sandbox: the build, the fix round and the PR checks" || no "the sandbox jobs (found: $sandboxed)"
+cleaned=$(jobs_with 'sandbox[.]sh clean ' "$WORKFLOWS"/*.yml)
+expect_none "every job that runs the sandbox removes it again" "$(comm -23 <(echo "$sandboxed") <(echo "$cleaned"))"
+expect_none "no SANDBOX_ parameter is a secret or a GitHub token" \
+  "$(grep -hE '^[[:space:]]*SANDBOX_[A-Z0-9_]+:' "$WORKFLOWS"/*.yml | grep -E 'secrets\.|github\.token|GH_TOKEN|GITHUB_TOKEN' || true)"
+expect_none "sandbox.sh names no other variable for the container than HOME" \
+  "$(grep -oE -- '-e [A-Z_]+' "$HERE/sandbox.sh" | grep -vx -- '-e HOME' || true)"
+grep -qF 'for v in CLAUDE_CODE_OAUTH_TOKEN ANTHROPIC_API_KEY $(compgen -e | grep -E' "$HERE/sandbox.sh" \
+  && ok "the container's environment is Claude's credential and the SANDBOX_ variables" || no "the container's environment is Claude's credential and the SANDBOX_ variables"
+grep -qE 'docker\.sock|--privileged|--network host' "$HERE/sandbox.sh" \
+  && no "the sandbox never gets the Docker socket, privileges or the host network" || ok "the sandbox never gets the Docker socket, privileges or the host network"
 
 # --- the check catches what it should ------------------------------------------
 fixture() { printf '%s\n' "$2" >"$WORK/$1.yml"; echo "$WORK/$1.yml"; }
@@ -352,6 +414,52 @@ f=$(fixture bots $'jobs:\r
         with:\r
           allowed_bots: \'github-actions\'  # comment\r')
 expect_bots "allowed_bots is read per Claude step, quoted or not (also with CRLF)" $'*\n-\ngithub-actions' "$f"
+
+f=$(fixture runner-code $'jobs:\r
+  test:\r
+    steps:\r
+      - run: dotnet build MusicHub.slnx\r
+      - name: UI\r
+        run: |\r
+          echo hi\r
+          pnpm --dir musichub-ui install\r
+      - run: bash .github/scripts/sandbox.sh run "$X" 5 bash /work/trusted/sandbox-job.sh ci\r
+      - name: Not a step\r
+        env:\r
+          NOTE: dotnet test is mentioned here\r
+  probe:\r
+    steps:\r
+      - run: claude -p "x" --max-turns 1\r')
+got=$(run_lines "$f" | grep -cE 'dotnet (restore|build|test)|pnpm ')
+[ "$got" = 2 ] && ok "product code in a run step is caught, one-line or block, and an env value isn't" || no "product code in run steps (found $got, want 2)"
+got=$(run_lines "$f" | grep -E '(^|[^a-z-])claude -p' | grep -cvF -- '--tools ""')
+[ "$got" = 1 ] && ok "a claude run with tools on the runner is caught" || no "a claude run with tools on the runner (found $got, want 1)"
+
+f=$(fixture pat-sandbox 'jobs:
+  publish:
+    steps:
+      - env:
+          T: ${{ secrets.AUTOPILOT_PAT }}
+        run: bash .github/scripts/sandbox.sh run x 5 true
+  build:
+    steps:
+      - run: bash .github/scripts/sandbox.sh run x 5 true
+      - run: bash .github/scripts/sandbox.sh clean x
+  fix:
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.sha }}
+      - env:
+          T: ${{ secrets.AUTOPILOT_BOARD_TOKEN }}
+        run: echo hi')
+got=$(comm -12 <(jobs_with 'secrets[.]AUTOPILOT_(PAT|BOARD_TOKEN)' "$f") <(jobs_with 'sandbox[.]sh run ' "$f") | grep -c .)
+[ "$got" = 1 ] && ok "a job with the PAT that runs the sandbox is caught" || no "a job with the PAT that runs the sandbox (found $got, want 1)"
+got=$(comm -12 <(jobs_with 'secrets[.]AUTOPILOT_(PAT|BOARD_TOKEN)' "$f") <(jobs_with 'ref:.*(inputs[.]sha|pull_request[.]head)' "$f") | grep -c .)
+[ "$got" = 1 ] && ok "a job with the board token that checks out a PR is caught" || no "a job with the board token that checks out a PR (found $got, want 1)"
+got=$(comm -23 <(jobs_with 'sandbox[.]sh run ' "$f") <(jobs_with 'sandbox[.]sh clean ' "$f") | grep -c .)
+[ "$got" = 1 ] && ok "a job that leaves its sandbox behind is caught" || no "a job that leaves its sandbox behind (found $got, want 1)"
+expect_read_only "a sandbox job with the PAT is caught as a Claude job with write access" 1 "$f"
 
 echo "$PASS passed, $FAILED failed"
 [ "$FAILED" -eq 0 ]
