@@ -30,22 +30,30 @@ internal sealed class Sha256HashingStream : Stream
     public override int Read(byte[] buffer, int offset, int count)
     {
         var n = _inner.Read(buffer, offset, count);
-        if (n > 0) _hasher.AppendData(buffer, offset, n);
+        Record(buffer.AsSpan(offset, n));
         return n;
     }
 
     public override async Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken)
     {
         var n = await _inner.ReadAsync(buffer, offset, count, cancellationToken);
-        if (n > 0) { _hasher.AppendData(buffer, offset, n); BytesRead += n; }
+        Record(buffer.AsSpan(offset, n));
         return n;
     }
 
     public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
     {
         var n = await _inner.ReadAsync(buffer, cancellationToken);
-        if (n > 0) { _hasher.AppendData(buffer.Span[..n]); BytesRead += n; }
+        Record(buffer.Span[..n]);
         return n;
+    }
+
+    // Hash and byte count must advance together, so every read path goes through here.
+    private void Record(ReadOnlySpan<byte> data)
+    {
+        if (data.IsEmpty) return;
+        _hasher.AppendData(data);
+        BytesRead += data.Length;
     }
 
     /// <summary>
