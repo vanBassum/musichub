@@ -33,26 +33,10 @@ public class TracksController(MusicHubDbContext db) : ControllerBase
         if (errors.Count > 0)
             return BadRequest(new ValidationProblemDetails(errors));
 
-        var query = db.Tracks.AsNoTracking();
-
-        var term = search?.Trim().ToLower();
-        if (!string.IsNullOrEmpty(term))
-        {
-            query = query.Where(t =>
-                t.Title.ToLower().Contains(term)
-                || (t.Version != null && t.Version.ToLower().Contains(term))
-                || t.Artists.Any(a => a.Artist.Name.ToLower().Contains(term)));
-        }
-
-        if (hasAudio is { } wanted)
-            query = query.Where(t => t.Files.AsQueryable().Any(TrackResponse.IsStoredAudio) == wanted);
+        var query = TrackListQuery.Filter(db.Tracks.AsNoTracking(), search, hasAudio);
 
         var total = await query.CountAsync(cancellationToken);
-        var items = await query
-            .OrderBy(t => t.Title).ThenBy(t => t.Id)
-            .Skip((int)Math.Min((long)(page - 1) * pageSize, int.MaxValue)).Take(pageSize)
-            .Select(TrackResponse.Projection)
-            .ToListAsync(cancellationToken);
+        var items = await TrackListQuery.Page(query, page, pageSize).ToListAsync(cancellationToken);
 
         return Ok(new PagedResponse<TrackResponse>(items, total, page, pageSize));
     }

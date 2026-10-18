@@ -187,11 +187,9 @@ public sealed class TracksControllerTests : IDisposable
         using var db = new MusicHubDbContext(
             new DbContextOptionsBuilder<MusicHubDbContext>().UseNpgsql("Host=localhost").Options);
 
-        var filtered = db.Tracks.AsNoTracking()
-            .Where(t => t.Title.ToLower().Contains("a") || t.Artists.Any(a => a.Artist.Name.ToLower().Contains("a")))
-            .Where(t => t.Files.AsQueryable().Any(TrackResponse.IsStoredAudio) == true);
+        var filtered = TrackListQuery.Filter(db.Tracks.AsNoTracking(), "a", hasAudio: true);
 
-        Assert.NotEmpty(filtered.OrderBy(t => t.Title).ThenBy(t => t.Id).Skip(0).Take(25).Select(TrackResponse.Projection).ToQueryString());
         Assert.NotEmpty(filtered.ToQueryString());
+        Assert.NotEmpty(TrackListQuery.Page(filtered, 1, 25).ToQueryString());
     }
 }
