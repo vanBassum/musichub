@@ -56,9 +56,9 @@ public class FilesController(FileIngestionService ingestion, IOptions<FileIngest
             // Never a 2xx: the bytes that arrived are not the bytes the client declared.
             return Problem(
                 title: "File upload rejected",
-                detail: ex.Reason,
+                detail: ex.Detail,
                 statusCode: StatusCodes.Status422UnprocessableEntity,
-                extensions: new Dictionary<string, object?> { ["fileId"] = ex.FileId });
+                extensions: new Dictionary<string, object?> { ["fileId"] = ex.FileId, ["reason"] = ex.Reason });
         }
         catch (FileIngestionException ex)
         {
@@ -67,7 +67,7 @@ public class FilesController(FileIngestionService ingestion, IOptions<FileIngest
                 title: "File upload failed",
                 detail: "The file could not be stored. Check its status in GET /api/files and upload it again.",
                 statusCode: StatusCodes.Status502BadGateway,
-                extensions: new Dictionary<string, object?> { ["fileId"] = ex.FileId });
+                extensions: new Dictionary<string, object?> { ["fileId"] = ex.FileId, ["reason"] = FileFailureReasons.StorageError });
         }
 
         return StatusCode(StatusCodes.Status201Created, ToResponse(record));

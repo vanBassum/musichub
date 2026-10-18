@@ -209,8 +209,8 @@ public class FileIngestionServiceTests
 
         var (_, error) = await IngestRejectedAsync(db, new FakeFileStorage(), declared[..3], Expect(declared));
 
-        Assert.Contains("incomplete", error.Reason);
-        Assert.Contains("3 of 5", error.Reason);
+        Assert.Equal(FileFailureReasons.Incomplete, error.Reason);
+        Assert.Contains("3 of 5", error.Detail);
     }
 
     [Fact]
@@ -220,7 +220,7 @@ public class FileIngestionServiceTests
 
         var (_, error) = await IngestRejectedAsync(db, new FakeFileStorage(), [1, 2, 3], Expect([1, 2, 4]));
 
-        Assert.Contains("corrupt", error.Reason);
+        Assert.Equal(FileFailureReasons.Corrupt, error.Reason);
     }
 
     [Fact]

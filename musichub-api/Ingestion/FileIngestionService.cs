@@ -59,11 +59,11 @@ public sealed class FileIngestionService(MusicHubDbContext db, IFileStorage stor
             }
 
             var mismatch = DescribeMismatch(hashingStream, expected);
-            if (mismatch is not null)
+            if (mismatch is { } rejected)
             {
                 await TryDeleteObjectAsync(storageKey);
-                await TryMarkFailedAsync(record, mismatch);
-                throw new FileUploadRejectedException(record.Id, mismatch);
+                await TryMarkFailedAsync(record, rejected.Reason);
+                throw new FileUploadRejectedException(record.Id, rejected.Reason, rejected.Detail);
             }
 
             // The bytes the API received are intact. A failed PUT may still have stored them:
@@ -71,7 +71,7 @@ public sealed class FileIngestionService(MusicHubDbContext db, IFileStorage stor
             if (putError is not null && !await IsStoredIntactAsync(storageKey, expected, cancellationToken))
             {
                 await TryDeleteObjectAsync(storageKey);
-                await TryMarkFailedAsync(record, "Storage could not confirm the complete object.");
+                await TryMarkFailedAsync(record, FileFailureReasons.StorageError);
                 throw new FileIngestionException(record.Id, putError);
             }
 
@@ -89,12 +89,12 @@ public sealed class FileIngestionService(MusicHubDbContext db, IFileStorage stor
         {
             // A client error while reading the body (e.g. Kestrel's 413 for an over-limit chunked
             // upload): the file is not stored, but it is not a storage failure either.
-            await TryMarkFailedAsync(record, "The request body could not be read.");
+            await TryMarkFailedAsync(record, FileFailureReasons.Incomplete);
             throw;
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            await TryMarkFailedAsync(record, "Storage failed.");
+            await TryMarkFailedAsync(record, FileFailureReasons.StorageError);
             throw new FileIngestionException(record.Id, ex);
         }
 
@@ -125,14 +125,14 @@ public sealed class FileIngestionService(MusicHubDbContext db, IFileStorage stor
         return (record, content);
     }
 
-    private static string? DescribeMismatch(Sha256HashingStream received, ExpectedUpload expected)
+    private static (string Reason, string Detail)? DescribeMismatch(Sha256HashingStream received, ExpectedUpload expected)
     {
         if (received.BytesRead < expected.Length)
-            return $"Upload incomplete: received {received.BytesRead} of {expected.Length} bytes.";
+            return (FileFailureReasons.Incomplete, $"Upload incomplete: received {received.BytesRead} of {expected.Length} bytes.");
         if (received.BytesRead > expected.Length)
-            return $"Upload longer than declared: expected {expected.Length} bytes.";
+            return (FileFailureReasons.Corrupt, $"Upload longer than declared: expected {expected.Length} bytes.");
         if (!string.Equals(received.GetHashHex(), expected.Sha256Hex, StringComparison.OrdinalIgnoreCase))
-            return "Upload corrupt: the SHA-256 of the received bytes differs from the declared digest.";
+            return (FileFailureReasons.Corrupt, "Upload corrupt: the SHA-256 of the received bytes differs from the declared digest.");
         return null;
     }
 
