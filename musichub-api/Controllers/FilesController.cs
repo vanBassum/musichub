@@ -57,6 +57,44 @@ public class FilesController(FileIngestionService ingestion, IOptions<FileIngest
             r.Id, r.OriginalFilename, r.SizeBytes, r.Status.ToString(), r.StartedAt)));
     }
 
+    /// <summary>Streams the original bytes of a Stored file as an attachment named after its original filename.</summary>
+    [HttpGet("{id:int}/download")]
+    public async Task<IActionResult> Download(int id, CancellationToken cancellationToken)
+    {
+        (FileRecord Record, Stream Content)? opened;
+        try
+        {
+            opened = await ingestion.OpenStoredAsync(id, cancellationToken);
+        }
+        catch (FileNotFoundException)
+        {
+            // The registration says Stored but the object is gone; say nothing about the storage key.
+            return NotFound();
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            return Problem(
+                title: "File download failed",
+                detail: "The file could not be read from storage.",
+                statusCode: StatusCodes.Status502BadGateway);
+        }
+
+        if (opened is null)
+            return NotFound();
+
+        // FileStreamResult disposes the stream and builds Content-Disposition: attachment with an
+        // RFC 5987 filename*, so Unicode survives and CR/LF or quotes cannot break the header.
+        return File(opened.Value.Content, "application/octet-stream", SafeDownloadName(opened.Value.Record.OriginalFilename));
+    }
+
+    /// <summary>The persisted name is untrusted: keep only its last path segment, without control characters.</summary>
+    public static string SafeDownloadName(string originalFilename)
+    {
+        var lastSegment = originalFilename[(originalFilename.LastIndexOfAny(['/', '\\']) + 1)..];
+        var cleaned = new string(lastSegment.Where(c => !char.IsControl(c)).ToArray()).Trim();
+        return cleaned is "" or "." or ".." ? "download" : cleaned;
+    }
+
     private static object ToResponse(FileRecord record) => new
     {
         record.Id,
