@@ -65,11 +65,14 @@ wording that Bas can add to the issue or to the understanding.
   `gh pr create --base main --title "…" --body "…"`. The body: the user's problem in
   a sentence or two, `Fixes #<issue>`, what changed, **Builds on** (the existing
   capabilities it uses, and why anything new was needed), how you checked it, and
-  your assumptions. Link the PR in your comment.
+  your assumptions. Then turn on auto-merge for that PR, and only that one:
+  `gh pr merge --auto --squash <PR>`. GitHub merges it once the build and the four
+  reviewers pass. Link the PR in your comment.
 - **PR**: push to its branch. When asked to fix the review, read the reviewers'
   summary and inline comments for the PR's head commit (`gh pr view <PR> --comments`)
   and the build check's log when it failed. Fix every `[bug]`, `[risk]` and `[smell]`
   finding that a code change can fix. A finding that needs a decision: don't work
   around it, say so. When the PR conflicts with main, `git fetch origin main` and
   `git merge origin/main`, then resolve.
-- Never merge, approve or close a PR, and never push to `main`. Bas merges.
+- Never merge, approve or close a PR, never turn on auto-merge for a PR you didn't
+  open in this run, and never push to `main`.
