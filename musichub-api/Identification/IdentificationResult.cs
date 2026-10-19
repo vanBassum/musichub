@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace MusicHub.Api.Identification;
 
 public enum IdentificationStatus
@@ -17,20 +19,48 @@ public enum IdentificationStatus
 /// <param name="Identity">The proposed identity; null exactly when <paramref name="Status"/> is Unresolved.</param>
 /// <param name="Evidence">What the outcome rests on, from the identification tools that were used.</param>
 /// <param name="UnresolvedReason">Why nothing is proposed; null when identified.</param>
+/// <param name="Methods">What each identification tool did, for diagnostics; empty when none ran.</param>
 public sealed record IdentificationResult(
     IdentificationStatus Status,
     ProposedRecordingIdentity? Identity,
     IReadOnlyList<IdentificationEvidence> Evidence,
-    string? UnresolvedReason)
+    string? UnresolvedReason,
+    IReadOnlyList<IdentificationMethodResult>? Methods = null)
 {
     public static IdentificationResult Identified(
-        ProposedRecordingIdentity identity, IReadOnlyList<IdentificationEvidence> evidence) =>
-        new(IdentificationStatus.Identified, identity, evidence, null);
+        ProposedRecordingIdentity identity, IReadOnlyList<IdentificationEvidence> evidence,
+        IReadOnlyList<IdentificationMethodResult>? methods = null) =>
+        new(IdentificationStatus.Identified, identity, evidence, null, methods);
 
     public static IdentificationResult Unresolved(
-        string reason, IReadOnlyList<IdentificationEvidence>? evidence = null) =>
-        new(IdentificationStatus.Unresolved, null, evidence ?? [], reason);
+        string reason, IReadOnlyList<IdentificationEvidence>? evidence = null,
+        IReadOnlyList<IdentificationMethodResult>? methods = null) =>
+        new(IdentificationStatus.Unresolved, null, evidence ?? [], reason, methods);
 }
+
+/// <summary>What one identification tool did for a file.</summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum IdentificationMethodStatus
+{
+    /// <summary>The tool ran and suggested at least one candidate.</summary>
+    Found,
+
+    /// <summary>The tool ran and found no candidate.</summary>
+    NothingFound,
+
+    /// <summary>The tool is not set up (for example no service or key is configured), so it did not run.</summary>
+    Unconfigured,
+
+    /// <summary>The tool tried and failed: not a "no match".</summary>
+    Failed,
+
+    /// <summary>The tool was available but the resolver did not use it for this file.</summary>
+    NotRun,
+}
+
+/// <summary>One tool's result in an identification: its status, its own note, and the candidates it suggested as text.</summary>
+public sealed record IdentificationMethodResult(
+    string Source, IdentificationMethodStatus Status, string Note, IReadOnlyList<string> Candidates);
 
 /// <summary>The identity a resolver proposes for a recording.</summary>
 public sealed record ProposedRecordingIdentity(string Title, IReadOnlyList<string> Artists, string? Album);

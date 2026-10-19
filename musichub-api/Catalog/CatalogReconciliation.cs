@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using MusicHub.Api.Data;
 using MusicHub.Api.Identification;
@@ -35,7 +36,21 @@ public sealed class CatalogReconciliation(
     // exclusive across processes).
     private static readonly SemaphoreSlim CatalogLock = new(1, 1);
 
-    public async Task<CatalogReconciliationSummary> RunAsync(CancellationToken cancellationToken)
+    /// <summary>Deletes identification outcomes recorded before <paramref name="retention"/> ago (Hangfire keeps its executions that long too).</summary>
+    public async Task<int> PruneOutcomesAsync(TimeSpan retention, CancellationToken cancellationToken)
+    {
+        var cutoff = time.GetUtcNow() - retention;
+        // Compared in memory: not every provider translates DateTimeOffset comparisons.
+        var expired = (await db.IdentificationOutcomes.Select(o => new { o.Id, o.RecordedAt }).ToListAsync(cancellationToken))
+            .Where(o => o.RecordedAt < cutoff).Select(o => o.Id).ToList();
+        var deleted = 0;
+        foreach (var batch in expired.Chunk(1000))
+            deleted += await db.IdentificationOutcomes.Where(o => batch.Contains(o.Id)).ExecuteDeleteAsync(cancellationToken);
+        return deleted;
+    }
+
+    /// <param name="executionId">The Hangfire execution the per-file outcomes are recorded under; null records none.</param>
+    public async Task<CatalogReconciliationSummary> RunAsync(string? executionId, CancellationToken cancellationToken)
     {
         var ids = await db.Files.AsNoTracking()
             .Where(f => f.Status == FileStatus.Stored && f.TrackId == null)
@@ -49,9 +64,10 @@ public sealed class CatalogReconciliation(
         foreach (var id in ids)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            var attempt = new Attempt();
             try
             {
-                switch (await ReconcileAsync(id, cancellationToken))
+                switch (await ReconcileAsync(id, attempt, cancellationToken))
                 {
                     case Outcome.LinkedExisting:
                         linked++;
@@ -72,11 +88,17 @@ public sealed class CatalogReconciliation(
             {
                 failed++;
                 logger.LogError(ex, "Reconciling file {FileId} failed; it stays unlinked.", id);
+                // Only the exception type: the message may carry storage or database details.
+                attempt.Decision = IdentificationDecision.Error;
+                attempt.Reason = $"Processing failed ({ex.GetType().Name}); the file stays unlinked.";
             }
             finally
             {
                 db.ChangeTracker.Clear();
             }
+
+            if (executionId is not null)
+                await RecordAsync(executionId, id, attempt, cancellationToken);
         }
 
         var summary = new CatalogReconciliationSummary(ids.Count, linked, created, unresolved, skipped, failed);
@@ -88,21 +110,79 @@ public sealed class CatalogReconciliation(
 
     private enum Outcome { LinkedExisting, LinkedCreated, Unresolved, Skipped }
 
-    private async Task<Outcome> ReconcileAsync(int fileId, CancellationToken cancellationToken)
+    /// <summary>What one file's attempt turned out to be; filled in as the attempt proceeds, recorded once at the end.</summary>
+    private sealed class Attempt
+    {
+        public string FileName { get; set; } = "";
+        public IdentificationDecision Decision { get; set; } = IdentificationDecision.Error;
+        public string Reason { get; set; } = "The attempt did not finish.";
+        public int? TrackId { get; set; }
+        public IReadOnlyList<IdentificationMethodResult> Methods { get; set; } = [];
+    }
+
+    internal static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+
+    // The diagnostic must never fail the file: it only describes what happened.
+    private async Task RecordAsync(string executionId, int fileId, Attempt attempt, CancellationToken cancellationToken)
+    {
+        try
+        {
+            db.IdentificationOutcomes.Add(new IdentificationOutcome
+            {
+                JobExecutionId = executionId,
+                FileId = fileId,
+                FileName = attempt.FileName,
+                Decision = attempt.Decision,
+                Reason = attempt.Reason.Length > 2000 ? attempt.Reason[..2000] : attempt.Reason,
+                TrackId = attempt.TrackId,
+                MethodsJson = JsonSerializer.Serialize(attempt.Methods, JsonOptions),
+                RecordedAt = time.GetUtcNow(),
+            });
+            await db.SaveChangesAsync(cancellationToken);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
+        {
+            logger.LogWarning(ex, "The identification outcome of file {FileId} could not be recorded.", fileId);
+        }
+        finally
+        {
+            db.ChangeTracker.Clear();
+        }
+    }
+
+    // Unresolved: said by what the tools did, never by guessing. A failed tool may have hidden a match.
+    private static IdentificationDecision Classify(IReadOnlyList<IdentificationMethodResult> methods)
+    {
+        if (methods.Any(m => m.Candidates.Count > 0))
+            return IdentificationDecision.InsufficientEvidence;
+        if (methods.Any(m => m.Status == IdentificationMethodStatus.Failed))
+            return IdentificationDecision.MethodFailed;
+        return methods.Any(m => m.Status == IdentificationMethodStatus.NothingFound)
+            ? IdentificationDecision.NoMatch
+            : IdentificationDecision.NoMethodRan;
+    }
+
+    private async Task<Outcome> ReconcileAsync(int fileId, Attempt attempt, CancellationToken cancellationToken)
     {
         var file = await db.Files.AsNoTracking().FirstOrDefaultAsync(f => f.Id == fileId, cancellationToken);
         if (file is not { Status: FileStatus.Stored, TrackId: null })
-            return SkipEligibility(fileId);
+            return SkipEligibility(fileId, attempt);
 
-        logger.LogInformation("Identifying file {FileId} ({Filename}).", fileId, file.OriginalFilename);
+        attempt.FileName = file.OriginalFilename;
         var result = await IdentifyAsync(file, cancellationToken);
+        attempt.Methods = result.Methods ?? [];
         var evidence = string.Join(", ", result.Evidence.Select(e => e.Source).Distinct());
 
         if (result.Status != IdentificationStatus.Identified || Normalize(result.Identity) is not { } identity)
         {
+            var reason = result.UnresolvedReason ?? "the proposed identity has no title or no artist";
             logger.LogInformation(
-                "File {FileId} stays unlinked: {Reason} (evidence from: {Evidence}).",
-                fileId, result.UnresolvedReason ?? "the proposed identity has no title or no artist", evidence);
+                "File {FileId} ({Filename}) stays unlinked: {Reason} (evidence from: {Evidence}).",
+                fileId, file.OriginalFilename, reason, evidence);
+            attempt.Decision = result.Status == IdentificationStatus.Identified
+                ? IdentificationDecision.InsufficientEvidence
+                : Classify(attempt.Methods);
+            attempt.Reason = reason;
             return Outcome.Unresolved;
         }
 
@@ -112,7 +192,7 @@ public sealed class CatalogReconciliation(
             // Re-read under the lock: the file may have been linked or deleted while it was being identified.
             var current = await db.Files.FirstOrDefaultAsync(f => f.Id == fileId, cancellationToken);
             if (current is not { Status: FileStatus.Stored, TrackId: null })
-                return SkipEligibility(fileId);
+                return SkipEligibility(fileId, attempt);
 
             var track = await FindTrackAsync(identity, cancellationToken);
             var createdTrack = track is null;
@@ -125,6 +205,9 @@ public sealed class CatalogReconciliation(
             logger.LogInformation(
                 "File {FileId} linked to {Kind} track {TrackId} \"{Title}\" (evidence from: {Evidence}).",
                 fileId, createdTrack ? "new" : "existing", track.Id, track.Title, evidence);
+            attempt.Decision = IdentificationDecision.Identified;
+            attempt.TrackId = track.Id;
+            attempt.Reason = $"Linked to {(createdTrack ? "new" : "existing")} track \"{track.Title}\".";
             return createdTrack ? Outcome.LinkedCreated : Outcome.LinkedExisting;
         }
         finally
@@ -133,9 +216,11 @@ public sealed class CatalogReconciliation(
         }
     }
 
-    private Outcome SkipEligibility(int fileId)
+    private Outcome SkipEligibility(int fileId, Attempt attempt)
     {
         logger.LogInformation("File {FileId} skipped: it is no longer a stored file without a track.", fileId);
+        attempt.Decision = IdentificationDecision.Skipped;
+        attempt.Reason = "The file was no longer a stored file without a track when its turn came.";
         return Outcome.Skipped;
     }
 

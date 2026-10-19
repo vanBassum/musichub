@@ -1,0 +1,58 @@
+using System.Text.Json.Serialization;
+using MusicHub.Api.Ingestion;
+
+namespace MusicHub.Api.Catalog;
+
+/// <summary>How an attempt to identify one file in a reconciliation run ended. Distinguishes the ways a file stays unlinked.</summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum IdentificationDecision
+{
+    /// <summary>An identity was established and the file was linked to a track.</summary>
+    Identified,
+
+    /// <summary>The tools that ran found nothing.</summary>
+    NoMatch,
+
+    /// <summary>Candidates exist but did not justify an identity (they conflict, or only the embedded tags name one).</summary>
+    InsufficientEvidence,
+
+    /// <summary>No tool could run (none is configured, or the file is not readable audio): the file was not identified at all.</summary>
+    NoMethodRan,
+
+    /// <summary>No candidate, and at least one tool failed, so a match may have been missed.</summary>
+    MethodFailed,
+
+    /// <summary>The file was no longer eligible when its turn came; it was not touched.</summary>
+    Skipped,
+
+    /// <summary>Processing the file failed (storage, identification or database); it stays unlinked.</summary>
+    Error,
+}
+
+/// <summary>
+/// The one consolidated diagnostic of one file's identification in one Hangfire execution: the decision and its reason,
+/// and what each method did (<see cref="MethodsJson"/>, a serialized list of <see cref="Identification.IdentificationMethodResult"/>).
+/// It records what happened; it never decides anything. Rows are kept as long as Hangfire keeps the execution.
+/// </summary>
+public class IdentificationOutcome
+{
+    public int Id { get; set; }
+
+    /// <summary>The Hangfire job id of the execution.</summary>
+    public string JobExecutionId { get; set; } = "";
+
+    public int FileId { get; set; }
+    public FileRecord? File { get; set; }
+
+    /// <summary>The file's name when it was examined.</summary>
+    public string FileName { get; set; } = "";
+
+    public IdentificationDecision Decision { get; set; }
+    public string Reason { get; set; } = "";
+
+    /// <summary>The track the file was linked to, when <see cref="Decision"/> is Identified.</summary>
+    public int? TrackId { get; set; }
+
+    public string MethodsJson { get; set; } = "[]";
+    public DateTimeOffset RecordedAt { get; set; }
+}

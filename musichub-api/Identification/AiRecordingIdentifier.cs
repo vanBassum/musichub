@@ -68,7 +68,8 @@ public sealed class AiRecordingIdentifier(
                     }
                     return IdentificationResult.Identified(
                         new ProposedRecordingIdentity(chosen.Title, chosen.Artists, chosen.Album),
-                        reports.SelectMany(Describe).ToList());
+                        reports.SelectMany(Describe).ToList(),
+                        Methods(reports));
 
                 case AiActionKind.RunTool:
                     if (step == maxSteps)
@@ -102,6 +103,13 @@ public sealed class AiRecordingIdentifier(
         return new AiToolOutcome(report.Source, report.Availability, report.Note, offered);
     }
 
-    private static IdentificationResult Unresolved(string reason, List<EvidenceReport> reports) =>
-        IdentificationResult.Unresolved(reason, reports.SelectMany(Describe).ToList());
+    private IdentificationResult Unresolved(string reason, List<EvidenceReport> reports) =>
+        IdentificationResult.Unresolved(reason, reports.SelectMany(Describe).ToList(), Methods(reports));
+
+    // The tools the model used report what they did; the others are listed as not run.
+    private List<IdentificationMethodResult> Methods(List<EvidenceReport> reports) =>
+        reports.Select(ToMethodResult)
+            .Concat(providers.Where(p => reports.All(r => r.Source != p.Source)).Select(p =>
+                new IdentificationMethodResult(p.Source, IdentificationMethodStatus.NotRun, "The AI model did not use this tool.", [])))
+            .ToList();
 }

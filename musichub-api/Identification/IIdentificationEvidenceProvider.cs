@@ -42,8 +42,11 @@ public enum EvidenceAvailability
     /// <summary>The provider ran and found no candidate.</summary>
     NothingFound,
 
-    /// <summary>The provider could not run, for example because no external service is configured.</summary>
+    /// <summary>The provider could not run because it is not set up, for example no external service is configured.</summary>
     Unavailable,
+
+    /// <summary>The provider tried and failed (network, timeout, rate limit, service error): not "nothing found".</summary>
+    Failed,
 }
 
 /// <summary>A recording a tool suggests. A suggestion, not an identity.</summary>
@@ -81,4 +84,7 @@ public sealed record EvidenceReport(
 
     public static EvidenceReport Unavailable(string source, string note) =>
         new(source, EvidenceAvailability.Unavailable, [], note);
+
+    public static EvidenceReport Failed(string source, string note) =>
+        new(source, EvidenceAvailability.Failed, [], note);
 }

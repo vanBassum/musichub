@@ -41,7 +41,7 @@ public sealed class CatalogReconciliationJobService(JobEngine engine)
     public async Task<string> EnqueueAsync(CancellationToken cancellationToken)
     {
         var client = await engine.ClientAsync(cancellationToken);
-        return client.Enqueue<CatalogReconciliationJob>(job => job.Run(CancellationToken.None));
+        return client.Enqueue<CatalogReconciliationJob>(job => job.Run(null, CancellationToken.None));
     }
 
     /// <summary>Enqueues a run unless one is active. Returns the new execution id, or null when a run is already active.</summary>
