@@ -78,7 +78,7 @@ export function CompactPlayer({ player }: CompactPlayerProps) {
           <SkipForward className="fill-current" />
         </Button>
       </section>
-      <SheetContent side="bottom" className="h-dvh sm:max-w-none">
+      <SheetContent side="bottom" className="data-[side=bottom]:h-dvh sm:max-w-none">
         <SheetTitle className="sr-only">Player</SheetTitle>
         <div className="mx-auto flex min-h-0 w-full max-w-xl flex-1 flex-col overflow-y-auto pt-10">
           <NowPlaying player={player} large />
