@@ -1,6 +1,7 @@
 import {
   Database,
   FolderOpen,
+  ListChecks,
   ListMusic,
   Music,
   Settings,
@@ -11,7 +12,7 @@ import { BuildInfoSheet } from "@/components/build-info-sheet"
 import { GlobalSearch } from "@/components/global-search"
 import { Button } from "@/components/ui/button"
 
-export type AppView = "library" | "files" | "artists"
+export type AppView = "library" | "files" | "artists" | "jobs"
 
 interface AppHeaderProps {
   view: AppView
@@ -66,6 +67,16 @@ export function AppHeader({
         >
           <UserRound data-icon="inline-start" />
           Artists
+        </Button>
+        <Button
+          variant={view === "jobs" ? "secondary" : "ghost"}
+          size="lg"
+          aria-current={view === "jobs" ? "page" : undefined}
+          className={view === "jobs" ? activeClassName : undefined}
+          onClick={() => onNavigate("jobs")}
+        >
+          <ListChecks data-icon="inline-start" />
+          Jobs
         </Button>
       </nav>
       <GlobalSearch

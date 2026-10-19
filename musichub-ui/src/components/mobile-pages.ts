@@ -1,6 +1,7 @@
 import {
   FolderOpen,
   Library,
+  ListChecks,
   ListMusic,
   Music,
   UserRound,
@@ -13,6 +14,7 @@ export const mobilePages = [
   { id: "queue", label: "Queue", icon: ListMusic },
   { id: "files", label: "Files", icon: FolderOpen },
   { id: "artists", label: "Artists", icon: UserRound },
+  { id: "jobs", label: "Jobs", icon: ListChecks },
 ] as const
 
 export type MobilePageId = (typeof mobilePages)[number]["id"]
