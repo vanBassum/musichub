@@ -52,8 +52,6 @@ public class ArtistExternalLinksController(MusicHubDbContext db, TimeProvider ti
             {
                 LinkCheck.TakenByOtherArtist => Conflict(ConflictDetails(
                     $"This {source} identifier is already linked to another artist; unlink it there first.")),
-                LinkCheck.ArtistHasOtherIdentifier => Conflict(ConflictDetails(
-                    $"This artist already has a {source} identifier linked; unlink it first.")),
                 _ => Ok(ArtistExternalLinkResponse.From(link!)),
             };
         }

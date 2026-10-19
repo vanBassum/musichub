@@ -11,7 +11,7 @@ public static partial class ExternalSources
     [GeneratedRegex("^[a-z0-9][a-z0-9._-]{0,49}$")]
     private static partial Regex SourceName();
 
-    [GeneratedRegex(@"^\S{1,100}$")]
+    [GeneratedRegex(@"^\S+$")]
     private static partial Regex PlainId();
 
     /// <summary>
@@ -26,7 +26,7 @@ public static partial class ExternalSources
             return null;
         if (s == MusicBrainz)
             return Guid.TryParseExact(id, "D", out var guid) ? (s, guid.ToString("D")) : null;
-        return PlainId().IsMatch(id) ? (s, id) : null;
+        return id.Length <= MaxExternalIdLength && PlainId().IsMatch(id) ? (s, id) : null;
     }
 
     public static string ArtistUrl(string source, string externalId) =>

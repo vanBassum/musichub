@@ -16,9 +16,6 @@ public enum LinkCheck
     /// <summary>The identifier is linked to another artist.</summary>
     TakenByOtherArtist,
 
-    /// <summary>The artist already has another identifier linked for the same source.</summary>
-    ArtistHasOtherIdentifier,
-
     /// <summary>A person unlinked this identifier from this artist.</summary>
     Unlinked,
 
@@ -61,16 +58,14 @@ public sealed class ArtistExternalLinks(MusicHubDbContext db, TimeProvider time)
     private async Task<LinkCheck> CheckAsync(int artistId, string source, string id, CancellationToken ct)
     {
         var rows = await db.ArtistExternalLinks.AsNoTracking()
-            .Where(l => l.Source == source && (l.ExternalId == id || l.ArtistId == artistId))
+            .Where(l => l.Source == source && l.ExternalId == id)
             .ToListAsync(ct);
         var linked = rows.FirstOrDefault(l => l.ExternalId == id && l.Status == ExternalLinkStatus.Linked);
         if (linked is not null)
             return linked.ArtistId == artistId ? LinkCheck.AlreadyLinked : LinkCheck.TakenByOtherArtist;
         if (rows.Any(l => l.ExternalId == id && l.ArtistId == artistId))
             return LinkCheck.Unlinked;
-        return rows.Any(l => l.ArtistId == artistId && l.Status == ExternalLinkStatus.Linked)
-            ? LinkCheck.ArtistHasOtherIdentifier
-            : LinkCheck.Free;
+        return LinkCheck.Free;
     }
 
     /// <summary>
@@ -105,7 +100,7 @@ public sealed class ArtistExternalLinks(MusicHubDbContext db, TimeProvider time)
         int artistId, string source, string id, CancellationToken ct)
     {
         var check = await CheckAsync(artistId, source, id, ct);
-        if (check is LinkCheck.TakenByOtherArtist or LinkCheck.ArtistHasOtherIdentifier)
+        if (check == LinkCheck.TakenByOtherArtist)
             return (check, null);
 
         var now = time.GetUtcNow();

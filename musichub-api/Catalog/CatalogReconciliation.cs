@@ -119,10 +119,7 @@ public sealed class CatalogReconciliation(
             var track = await FindTrackAsync(identity, cancellationToken);
             var createdTrack = track is null;
             var linkEvidence = $"Credited with this identifier on a recording identified from: {evidence}";
-            if (track is null)
-                track = await CreateTrackAsync(identity, linkEvidence, cancellationToken);
-            else
-                await LinkExistingArtistsAsync(track, identity, linkEvidence, cancellationToken);
+            track ??= await CreateTrackAsync(identity, linkEvidence, cancellationToken);
 
             // One SaveChanges: the track, its artists and the link are stored together or not at all.
             current.Track = track;
@@ -197,50 +194,26 @@ public sealed class CatalogReconciliation(
         return track;
     }
 
-    // The artist for a credited name. An identifier from the evidence decides first: the artist it is linked to. Without
-    // one, or with an identifier nobody has, a name matches an artist only when nothing contradicts that: the artist
-    // has no other identifier of that source and no person unlinked this one from it. When several artists share the
-    // name, none is picked for the link (the track still goes to the oldest, as it did before identifiers existed).
+    // The artist for a credited name. An identifier from the evidence decides first: the artist it is linked to. A name
+    // alone is not evidence of identity, so an identifier nobody has is never linked to an existing artist because the
+    // names match: it goes to a new, separate artist (merging stays a person's decision). Without an identifier the name
+    // picks the oldest artist with that name, as it did before identifiers existed, and no link is made.
     private async Task<Artist> ResolveArtistAsync(
         string name, ArtistReference? reference, string linkEvidence, DateTimeOffset now, CancellationToken cancellationToken)
     {
         if (reference is not null && await links.FindLinkedArtistAsync(reference, cancellationToken) is { } linked)
             return linked;
 
-        var lower = name.ToLower();
-        var matches = await db.Artists.OrderBy(a => a.Id).Where(a => a.Name.ToLower() == lower).ToListAsync(cancellationToken);
         if (reference is null)
-            return matches.FirstOrDefault() ?? new Artist { Name = name, CreatedAt = now };
-
-        var usable = new List<Artist>();
-        foreach (var match in matches)
         {
-            if (await links.CheckAsync(match, reference, cancellationToken) == LinkCheck.Free)
-                usable.Add(match);
-        }
-        if (usable.Count > 1)
-        {
-            logger.LogWarning(
-                "Artist \"{Name}\" with {Source} identifier {ExternalId} matches {Count} artists; no link was made.",
-                name, reference.Source, reference.ExternalId, usable.Count);
-            return usable[0];
+            var lower = name.ToLower();
+            return await db.Artists.OrderBy(a => a.Id).FirstOrDefaultAsync(a => a.Name.ToLower() == lower, cancellationToken)
+                   ?? new Artist { Name = name, CreatedAt = now };
         }
 
-        var artist = usable.Count == 1 ? usable[0] : new Artist { Name = name, CreatedAt = now };
+        var artist = new Artist { Name = name, CreatedAt = now };
         await TryLinkAsync(artist, reference, linkEvidence, cancellationToken);
         return artist;
-    }
-
-    // The track is already in the catalog: its artists only gain identifiers, never change.
-    private async Task LinkExistingArtistsAsync(
-        Track track, ProposedRecordingIdentity identity, string linkEvidence, CancellationToken cancellationToken)
-    {
-        foreach (var artist in track.Artists.Select(a => a.Artist).DistinctBy(a => a.Id))
-        {
-            var reference = ReferenceFor(identity, artist.Name.Trim());
-            if (reference is not null)
-                await TryLinkAsync(artist, reference, linkEvidence, cancellationToken);
-        }
     }
 
     private async Task TryLinkAsync(

@@ -109,7 +109,7 @@ public sealed class ArtistExternalLinksTests : IDisposable
     }
 
     [Fact]
-    public async Task An_existing_artist_keeps_its_record_and_gains_the_link()
+    public async Task A_name_alone_never_links_an_identifier_to_an_existing_artist()
     {
         var existing = await SeedArtistAsync("Artist");
         Identify("a.mp3", "Song", ["artist"], Mb(MbA, "artist"));
@@ -117,12 +117,14 @@ public sealed class ArtistExternalLinksTests : IDisposable
         await ReconcileAsync("a.mp3");
 
         using var db = CreateDb();
-        Assert.Equal(existing, (await db.Artists.SingleAsync()).Id);
-        Assert.Equal(existing, Assert.Single(await LinksAsync()).ArtistId);
+        Assert.Equal(2, await db.Artists.CountAsync());
+        var link = Assert.Single(await LinksAsync());
+        Assert.NotEqual(existing, link.ArtistId);
+        Assert.Equal(link.ArtistId, (await db.TrackArtists.SingleAsync()).ArtistId);
     }
 
     [Fact]
-    public async Task An_existing_track_gains_links_without_changing()
+    public async Task An_existing_track_and_its_artists_are_not_linked_by_name()
     {
         Identify("a.mp3", "Song", ["Artist"]);
         await ReconcileAsync("a.mp3");
@@ -133,6 +135,24 @@ public sealed class ArtistExternalLinksTests : IDisposable
         using var db = CreateDb();
         Assert.Equal(1, await db.Tracks.CountAsync());
         Assert.Equal(1, await db.Artists.CountAsync());
+        Assert.Empty(await LinksAsync());
+    }
+
+    [Fact]
+    public async Task An_artist_already_linked_to_the_identifier_is_reused_whatever_the_name()
+    {
+        var artist = await SeedArtistAsync("Artist");
+        using (var db = CreateDb())
+        {
+            Assert.IsType<OkObjectResult>(await Controller(db).Link(artist, new("musicbrainz", MbA), default));
+        }
+        Identify("a.mp3", "Song", ["Other Spelling"], Mb(MbA, "Other Spelling"));
+
+        await ReconcileAsync("a.mp3");
+
+        using var read = CreateDb();
+        Assert.Equal(1, await read.Artists.CountAsync());
+        Assert.Equal(artist, (await read.TrackArtists.SingleAsync()).ArtistId);
         Assert.Single(await LinksAsync());
     }
 
@@ -168,18 +188,18 @@ public sealed class ArtistExternalLinksTests : IDisposable
     }
 
     [Fact]
-    public async Task An_ambiguous_name_match_makes_no_link_and_adds_no_artist()
+    public async Task Several_artists_with_the_name_are_not_guessed_between()
     {
-        var oldest = await SeedArtistAsync("Echo");
-        await SeedArtistAsync("Echo");
+        var first = await SeedArtistAsync("Echo");
+        var second = await SeedArtistAsync("Echo");
         Identify("a.mp3", "Song", ["Echo"], Mb(MbA, "Echo"));
 
         await ReconcileAsync("a.mp3");
 
-        Assert.Empty(await LinksAsync());
+        var link = Assert.Single(await LinksAsync());
+        Assert.DoesNotContain(link.ArtistId, new[] { first, second });
         using var db = CreateDb();
-        Assert.Equal(2, await db.Artists.CountAsync());
-        Assert.Equal(oldest, (await db.TrackArtists.SingleAsync()).ArtistId);
+        Assert.Equal(3, await db.Artists.CountAsync());
     }
 
     [Fact]
@@ -244,9 +264,8 @@ public sealed class ArtistExternalLinksTests : IDisposable
         Assert.Equal($"https://musicbrainz.org/artist/{MbA}", linked.Url);
         Assert.Equal(("Linked", "Manual"), (linked.Status, linked.Origin));
 
-        // The identifier is the first artist's; another artist cannot take it, and the first has one already.
+        // The identifier is the first artist's; another artist cannot take it.
         Assert.IsType<ConflictObjectResult>(await controller.Link(second, new("musicbrainz", MbA), default));
-        Assert.IsType<ConflictObjectResult>(await controller.Link(first, new("musicbrainz", MbB), default));
         Assert.IsType<NotFoundResult>(await controller.Unlink(second, linked.Id, default));
 
         var unlinked = Assert.IsType<ArtistExternalLinkResponse>(
@@ -284,6 +303,31 @@ public sealed class ArtistExternalLinksTests : IDisposable
             Assert.IsType<OkObjectResult>(await controller.List(first, default)).Value);
         Assert.Equal(["musicbrainz", "spotify"], list.Items.Select(i => i.Source));
         Assert.Equal("", list.Items[1].Url);
+    }
+
+    [Fact]
+    public async Task An_artist_can_have_several_identifiers_of_one_source_and_relink_an_unlinked_one()
+    {
+        var artist = await SeedArtistAsync("One");
+        using var db = CreateDb();
+        var controller = Controller(db);
+
+        var x = Assert.IsType<ArtistExternalLinkResponse>(
+            Assert.IsType<OkObjectResult>(await controller.Link(artist, new("musicbrainz", MbA), default)).Value);
+        Assert.IsType<OkObjectResult>(await controller.Unlink(artist, x.Id, default));
+        Assert.IsType<OkObjectResult>(await controller.Link(artist, new("musicbrainz", MbB), default));
+        Assert.IsType<OkObjectResult>(await controller.Link(artist, new("musicbrainz", MbA), default));
+
+        var list = Assert.IsType<ArtistExternalLinkListResponse>(
+            Assert.IsType<OkObjectResult>(await controller.List(artist, default)).Value);
+        Assert.Equal(2, list.Items.Count(i => i.Status == "Linked"));
+    }
+
+    [Fact]
+    public void An_identifier_is_limited_to_the_column_length()
+    {
+        Assert.NotNull(ExternalSources.Normalize("spotify", new string('a', ExternalSources.MaxExternalIdLength)));
+        Assert.Null(ExternalSources.Normalize("spotify", new string('a', ExternalSources.MaxExternalIdLength + 1)));
     }
 
     [Fact]
