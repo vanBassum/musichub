@@ -20,6 +20,23 @@ export interface PagedTracks {
   pageSize: number
 }
 
+export interface SearchedArtist {
+  id: number
+  name: string
+  trackCount: number
+}
+
+export interface ArtistList {
+  items: SearchedArtist[]
+  total: number
+}
+
+// The fields a track search can look in; "title" covers the title and the version.
+export interface SearchFields {
+  title: boolean
+  artist: boolean
+}
+
 export type AudioFilter = "all" | "with" | "without"
 
 export const pageSize = 25
@@ -37,18 +54,42 @@ async function getJson<T>(url: string, signal: AbortSignal): Promise<T> {
 }
 
 export function fetchTracks(
-  query: { search: string; audio: AudioFilter; page: number },
+  query: {
+    search: string
+    audio: AudioFilter
+    page: number
+    pageSize?: number
+    fields?: SearchFields
+  },
   signal: AbortSignal
 ) {
   const params = new URLSearchParams({
     page: String(query.page),
-    pageSize: String(pageSize),
+    pageSize: String(query.pageSize ?? pageSize),
   })
   if (query.search) params.set("search", query.search)
+  if (query.fields) {
+    const names = [
+      query.fields.title && "title",
+      query.fields.artist && "artist",
+    ].filter(Boolean)
+    params.set("fields", names.join(","))
+  }
   if (query.audio !== "all") {
     params.set("hasAudio", String(query.audio === "with"))
   }
   return getJson<PagedTracks>(`/api/tracks?${params}`, signal)
+}
+
+export function fetchArtists(
+  query: { search: string; pageSize: number },
+  signal: AbortSignal
+) {
+  const params = new URLSearchParams({
+    search: query.search,
+    pageSize: String(query.pageSize),
+  })
+  return getJson<ArtistList>(`/api/artists?${params}`, signal)
 }
 
 export function fetchTrack(id: number, signal: AbortSignal) {

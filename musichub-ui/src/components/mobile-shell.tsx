@@ -10,6 +10,7 @@ import {
 import { ArtistPage } from "@/components/artist-page"
 import { BuildInfoSheet } from "@/components/build-info-sheet"
 import { FilesView } from "@/components/files-view"
+import { GlobalSearch } from "@/components/global-search"
 import { MobileNav } from "@/components/mobile-nav"
 import { mobilePageIndex } from "@/components/mobile-pages"
 import { NowPlaying, QueueList } from "@/components/player-panel"
@@ -32,6 +33,7 @@ interface MobileShellProps {
   queue: Track[]
   nowPlayingId: string
   filesState: FilesState
+  onSelectTrack: (trackId: number) => void
 }
 
 const libraryPage = mobilePageIndex("library")
@@ -53,6 +55,7 @@ export function MobileShell({
   queue,
   nowPlayingId,
   filesState,
+  onSelectTrack,
 }: MobileShellProps) {
   const strip = useRef<HTMLDivElement>(null)
   const [active, setActive] = useState(playerPage)
@@ -93,6 +96,11 @@ export function MobileShell({
 
   return (
     <div className="flex h-dvh flex-col overflow-hidden">
+      <GlobalSearch
+        onSelectTrack={onSelectTrack}
+        onSelectArtist={() => navigate(artistsPage)}
+        className="border-b p-2"
+      />
       <div
         ref={strip}
         className="flex min-h-0 flex-1 snap-x snap-mandatory [scrollbar-width:none] overflow-x-auto overflow-y-hidden overscroll-x-contain [&::-webkit-scrollbar]:hidden"

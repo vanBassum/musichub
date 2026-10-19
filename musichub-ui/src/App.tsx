@@ -87,6 +87,7 @@ export function App() {
           queue={mockQueue}
           nowPlayingId={mockNowPlayingId}
           filesState={filesState}
+          onSelectTrack={setSelectedId}
         />
         {details}
       </>
@@ -95,7 +96,11 @@ export function App() {
 
   return (
     <div className="flex min-h-svh flex-col lg:h-svh">
-      <AppHeader view={view} onNavigate={setView} />
+      <AppHeader
+        view={view}
+        onNavigate={setView}
+        onSelectTrack={setSelectedId}
+      />
       {view === "files" ? (
         <main className="flex min-h-0 flex-1 flex-col p-4">
           <FilesView state={filesState} className="flex-1" />
