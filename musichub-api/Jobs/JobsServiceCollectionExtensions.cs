@@ -1,3 +1,5 @@
+using MusicHub.Api.Catalog;
+
 namespace MusicHub.Api.Jobs;
 
 public static class JobsServiceCollectionExtensions
@@ -10,6 +12,9 @@ public static class JobsServiceCollectionExtensions
         services.AddSingleton<JobEngine>();
         services.AddScoped<PingJob>();
         services.AddScoped<PingJobService>();
+        services.AddScoped<CatalogReconciliation>();
+        services.AddScoped<CatalogReconciliationJob>();
+        services.AddScoped<CatalogReconciliationJobService>();
         services.AddHostedService<HangfireServerService>();
         return services;
     }
