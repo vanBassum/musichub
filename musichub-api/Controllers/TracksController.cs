@@ -73,8 +73,16 @@ public class TracksController(MusicHubDbContext db, Wishlist wishlist) : Control
         if (string.IsNullOrWhiteSpace(request.Provider)) errors["provider"] = ["Provider is required."];
         if (string.IsNullOrWhiteSpace(request.ExternalId)) errors["externalId"] = ["External id is required."];
         if (string.IsNullOrWhiteSpace(request.Title)) errors["title"] = ["Title is required."];
-        if (request.Artists is null || !request.Artists.Any(a => !string.IsNullOrWhiteSpace(a.Name)))
+        if (request.Artists is null || request.Artists.Any(a => a is null))
+            errors["artists"] = ["Artists must be a list of artists with a name."];
+        else if (!request.Artists.Any(a => !string.IsNullOrWhiteSpace(a.Name)))
             errors["artists"] = ["At least one artist with a name is required."];
+        else if (request.Artists.Any(a => a.Name?.Trim().Length > MaxArtistNameLength))
+            errors["artists"] = [$"An artist name is at most {MaxArtistNameLength} characters."];
+        if (TooLong(request.Provider, MaxProviderLength)) errors["provider"] = [$"Provider is at most {MaxProviderLength} characters."];
+        if (TooLong(request.ExternalId, MaxExternalIdLength)) errors["externalId"] = [$"External id is at most {MaxExternalIdLength} characters."];
+        if (TooLong(request.Title, MaxTitleLength)) errors["title"] = [$"Title is at most {MaxTitleLength} characters."];
+        if (TooLong(request.Disambiguation, MaxTitleLength)) errors["disambiguation"] = [$"Disambiguation is at most {MaxTitleLength} characters."];
         if (errors.Count > 0)
             return BadRequest(new ValidationProblemDetails(errors));
 
@@ -85,6 +93,14 @@ public class TracksController(MusicHubDbContext db, Wishlist wishlist) : Control
                 ? StatusCode(StatusCodes.Status201Created, result)
                 : Ok(result);
     }
+
+    // The column limits of the catalog tables (MusicHubDbContext), checked on the trimmed value that is stored.
+    private const int MaxProviderLength = 100;
+    private const int MaxExternalIdLength = 200;
+    private const int MaxTitleLength = 500;
+    private const int MaxArtistNameLength = 500;
+
+    private static bool TooLong(string? value, int max) => value?.Trim().Length > max;
 
     private Task<TrackResponse?> FindResponse(int id, CancellationToken cancellationToken) =>
         db.Tracks.AsNoTracking()

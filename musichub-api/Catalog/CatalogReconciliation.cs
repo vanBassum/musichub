@@ -155,11 +155,7 @@ public sealed class CatalogReconciliation(
     {
         if (identity is null || string.IsNullOrWhiteSpace(identity.Title))
             return null;
-        var artists = identity.Artists
-            .Select(a => a?.Trim() ?? "")
-            .Where(a => a.Length > 0)
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToList();
+        var artists = CatalogArtists.Normalize(identity.Artists);
         return artists.Count == 0 ? null : identity with { Title = identity.Title.Trim(), Artists = artists };
     }
 
@@ -181,14 +177,7 @@ public sealed class CatalogReconciliation(
     {
         var now = time.GetUtcNow();
         var track = new Track { Title = identity.Title, CreatedAt = now };
-        foreach (var name in identity.Artists)
-        {
-            var lower = name.ToLower();
-            var artist = await db.Artists.OrderBy(a => a.Id)
-                             .FirstOrDefaultAsync(a => a.Name.ToLower() == lower, cancellationToken)
-                         ?? new Artist { Name = name, CreatedAt = now };
-            track.Artists.Add(new TrackArtist { Artist = artist });
-        }
+        await CatalogArtists.AttachAsync(db, track, identity.Artists, now, cancellationToken);
         db.Tracks.Add(track);
         return track;
     }

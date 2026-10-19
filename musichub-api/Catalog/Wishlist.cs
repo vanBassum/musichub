@@ -60,11 +60,7 @@ public sealed class Wishlist(MusicHubDbContext db, TimeProvider time)
         var externalId = request.ExternalId!.Trim();
         var title = request.Title!.Trim();
         var version = string.IsNullOrWhiteSpace(request.Disambiguation) ? null : request.Disambiguation.Trim();
-        var artists = request.Artists!
-            .Select(a => a.Name?.Trim() ?? "")
-            .Where(n => n.Length > 0)
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToList();
+        var artists = CatalogArtists.Normalize(request.Artists!.Select(a => a?.Name));
 
         await CatalogReconciliation.CatalogLock.WaitAsync(cancellationToken);
         try
@@ -155,14 +151,7 @@ public sealed class Wishlist(MusicHubDbContext db, TimeProvider time)
     {
         var now = time.GetUtcNow();
         var track = new Track { Title = title, Version = version, CreatedAt = now };
-        foreach (var name in artists)
-        {
-            var lower = name.ToLower();
-            var artist = await db.Artists.OrderBy(a => a.Id)
-                             .FirstOrDefaultAsync(a => a.Name.ToLower() == lower, cancellationToken)
-                         ?? new Artist { Name = name, CreatedAt = now };
-            track.Artists.Add(new TrackArtist { Artist = artist });
-        }
+        await CatalogArtists.AttachAsync(db, track, artists, now, cancellationToken);
         track.ExternalIds.Add(new TrackExternalId { Provider = provider, ExternalId = externalId });
         db.Tracks.Add(track);
         return track;

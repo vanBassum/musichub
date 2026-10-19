@@ -175,6 +175,52 @@ public sealed class WishlistTests : IDisposable
         Assert.Equal(["artists", "externalId", "title"], problem.Errors.Keys.Order());
     }
 
+    [Fact]
+    public async Task Too_long_fields_are_rejected_as_bad_request()
+    {
+        using var db = CreateDb();
+        var controller = new TracksController(db, new Wishlist(db, TimeProvider.System));
+        var artists = new List<ExternalArtistCreditRequest> { new(new string('a', 501)) };
+
+        var result = await controller.WantExternal(new ExternalTrackWishlistRequest(
+            new string('p', 101), new string('e', 201), new string('t', 501), new string('d', 501), artists), default);
+
+        var problem = Assert.IsType<ValidationProblemDetails>(Assert.IsType<BadRequestObjectResult>(result).Value);
+        Assert.Equal(["artists", "disambiguation", "externalId", "provider", "title"], problem.Errors.Keys.Order());
+    }
+
+    [Fact]
+    public async Task Fields_at_the_limit_are_accepted()
+    {
+        var (status, _) = await WantExternal(new ExternalTrackWishlistRequest(
+            new string('p', 100), new string('e', 200), new string('t', 500), new string('d', 500),
+            [new(new string('a', 500))]));
+
+        Assert.Equal(201, status);
+    }
+
+    [Fact]
+    public async Task Null_artist_entry_is_rejected_as_bad_request()
+    {
+        using var db = CreateDb();
+        var result = await new TracksController(db, new Wishlist(db, TimeProvider.System)).WantExternal(
+            new ExternalTrackWishlistRequest("musicbrainz", "mb-1", "Song", null, [null!, new("Band")]), default);
+
+        var problem = Assert.IsType<ValidationProblemDetails>(Assert.IsType<BadRequestObjectResult>(result).Value);
+        Assert.Equal(["artists"], problem.Errors.Keys);
+    }
+
+    [Fact]
+    public async Task Created_track_reuses_an_existing_artist_ignoring_case()
+    {
+        await Seed("Other", null, "Band");
+
+        await WantExternal(External(artists: "  BAND "));
+
+        using var db = CreateDb();
+        Assert.Equal(1, await db.Artists.CountAsync());
+    }
+
     private async Task<DateTimeOffset?> WantedAt(int id)
     {
         using var db = CreateDb();
