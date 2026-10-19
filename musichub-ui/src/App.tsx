@@ -127,7 +127,6 @@ export function App() {
         )}
         <PlayerPanel player={player} className="w-80 shrink-0 xl:w-96" />
       </div>
-=======
       {details}
     </div>
   )
