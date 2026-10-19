@@ -1,5 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 
+import { coalesce } from "@/lib/coalesce"
+import {
+  clampConcurrency,
+  createUploadQueue,
+  DEFAULT_CONCURRENCY,
+  type UploadQueue,
+} from "@/lib/upload-queue"
+
 import {
   deleteFailedFiles,
   deleteFile,
@@ -10,9 +18,18 @@ import {
   type FileRegistration,
 } from "@/lib/files-api"
 
-// An upload made in this session. "sent" means every byte left the browser but the
-// API has not confirmed storage yet; only the list's `Stored` status is success.
-export type UploadState = "uploading" | "sent" | "failed" | "cancelled"
+// An upload made in this session. "queued" waits for a free slot; "sent" means every
+// byte left the browser but the API has not confirmed storage yet. A confirmed upload
+// leaves this list: the list's `Stored` status is the only success.
+export type UploadState =
+  | "queued"
+  | "uploading"
+  | "sent"
+  | "failed"
+  | "cancelled"
+
+// One list refresh per window when uploads finish in a burst.
+const REFRESH_WINDOW_MS = 400
 
 export interface Upload {
   key: number
@@ -44,6 +61,10 @@ export interface FilesState {
   uploads: Upload[]
   refresh: () => Promise<void>
   start: (file: File) => void
+  concurrency: number
+  setConcurrency: (limit: number) => void
+  // Cancels every queued and running upload; confirmed files are untouched.
+  cancelAll: () => void
   dismiss: (key: number) => void
 }
 
@@ -104,41 +125,78 @@ export function useFiles(): FilesState {
     []
   )
 
+  // Files wait here until the queue gives them a slot.
+  const [waiting] = useState(() => new Map<number, File>())
+  const [concurrency, setLimit] = useState(DEFAULT_CONCURRENCY)
+  const queue = useRef<UploadQueue<number> | null>(null)
+  useEffect(() => {
+    // A burst of finished uploads costs one list request, not one each.
+    const refreshSoon = coalesce(() => void refresh(), REFRESH_WINDOW_MS)
+    const created = createUploadQueue<number>({
+      limit: DEFAULT_CONCURRENCY,
+      start: (key) =>
+        uploadFile(waiting.get(key) as File, (loaded, total) =>
+          patch(key, { loaded, state: loaded >= total ? "sent" : "uploading" })
+        ),
+      onStart: (key) => patch(key, { state: "uploading" }),
+      onSettled: (key, error) => {
+        waiting.delete(key)
+        if (!error) {
+          // Stored: the list now carries the confirmed registration.
+          setUploads((all) => all.filter((u) => u.key !== key))
+        } else {
+          patch(key, {
+            state: error instanceof UploadCancelled ? "cancelled" : "failed",
+            error: error.message,
+            cancel: undefined,
+          })
+        }
+        refreshSoon()
+      },
+      // Never started, so nothing can have reached the server: no refresh needed.
+      onDequeued: (key) => {
+        waiting.delete(key)
+        patch(key, {
+          state: "cancelled",
+          error: "Upload cancelled.",
+          cancel: undefined,
+        })
+      },
+    })
+    queue.current = created
+    return () => {
+      refreshSoon.cancel()
+      queue.current = null
+    }
+  }, [patch, refresh, waiting])
+
   const start = useCallback(
     (file: File) => {
       const key = nextKey.current++
-      const handle = uploadFile(file, (loaded, total) =>
-        patch(key, { loaded, state: loaded >= total ? "sent" : "uploading" })
-      )
+      waiting.set(key, file)
       setUploads((all) => [
         {
           key,
           name: file.name,
           size: file.size,
           loaded: 0,
-          state: "uploading",
-          cancel: handle.cancel,
+          state: "queued",
+          cancel: () => queue.current?.cancel(key),
         },
         ...all,
       ])
-      handle.result.then(
-        () => {
-          // Stored: the list now carries the confirmed registration.
-          setUploads((all) => all.filter((u) => u.key !== key))
-          void refresh()
-        },
-        (error: Error) => {
-          patch(key, {
-            state: error instanceof UploadCancelled ? "cancelled" : "failed",
-            error: error.message,
-            cancel: undefined,
-          })
-          void refresh()
-        }
-      )
+      queue.current?.enqueue(key)
     },
-    [patch, refresh]
+    [waiting]
   )
+
+  const setConcurrency = useCallback((limit: number) => {
+    const next = clampConcurrency(limit)
+    setLimit(next)
+    queue.current?.setLimit(next)
+  }, [])
+
+  const cancelAll = useCallback(() => queue.current?.cancelAll(), [])
 
   const [deletions, setDeletions] = useState<Record<string, DeleteState>>({})
   const inFlight = useRef(new Set<string>())
@@ -205,6 +263,9 @@ export function useFiles(): FilesState {
     bulkDeletion,
     refresh,
     start,
+    concurrency,
+    setConcurrency,
+    cancelAll,
     dismiss,
     remove,
     removeFailed,

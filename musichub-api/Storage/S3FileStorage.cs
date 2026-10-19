@@ -39,6 +39,21 @@ internal sealed class S3FileStorage(IAmazonS3 s3, IOptions<FileStorageOptions> o
         }
     }
 
+    public async Task<Stream> OpenReadRangeAsync(string key, long start, long end, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var response = await s3.GetObjectAsync(
+                new GetObjectRequest { BucketName = _bucket, Key = key, ByteRange = new ByteRange(start, end) },
+                cancellationToken);
+            return response.ResponseStream;
+        }
+        catch (AmazonS3Exception ex) when (IsNotFound(ex))
+        {
+            throw new FileNotFoundException($"No stored file under key '{key}'.", key, ex);
+        }
+    }
+
     public async Task<bool> ExistsAsync(string key, CancellationToken cancellationToken)
     {
         try

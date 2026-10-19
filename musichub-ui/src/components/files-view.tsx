@@ -1,4 +1,4 @@
-import { RefreshCw, Trash2, Upload, X } from "lucide-react"
+import { Pause, Play, RefreshCw, Trash2, Upload, X } from "lucide-react"
 import { Fragment, useRef, useState } from "react"
 
 import { Badge } from "@/components/ui/badge"
@@ -11,14 +11,27 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
-import type { FileStatus } from "@/lib/files-api"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
+import {
+  isAudioFilename,
+  type FileRegistration,
+  type FileStatus,
+} from "@/lib/files-api"
 import { formatBytes } from "@/lib/format"
+import { MAX_CONCURRENCY, MIN_CONCURRENCY } from "@/lib/upload-queue"
 import type {
   BulkDeleteState,
   DeleteState,
   FilesState,
   Upload as UploadItem,
 } from "@/lib/use-files"
+import { usePlayer } from "@/lib/use-player"
 import { cn } from "@/lib/utils"
 
 const statusClassNames: Record<FileStatus, string> = {
@@ -29,6 +42,11 @@ const statusClassNames: Record<FileStatus, string> = {
   Expired: "bg-muted text-muted-foreground",
   Deleting: "bg-warning text-warning-foreground",
 }
+
+const concurrencyOptions = Array.from(
+  { length: MAX_CONCURRENCY - MIN_CONCURRENCY + 1 },
+  (_, i) => MIN_CONCURRENCY + i
+)
 
 const statusHints: Record<FileStatus, string> = {
   Stored: "Storage confirmed",
@@ -43,8 +61,11 @@ function fileSize(bytes: number | null) {
   return bytes === null ? "Unknown" : formatBytes(bytes)
 }
 
-function deleteError(state: DeleteState | undefined) {
-  return state && !state.pending ? state.error : null
+// The one mapping from delete state to what a row shows: used by the actions cell and the full-width row below sm.
+function deleteStatusKind(state: DeleteState | undefined, confirming: boolean) {
+  if (state?.pending) return "pending"
+  if (confirming) return "confirm"
+  return state ? "error" : null
 }
 
 export function FilesView({
@@ -63,10 +84,14 @@ export function FilesView({
     bulkDeletion,
     refresh,
     start,
+    concurrency,
+    setConcurrency,
+    cancelAll,
     dismiss,
     remove,
     removeFailed,
   } = state
+  const unfinished = uploads.filter((u) => u.cancel).length
   const input = useRef<HTMLInputElement>(null)
   const [confirming, setConfirming] = useState<string | null>(null)
   const [confirmingBulk, setConfirmingBulk] = useState(false)
@@ -77,6 +102,18 @@ export function FilesView({
     Array.from(selected).forEach(start)
     if (input.current) input.current.value = ""
   }
+
+  const deleteProps = (file: FileRegistration) => ({
+    name: file.originalFilename,
+    state: deletions[file.id],
+    confirming: confirming === file.id,
+    onAsk: () => setConfirming(file.id),
+    onCancel: () => setConfirming(null),
+    onConfirm: () => {
+      setConfirming(null)
+      remove(file.id)
+    },
+  })
 
   return (
     <section
@@ -129,6 +166,37 @@ export function FilesView({
         </div>
       </div>
 
+      <div className="flex shrink-0 flex-wrap items-center gap-2 border-t px-4 py-2 text-sm">
+        <span id="concurrency-label" className="text-muted-foreground">
+          Simultaneous uploads
+        </span>
+        <Select
+          value={String(concurrency)}
+          onValueChange={(value) => setConcurrency(Number(value))}
+        >
+          <SelectTrigger aria-labelledby="concurrency-label">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {concurrencyOptions.map((n) => (
+              <SelectItem key={n} value={String(n)}>
+                {n}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        {unfinished > 0 && (
+          <Button
+            variant="outline"
+            size="sm"
+            className="ml-auto"
+            onClick={cancelAll}
+          >
+            Cancel all uploads
+          </Button>
+        )}
+      </div>
+
       {uploads.length > 0 && (
         <ul
           aria-label="Uploads"
@@ -170,71 +238,51 @@ export function FilesView({
           <TableBody>
             {files?.map((file) => (
               <Fragment key={file.id}>
-              <TableRow>
-                <TableCell className="truncate pl-4 sm:max-w-80" title={file.originalFilename}>
-                  {file.originalFilename}
-                  <span className="block truncate text-xs text-muted-foreground sm:hidden">
-                    {fileSize(file.sizeBytes)} · {new Date(file.startedAt).toLocaleString()}
-                  </span>
-                </TableCell>
-                <TableCell className="hidden sm:table-cell">
-                  {fileSize(file.sizeBytes)}
-                </TableCell>
-                <TableCell>
-                  <Badge
-                    title={
-                      file.deletionError ??
-                      file.statusDetail ??
-                      statusHints[file.status]
-                    }
-                    className={statusClassNames[file.status]}
-                  >
-                    {file.status}
-                  </Badge>
-                </TableCell>
-                <TableCell className="hidden sm:table-cell">
-                  {new Date(file.startedAt).toLocaleString()}
-                </TableCell>
-                <TableCell className="pr-4">
-                  <DeleteControl
-                    name={file.originalFilename}
-                    state={deletions[file.id]}
-                    retry={file.status === "Deleting"}
-                    confirming={confirming === file.id}
-                    onAsk={() => setConfirming(file.id)}
-                    onCancel={() => setConfirming(null)}
-                    onConfirm={() => {
-                      setConfirming(null)
-                      remove(file.id)
-                    }}
-                  />
-                </TableCell>
-              </TableRow>
-              {(confirming === file.id || deletions[file.id]) && (
-                <TableRow className="sm:hidden">
-                  <TableCell colSpan={3} className="px-4 whitespace-normal">
-                    {deletions[file.id]?.pending ? (
-                      <span role="status" className="text-xs text-muted-foreground">
-                        Deleting…
-                      </span>
-                    ) : confirming === file.id ? (
-                      <ConfirmDelete
-                        name={file.originalFilename}
-                        className="flex"
-                        onCancel={() => setConfirming(null)}
-                        onConfirm={() => {
-                          setConfirming(null)
-                          remove(file.id)
-                        }}
+                <TableRow>
+                  <TableCell className="truncate pl-4 sm:max-w-80" title={file.originalFilename}>
+                    {file.originalFilename}
+                    <span className="block truncate text-xs text-muted-foreground sm:hidden">
+                      {fileSize(file.sizeBytes)} · {new Date(file.startedAt).toLocaleString()}
+                    </span>
+                  </TableCell>
+                  <TableCell className="hidden sm:table-cell">
+                    {fileSize(file.sizeBytes)}
+                  </TableCell>
+                  <TableCell>
+                    <Badge
+                      title={
+                        file.deletionError ??
+                        file.statusDetail ??
+                        statusHints[file.status]
+                      }
+                      className={statusClassNames[file.status]}
+                    >
+                      {file.status}
+                    </Badge>
+                  </TableCell>
+                  <TableCell className="hidden sm:table-cell">
+                    {new Date(file.startedAt).toLocaleString()}
+                  </TableCell>
+                  <TableCell className="pr-4">
+                    <span className="flex items-center justify-end gap-1">
+                      {file.status === "Stored" &&
+                        isAudioFilename(file.originalFilename) && (
+                          <PlayControl file={file} />
+                        )}
+                      <DeleteControl
+                        {...deleteProps(file)}
+                        retry={file.status === "Deleting"}
                       />
-                    ) : (
-                      <span role="alert" className="text-xs text-destructive">
-                        {deleteError(deletions[file.id])}
-                      </span>
-                    )}
+                    </span>
                   </TableCell>
                 </TableRow>
-              )}
+                {deleteStatusKind(deletions[file.id], confirming === file.id) && (
+                  <TableRow className="sm:hidden">
+                    <TableCell colSpan={3} className="px-4 whitespace-normal">
+                      <DeleteStatus {...deleteProps(file)} className="flex" />
+                    </TableCell>
+                  </TableRow>
+                )}
               </Fragment>
             ))}
             {files?.length === 0 && (
@@ -248,6 +296,23 @@ export function FilesView({
         </Table>
       </div>
     </section>
+  )
+}
+
+// Plays a Stored audio file in the shared player; the row of the loaded file toggles pause.
+function PlayControl({ file }: { file: FileRegistration }) {
+  const { source, status, playFile, toggle } = usePlayer()
+  const current = source?.id === file.id && status !== "error"
+  const playing = current && (status === "playing" || status === "loading")
+  return (
+    <Button
+      variant="ghost"
+      size="icon-sm"
+      aria-label={`${playing ? "Pause" : "Play"} ${file.originalFilename}`}
+      onClick={() => (current ? toggle() : playFile(file))}
+    >
+      {playing ? <Pause /> : <Play />}
+    </Button>
   )
 }
 
@@ -348,18 +413,16 @@ function ConfirmDelete({
   name,
   onCancel,
   onConfirm,
-  className,
 }: {
   name: string
   onCancel: () => void
   onConfirm: () => void
-  className: string
 }) {
   return (
     <span
       role="group"
       aria-label={`Confirm deleting ${name}`}
-      className={cn("flex-wrap items-center gap-1.5", className)}
+      className="flex flex-wrap items-center gap-1.5"
     >
       <span className="text-xs">Delete the stored file?</span>
       <Button
@@ -377,15 +440,47 @@ function ConfirmDelete({
   )
 }
 
-// Delete with an inline confirmation. On success the row leaves the list (the list is refreshed); a failure shows here and the row stays.
-function DeleteControl({
+// Renders the pending, confirming or error state of a delete; nothing when there is none.
+function DeleteStatus({
   name,
   state,
-  retry,
   confirming,
-  onAsk,
   onCancel,
   onConfirm,
+  className,
+}: {
+  name: string
+  state: DeleteState | undefined
+  confirming: boolean
+  onCancel: () => void
+  onConfirm: () => void
+  className: string
+}) {
+  const kind = deleteStatusKind(state, confirming)
+  if (!kind) return null
+  return (
+    <span className={cn("items-center", className)}>
+      {kind === "pending" ? (
+        <span role="status" className="text-xs text-muted-foreground">
+          Deleting…
+        </span>
+      ) : kind === "confirm" ? (
+        <ConfirmDelete name={name} onCancel={onCancel} onConfirm={onConfirm} />
+      ) : (
+        <span role="alert" className="text-xs text-destructive">
+          {state && !state.pending ? state.error : null}
+        </span>
+      )}
+    </span>
+  )
+}
+
+// Delete with an inline confirmation. On success the row leaves the list (the list is refreshed); a failure shows here and the row stays.
+// Below sm the actions column is too narrow for the status: the row shows it in a full-width row under the file instead.
+function DeleteControl({
+  retry,
+  onAsk,
+  ...status
 }: {
   name: string
   state: DeleteState | undefined
@@ -395,45 +490,31 @@ function DeleteControl({
   onCancel: () => void
   onConfirm: () => void
 }) {
-  if (state?.pending) {
-    return (
-      <span role="status" className="hidden text-xs text-muted-foreground sm:inline">
-        Deleting…
-      </span>
-    )
-  }
-  if (confirming) {
-    // Below sm the actions column is too narrow: the confirmation, the pending state and the error show in a full-width row under the file instead.
-    return (
-      <ConfirmDelete
-        name={name}
-        onCancel={onCancel}
-        onConfirm={onConfirm}
-        className="hidden sm:flex"
-      />
-    )
-  }
+  const kind = deleteStatusKind(status.state, status.confirming)
   return (
     <span className="flex items-center gap-2">
-      {state && (
-        <span role="alert" className="hidden text-xs text-destructive sm:inline">
-          {state.error}
-        </span>
+      <DeleteStatus {...status} className="hidden sm:flex" />
+      {kind !== "pending" && kind !== "confirm" && (
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          aria-label={`${retry || status.state ? "Retry delete of" : "Delete"} ${status.name}`}
+          onClick={onAsk}
+        >
+          <Trash2 />
+        </Button>
       )}
-      <Button
-        variant="ghost"
-        size="icon-sm"
-        aria-label={`${retry || state ? "Retry delete of" : "Delete"} ${name}`}
-        onClick={onAsk}
-      >
-        <Trash2 />
-      </Button>
     </span>
   )
 }
 
 function describeUpload(upload: UploadItem, percent: number) {
   switch (upload.state) {
+    case "queued":
+      return {
+        label: "Queued",
+        detail: "Waiting for a free upload slot. Nothing has been sent yet.",
+      }
     case "uploading":
       return {
         label: `Uploading ${percent}%`,
@@ -463,7 +544,8 @@ function UploadRow({
   onDismiss: () => void
 }) {
   const percent = upload.size === 0 ? 100 : Math.floor((upload.loaded / upload.size) * 100)
-  const active = upload.state === "uploading" || upload.state === "sent"
+  const active = upload.cancel !== undefined
+  const transferring = upload.state === "uploading" || upload.state === "sent"
 
   const { label, detail } = describeUpload(upload, percent)
 
@@ -472,7 +554,7 @@ function UploadRow({
       <span className="min-w-0 flex-1 truncate" title={upload.name}>
         {upload.name}
       </span>
-      {active && (
+      {transferring && (
         <progress
           value={upload.loaded}
           max={upload.size || 1}

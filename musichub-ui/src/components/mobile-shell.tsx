@@ -64,7 +64,6 @@ export function MobileShell({
 }: MobileShellProps) {
   const strip = useRef<HTMLDivElement>(null)
   const [active, setActive] = useState(playerPage)
-  const current = queue.find((track) => track.id === nowPlayingId) ?? null
 
   useLayoutEffect(() => {
     const element = strip.current
@@ -145,7 +144,7 @@ export function MobileShell({
           inert={active !== playerPage}
           className={cn(pageClassName, "overflow-y-auto")}
         >
-          <NowPlaying current={current} large />
+          <NowPlaying large />
         </section>
         <div inert={active !== queuePage} className={cn(pageClassName, "p-3")}>
           <div className="flex min-h-0 flex-1 flex-col rounded-xl border bg-card">
