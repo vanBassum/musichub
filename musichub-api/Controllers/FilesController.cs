@@ -141,6 +141,7 @@ public class FilesController(
     }
 
     /// <summary>
+    /// Manually deletes Failed files after UI confirmation, as approved in musichub-understanding PR #27.
     /// Deletes every file that is Failed at the moment of the request (object and registration, like <see cref="Delete"/>).
     /// Always 200 with the counts: files that were no longer Failed or are being uploaded are skipped, and files whose
     /// storage could not be cleaned are listed under <c>failed</c> and stay in the list as Deleting.
