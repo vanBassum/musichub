@@ -13,7 +13,14 @@ public enum FileDeletionOutcome
     NotFound,
     /// <summary>An upload for this file is still running in this process; nothing was changed.</summary>
     UploadInProgress,
+    /// <summary>The caller required a status and the file no longer has it; nothing was changed.</summary>
+    StatusChanged,
 }
+
+/// <summary>What a bulk delete of Failed files did. Files that failed to delete stay Deleting and can be retried.</summary>
+public sealed record FailedFilesDeletion(int Deleted, int Skipped, IReadOnlyList<FailedFileDeletion> Failed);
+
+public sealed record FailedFileDeletion(int FileId, string Detail);
 
 /// <summary>Storage cleanup did not finish. The registration stays Deleting with the failure kind and can be retried.</summary>
 public sealed class FileDeletionException(int fileId, string detail, Exception? inner = null)
@@ -40,13 +47,49 @@ public sealed class FileDeletionService(
 {
     private static readonly ConcurrentDictionary<int, SemaphoreSlim> Locks = new();
 
-    public async Task<FileDeletionOutcome> DeleteAsync(int id, CancellationToken cancellationToken)
+    /// <summary>
+    /// Deletes every file that is Failed right now. The ids are selected at execution time and each file's status is
+    /// re-checked under its lock, so a file that changed meanwhile is skipped, never deleted. One file's storage failure
+    /// does not stop the others.
+    /// </summary>
+    public async Task<FailedFilesDeletion> DeleteFailedAsync(CancellationToken cancellationToken)
+    {
+        var ids = await db.Files.AsNoTracking()
+            .Where(f => f.Status == FileStatus.Failed)
+            .OrderBy(f => f.Id)
+            .Select(f => f.Id)
+            .ToListAsync(cancellationToken);
+
+        var deleted = 0;
+        var skipped = 0;
+        var failed = new List<FailedFileDeletion>();
+        foreach (var id in ids)
+        {
+            try
+            {
+                if (await DeleteAsync(id, cancellationToken, onlyIfStatus: FileStatus.Failed) == FileDeletionOutcome.Deleted)
+                    deleted++;
+                else
+                    skipped++;
+            }
+            catch (FileDeletionException ex)
+            {
+                failed.Add(new FailedFileDeletion(ex.FileId, ex.Detail));
+            }
+        }
+
+        return new FailedFilesDeletion(deleted, skipped, failed);
+    }
+
+    /// <param name="onlyIfStatus">When set, a file in any other status is left alone (<see cref="FileDeletionOutcome.StatusChanged"/>).</param>
+    public async Task<FileDeletionOutcome> DeleteAsync(
+        int id, CancellationToken cancellationToken, FileStatus? onlyIfStatus = null)
     {
         var gate = Locks.GetOrAdd(id, _ => new SemaphoreSlim(1, 1));
         await gate.WaitAsync(cancellationToken);
         try
         {
-            return await DeleteLockedAsync(id, cancellationToken);
+            return await DeleteLockedAsync(id, onlyIfStatus, cancellationToken);
         }
         finally
         {
@@ -54,11 +97,14 @@ public sealed class FileDeletionService(
         }
     }
 
-    private async Task<FileDeletionOutcome> DeleteLockedAsync(int id, CancellationToken cancellationToken)
+    private async Task<FileDeletionOutcome> DeleteLockedAsync(
+        int id, FileStatus? onlyIfStatus, CancellationToken cancellationToken)
     {
         var record = await db.Files.FirstOrDefaultAsync(f => f.Id == id, cancellationToken);
         if (record is null)
             return FileDeletionOutcome.NotFound;
+        if (onlyIfStatus is { } required && record.Status != required)
+            return FileDeletionOutcome.StatusChanged;
         if (activeUploads.IsActive(record.StorageKey))
             return FileDeletionOutcome.UploadInProgress;
 
