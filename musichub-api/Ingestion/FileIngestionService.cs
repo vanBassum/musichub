@@ -118,8 +118,8 @@ public sealed class FileIngestionService(
     /// </summary>
     public async Task<(FileRecord Record, Stream Content)?> OpenStoredAsync(int id, CancellationToken cancellationToken)
     {
-        var record = await db.Files.AsNoTracking().FirstOrDefaultAsync(f => f.Id == id, cancellationToken);
-        if (record is not { Status: FileStatus.Stored })
+        var record = await FindStoredAsync(id, cancellationToken);
+        if (record is null)
             return null;
 
         var content = await storage.OpenReadAsync(record.StorageKey, cancellationToken);
