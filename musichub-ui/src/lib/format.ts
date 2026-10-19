@@ -22,3 +22,13 @@ export function formatDate(iso: string) {
     day: "numeric",
   })
 }
+
+// A run time in words, for example "18 min 32 s".
+export function formatElapsed(milliseconds: number) {
+  const seconds = Math.max(0, Math.round(milliseconds / 1000))
+  const hours = Math.floor(seconds / 3600)
+  const minutes = Math.floor((seconds % 3600) / 60)
+  if (hours > 0) return `${hours} h ${minutes} min`
+  if (minutes > 0) return `${minutes} min ${seconds % 60} s`
+  return `${seconds} s`
+}

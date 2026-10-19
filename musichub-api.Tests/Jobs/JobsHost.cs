@@ -19,17 +19,21 @@ internal sealed class JobsHost : IAsyncDisposable
         _server = server;
     }
 
-    public PingJobService Pings => _provider.GetRequiredService<PingJobService>();
+    public CatalogReconciliationJobService Catalog => _provider.GetRequiredService<CatalogReconciliationJobService>();
+
+    public PingJobService Pings =>_provider.GetRequiredService<PingJobService>();
 
     public JobEngine Engine => _provider.GetRequiredService<JobEngine>();
 
-    public static async Task<JobsHost> StartAsync(IJobStorageFactory storageFactory, Action<HangfireOptions>? configure = null, bool migrated = true)
+    public static async Task<JobsHost> StartAsync(
+        IJobStorageFactory storageFactory, Action<HangfireOptions>? configure = null, bool migrated = true, Action<IServiceCollection>? configureServices = null)
     {
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddBackgroundJobs(new Microsoft.Extensions.Configuration.ConfigurationBuilder().Build());
         services.Configure<HangfireOptions>(o => configure?.Invoke(o));
         services.AddSingleton(storageFactory);
+        configureServices?.Invoke(services);
         var migrations = new MigrationState();
         if (migrated)
             migrations.MarkComplete();
@@ -58,6 +62,13 @@ internal sealed class JobsHost : IAsyncDisposable
 
     /// <summary>A graceful stop, as on SIGTERM: running jobs finish, the rest stays in storage.</summary>
     public Task StopAsync() => _server.StopAsync(CancellationToken.None);
+
+    /// <summary>Waits for the engine to be published, then stops the server: the engine stays usable, no worker runs.</summary>
+    public async Task StopWhenReadyAsync()
+    {
+        await Engine.ClientAsync(CancellationToken.None);
+        await StopAsync();
+    }
 
     public async ValueTask DisposeAsync()
     {
