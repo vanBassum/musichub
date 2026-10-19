@@ -18,8 +18,8 @@ public class MusicHubDbContext(DbContextOptions<MusicHubDbContext> options) : Db
         modelBuilder.Entity<IdentificationOutcome>(outcome =>
         {
             outcome.Property(o => o.JobExecutionId).HasMaxLength(100);
-            outcome.Property(o => o.FileName).HasMaxLength(500);
-            outcome.Property(o => o.Reason).HasMaxLength(2000);
+            outcome.Property(o => o.FileName).HasMaxLength(IdentificationOutcome.FileNameMaxLength);
+            outcome.Property(o => o.Reason).HasMaxLength(IdentificationOutcome.ReasonMaxLength);
             outcome.Property(o => o.Decision).HasConversion<string>().HasMaxLength(50);
             // A deleted file takes its diagnostics with it.
             outcome.HasOne(o => o.File).WithMany()

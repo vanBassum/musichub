@@ -131,9 +131,9 @@ public sealed class CatalogReconciliation(
             {
                 JobExecutionId = executionId,
                 FileId = fileId,
-                FileName = attempt.FileName.Length > 500 ? attempt.FileName[..500] : attempt.FileName,
+                FileName = IdentificationOutcome.Truncate(attempt.FileName, IdentificationOutcome.FileNameMaxLength),
                 Decision = attempt.Decision,
-                Reason = attempt.Reason.Length > 2000 ? attempt.Reason[..2000] : attempt.Reason,
+                Reason = IdentificationOutcome.Truncate(attempt.Reason, IdentificationOutcome.ReasonMaxLength),
                 TrackId = attempt.TrackId,
                 MethodsJson = JsonSerializer.Serialize(attempt.Methods, JsonOptions),
                 RecordedAt = time.GetUtcNow(),

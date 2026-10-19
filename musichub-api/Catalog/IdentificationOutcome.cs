@@ -36,6 +36,16 @@ public enum IdentificationDecision
 /// </summary>
 public class IdentificationOutcome
 {
+    /// <summary>Column length of <see cref="FileName"/>; the mapping and <see cref="Truncate"/> both use it.</summary>
+    public const int FileNameMaxLength = 500;
+
+    /// <summary>Column length of <see cref="Reason"/>; the mapping and <see cref="Truncate"/> both use it.</summary>
+    public const int ReasonMaxLength = 2000;
+
+    /// <summary>Cuts a value to a column length so the row can always be stored.</summary>
+    public static string Truncate(string value, int maxLength) =>
+        value.Length > maxLength ? value[..maxLength] : value;
+
     public int Id { get; set; }
 
     /// <summary>The Hangfire job id of the execution.</summary>

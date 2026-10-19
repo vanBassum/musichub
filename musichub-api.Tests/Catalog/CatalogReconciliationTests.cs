@@ -367,7 +367,15 @@ public sealed class CatalogReconciliationTests : IDisposable
         await RunAsync(executionId: "7");
 
         var outcome = Assert.Single(await OutcomesAsync("7"));
-        Assert.Equal(longName[..500], outcome.FileName);
+        Assert.Equal(longName[..IdentificationOutcome.FileNameMaxLength], outcome.FileName);
+    }
+
+    [Fact]
+    public void Truncate_cuts_to_the_column_length_and_leaves_shorter_values_alone()
+    {
+        Assert.Equal(new string('x', IdentificationOutcome.ReasonMaxLength),
+            IdentificationOutcome.Truncate(new string('x', IdentificationOutcome.ReasonMaxLength + 50), IdentificationOutcome.ReasonMaxLength));
+        Assert.Equal("short", IdentificationOutcome.Truncate("short", IdentificationOutcome.ReasonMaxLength));
     }
 
     [Fact]
