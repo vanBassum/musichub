@@ -235,7 +235,7 @@ function DeleteFailedControl({
         className="flex items-center gap-1.5"
       >
         <span className="text-sm">
-          Delete {count} failed {count === 1 ? "file" : "files"}?
+          Delete {count} failed {count === 1 ? "file" : "files"}? This cannot be undone.
         </span>
         <Button variant="destructive" size="lg" onClick={onConfirm}>
           Delete
