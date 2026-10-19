@@ -53,6 +53,13 @@ async function getJson<T>(url: string, signal: AbortSignal): Promise<T> {
   return (await response.json()) as T
 }
 
+// The `fields` query value: the enabled search fields, comma separated.
+function fieldsParam(fields: SearchFields) {
+  return [fields.title && "title", fields.artist && "artist"]
+    .filter(Boolean)
+    .join(",")
+}
+
 export function fetchTracks(
   query: {
     search: string
@@ -68,13 +75,7 @@ export function fetchTracks(
     pageSize: String(query.pageSize ?? pageSize),
   })
   if (query.search) params.set("search", query.search)
-  if (query.fields) {
-    const names = [
-      query.fields.title && "title",
-      query.fields.artist && "artist",
-    ].filter(Boolean)
-    params.set("fields", names.join(","))
-  }
+  if (query.fields) params.set("fields", fieldsParam(query.fields))
   if (query.audio !== "all") {
     params.set("hasAudio", String(query.audio === "with"))
   }
@@ -143,14 +144,10 @@ export function fetchExternalTracks(
   query: { search: string; limit: number; fields: SearchFields },
   signal: AbortSignal
 ) {
-  const fields = [
-    query.fields.title && "title",
-    query.fields.artist && "artist",
-  ].filter(Boolean)
   const params = new URLSearchParams({
     search: query.search,
     limit: String(query.limit),
-    fields: fields.join(","),
+    fields: fieldsParam(query.fields),
   })
   return getExternal<{ provider: string; items: ExternalTrack[] }>(
     `/api/external/tracks?${params}`,
