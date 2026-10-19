@@ -15,7 +15,7 @@ interface WishlistButtonProps {
 // Adds one track to the wishlist when pressed. Wanted is the user's intent: it says
 // nothing about whether audio is stored.
 export function WishlistButton({ wanted = false, onWant }: WishlistButtonProps) {
-  const [state, setState] = useState<State>(wanted ? "wanted" : "idle")
+  const [state, setState] = useState<State>("idle")
 
   const press = async () => {
     setState("saving")
@@ -27,7 +27,8 @@ export function WishlistButton({ wanted = false, onWant }: WishlistButtonProps) 
     }
   }
 
-  if (state === "wanted") {
+  // The prop is followed, so a refetched wanted value shows without remounting.
+  if (wanted || state === "wanted") {
     return (
       <Button size="sm" variant="secondary" disabled>
         <Check data-icon="inline-start" />

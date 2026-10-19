@@ -168,7 +168,17 @@ async function sendWish(url: string, init: RequestInit) {
   if (!response.ok) {
     throw new Error(`The server answered ${response.status}.`)
   }
-  return (await response.json()) as WishlistResult
+  // Only a 200 or 201 that says the track is wanted counts: anything else is an error,
+  // so the UI never shows Wanted for a track that is not.
+  const result = (await response.json()) as Partial<WishlistResult>
+  if (
+    (response.status !== 200 && response.status !== 201) ||
+    (result.status !== "added" && result.status !== "alreadyWanted") ||
+    result.track?.wanted !== true
+  ) {
+    throw new Error("The server did not confirm the track as wanted.")
+  }
+  return result as WishlistResult
 }
 
 export function wantCatalogTrack(id: number) {
