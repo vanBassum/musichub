@@ -10,6 +10,8 @@ public class MusicHubDbContext(DbContextOptions<MusicHubDbContext> options) : Db
     public DbSet<Track> Tracks => Set<Track>();
     public DbSet<Artist> Artists => Set<Artist>();
     public DbSet<TrackArtist> TrackArtists => Set<TrackArtist>();
+    public DbSet<TrackExternalId> TrackExternalIds => Set<TrackExternalId>();
+    public DbSet<IdentityReview> IdentityReviews => Set<IdentityReview>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -27,6 +29,26 @@ public class MusicHubDbContext(DbContextOptions<MusicHubDbContext> options) : Db
         {
             track.Property(t => t.Title).HasMaxLength(500);
             track.Property(t => t.Version).HasMaxLength(500);
+        });
+
+        modelBuilder.Entity<TrackExternalId>(external =>
+        {
+            external.Property(e => e.Provider).HasMaxLength(100);
+            external.Property(e => e.ExternalId).HasMaxLength(200);
+            external.HasOne(e => e.Track).WithMany(t => t.ExternalIds)
+                .HasForeignKey(e => e.TrackId).OnDelete(DeleteBehavior.Cascade);
+            // A provider recording is one catalog track.
+            external.HasIndex(e => new { e.Provider, e.ExternalId }).IsUnique();
+            external.HasIndex(e => e.TrackId);
+        });
+
+        modelBuilder.Entity<IdentityReview>(review =>
+        {
+            review.Property(r => r.Provider).HasMaxLength(100);
+            review.Property(r => r.ExternalId).HasMaxLength(200);
+            review.Property(r => r.Title).HasMaxLength(500);
+            review.Property(r => r.Disambiguation).HasMaxLength(500);
+            review.HasIndex(r => new { r.Provider, r.ExternalId }).IsUnique();
         });
 
         modelBuilder.Entity<Artist>().Property(a => a.Name).HasMaxLength(500);

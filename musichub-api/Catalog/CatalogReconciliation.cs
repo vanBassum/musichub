@@ -32,8 +32,8 @@ public sealed class CatalogReconciliation(
     ILogger<CatalogReconciliation> logger)
 {
     // Finding and creating tracks and artists must not interleave between runs in this process (the job itself is
-    // exclusive across processes).
-    private static readonly SemaphoreSlim CatalogLock = new(1, 1);
+    // exclusive across processes). The wishlist creates tracks too, so it takes the same lock.
+    internal static readonly SemaphoreSlim CatalogLock = new(1, 1);
 
     public async Task<CatalogReconciliationSummary> RunAsync(CancellationToken cancellationToken)
     {

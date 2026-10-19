@@ -16,7 +16,8 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover"
 import { Skeleton } from "@/components/ui/skeleton"
-import { artistNames } from "@/lib/catalog-api"
+import { WishlistButton } from "@/components/wishlist-button"
+import { artistNames, wantExternalTrack } from "@/lib/catalog-api"
 import { useExternalSearch } from "@/lib/use-external-search"
 import { useGlobalSearch } from "@/lib/use-global-search"
 import { useSearchFields } from "@/lib/use-search-fields"
@@ -64,12 +65,14 @@ function ExternalRow({
   kind,
   name,
   detail,
+  action,
 }: {
   provider: string
   url: string
   kind: "Track" | "Artist"
   name: string
   detail?: string
+  action?: ReactNode
 }) {
   const label = providerLabels[provider] ?? provider
   return (
@@ -91,12 +94,13 @@ function ExternalRow({
         {label}
         <ExternalLink className="size-3" aria-hidden="true" />
       </a>
+      {action}
     </li>
   )
 }
 
 // Results of the external provider. They are not catalog items: they can't be opened
-// here, and viewing them stores nothing.
+// here, and viewing them stores nothing. Only the explicit "Add to wishlist" does.
 function ExternalResults({
   search,
   showArtists,
@@ -152,6 +156,9 @@ function ExternalResults({
                     : track.title
                 }
                 detail={track.artists.map((a) => a.name).join(", ")}
+                action={
+                  <WishlistButton onWant={() => wantExternalTrack(track)} />
+                }
               />
             ))}
             {showArtists &&

@@ -11,6 +11,8 @@ export interface CatalogTrack {
   createdAt: string
   artists: CatalogArtist[]
   hasAudio: boolean
+  // The user explicitly wants the track; independent of hasAudio.
+  wanted: boolean
 }
 
 export interface PagedTracks {
@@ -153,6 +155,36 @@ export function fetchExternalTracks(
     `/api/external/tracks?${params}`,
     signal
   )
+}
+
+// "unresolved": the identity is not established, nothing is wanted yet and an identity
+// review case holds the external track.
+export interface WishlistResult {
+  status: "added" | "alreadyWanted" | "unresolved"
+  track: CatalogTrack | null
+  created: boolean
+  reviewId: number | null
+  candidateTrackIds: number[]
+}
+
+async function sendWish(url: string, init: RequestInit) {
+  const response = await fetch(url, init)
+  if (!response.ok && response.status !== 202) {
+    throw new Error(`The server answered ${response.status}.`)
+  }
+  return (await response.json()) as WishlistResult
+}
+
+export function wantCatalogTrack(id: number) {
+  return sendWish(`/api/tracks/${id}/wanted`, { method: "PUT" })
+}
+
+export function wantExternalTrack(track: ExternalTrack) {
+  return sendWish("/api/tracks/wishlist/external", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(track),
+  })
 }
 
 export function fetchExternalArtists(
