@@ -1,6 +1,7 @@
 import {
   ListMusic,
   MoreHorizontal,
+  Pause,
   Play,
   Repeat,
   Shuffle,
@@ -13,16 +14,17 @@ import { Button } from "@/components/ui/button"
 import { Slider } from "@/components/ui/slider"
 import type { Track } from "@/data/mock-tracks"
 import { formatDuration } from "@/lib/format"
+import type { PlayerState } from "@/lib/use-player"
 import { cn } from "@/lib/utils"
 
 interface PlayerPanelProps {
-  queue: Track[]
-  nowPlayingId: string
+  player: PlayerState
+  className?: string
 }
 
 interface NowPlayingProps {
-  current: Track | null
-  // The mobile Player page: a bigger cover, and a seek slider that doesn't swipe pages.
+  player: PlayerState
+  // The expanded overlay: a bigger cover.
   large?: boolean
 }
 
@@ -31,9 +33,12 @@ interface QueueListProps {
   nowPlayingId: string
 }
 
-// Playback doesn't exist yet: the player shows a mock queue, and every control is a
-// disabled placeholder. Selecting a library row never changes what plays.
-export function NowPlaying({ current, large = false }: NowPlayingProps) {
+// Playback doesn't exist yet: the player shows a mock queue. Play, shuffle and repeat
+// only toggle local placeholder state; the rest are disabled. Selecting a library row
+// never changes what plays.
+export function NowPlaying({ player, large = false }: NowPlayingProps) {
+  const { current, playing, shuffle, repeat } = player
+
   if (!current) {
     return (
       <p className="p-4 text-sm text-muted-foreground">Nothing is playing.</p>
@@ -60,9 +65,7 @@ export function NowPlaying({ current, large = false }: NowPlayingProps) {
           {current.album}
         </p>
       </div>
-      <div
-        className={cn("flex w-full flex-col gap-1.5", large && "touch-none")}
-      >
+      <div className="flex w-full flex-col gap-1.5">
         <Slider
           disabled
           value={[0]}
@@ -74,11 +77,15 @@ export function NowPlaying({ current, large = false }: NowPlayingProps) {
           <span>{formatDuration(current.durationSeconds)}</span>
         </div>
       </div>
-      <div
-        className="flex w-full items-center justify-between"
-        title="Playback is not available yet"
-      >
-        <Button variant="ghost" size="icon-lg" disabled aria-label="Shuffle">
+      <div className="flex w-full items-center justify-between">
+        <Button
+          variant="ghost"
+          size="icon-lg"
+          aria-label="Shuffle"
+          aria-pressed={shuffle}
+          onClick={player.onToggleShuffle}
+          className={cn(shuffle && "text-primary")}
+        >
           <Shuffle />
         </Button>
         <Button variant="ghost" size="icon-lg" disabled aria-label="Previous">
@@ -86,16 +93,27 @@ export function NowPlaying({ current, large = false }: NowPlayingProps) {
         </Button>
         <Button
           size="icon-lg"
-          disabled
-          aria-label="Play"
+          aria-label={playing ? "Pause" : "Play"}
+          onClick={player.onTogglePlaying}
           className="size-14 rounded-full [&_svg:not([class*='size-'])]:size-6"
         >
-          <Play className="fill-current" />
+          {playing ? (
+            <Pause className="fill-current" />
+          ) : (
+            <Play className="fill-current" />
+          )}
         </Button>
         <Button variant="ghost" size="icon-lg" disabled aria-label="Next">
           <SkipForward className="fill-current" />
         </Button>
-        <Button variant="ghost" size="icon-lg" disabled aria-label="Repeat">
+        <Button
+          variant="ghost"
+          size="icon-lg"
+          aria-label="Repeat"
+          aria-pressed={repeat}
+          onClick={player.onToggleRepeat}
+          className={cn(repeat && "text-primary")}
+        >
           <Repeat />
         </Button>
       </div>
@@ -177,16 +195,14 @@ export function QueueList({ queue, nowPlayingId }: QueueListProps) {
   )
 }
 
-export function PlayerPanel({ queue, nowPlayingId }: PlayerPanelProps) {
-  const current = queue.find((track) => track.id === nowPlayingId) ?? null
-
+export function PlayerPanel({ player, className }: PlayerPanelProps) {
   return (
     <aside
       aria-label="Player"
-      className="flex min-h-0 flex-col rounded-xl border bg-card"
+      className={cn("flex min-h-0 flex-col rounded-xl border bg-card", className)}
     >
-      <NowPlaying current={current} />
-      <QueueList queue={queue} nowPlayingId={nowPlayingId} />
+      <NowPlaying player={player} />
+      <QueueList queue={player.queue} nowPlayingId={player.nowPlayingId} />
     </aside>
   )
 }

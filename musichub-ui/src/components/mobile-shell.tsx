@@ -9,11 +9,11 @@ import {
 
 import { ArtistPage } from "@/components/artist-page"
 import { BuildInfoSheet } from "@/components/build-info-sheet"
+import { CompactPlayer } from "@/components/compact-player"
 import { FilesView } from "@/components/files-view"
 import { GlobalSearch } from "@/components/global-search"
 import { MobileNav } from "@/components/mobile-nav"
 import { mobilePageIndex } from "@/components/mobile-pages"
-import { NowPlaying, QueueList } from "@/components/player-panel"
 import { Button } from "@/components/ui/button"
 import {
   Sheet,
@@ -21,8 +21,8 @@ import {
   SheetTitle,
   SheetTrigger,
 } from "@/components/ui/sheet"
-import type { Track } from "@/data/mock-tracks"
 import type { FilesState } from "@/lib/use-files"
+import type { PlayerState } from "@/lib/use-player"
 import { cn } from "@/lib/utils"
 
 interface MobileShellProps {
@@ -30,44 +30,40 @@ interface MobileShellProps {
   total: number | undefined
   filters: ReactNode
   table: ReactNode
-  queue: Track[]
-  nowPlayingId: string
+  player: PlayerState
   filesState: FilesState
   onSelectTrack: (trackId: number) => void
 }
 
 const libraryPage = mobilePageIndex("library")
-const playerPage = mobilePageIndex("player")
-const queuePage = mobilePageIndex("queue")
 const filesPage = mobilePageIndex("files")
 const artistsPage = mobilePageIndex("artists")
 
 const pageClassName =
   "flex h-full w-full shrink-0 snap-center snap-always flex-col overflow-hidden"
 
-// Below `lg` the panels and the Files view become full-width pages in a horizontal
-// scroll-snap strip (Library, Player, Queue, Files, Artists), opening on the Player. Pages that aren't showing
-// are inert, so keyboard focus can't land in them.
+// Below `lg` the Library, Files and Artists views become full-width pages in a
+// horizontal scroll-snap strip, opening on the Library. The compact player sits between
+// the strip and the page navigation. Pages that aren't showing are inert, so keyboard
+// focus can't land in them.
 export function MobileShell({
   total,
   filters,
   table,
-  queue,
-  nowPlayingId,
+  player,
   filesState,
   onSelectTrack,
 }: MobileShellProps) {
   const strip = useRef<HTMLDivElement>(null)
-  const [active, setActive] = useState(playerPage)
-  const current = queue.find((track) => track.id === nowPlayingId) ?? null
+  const [active, setActive] = useState(libraryPage)
 
   useLayoutEffect(() => {
     const element = strip.current
     if (!element) return
-    element.scrollTo({ left: playerPage * element.clientWidth })
+    element.scrollTo({ left: libraryPage * element.clientWidth })
 
     // A rotation changes the page width: stay on the page that is showing.
-    let page = playerPage
+    let page = libraryPage
     const onResize = () =>
       element.scrollTo({ left: page * element.clientWidth })
     const onScroll = () => {
@@ -135,18 +131,6 @@ export function MobileShell({
           </div>
           {table}
         </div>
-        <section
-          aria-label="Player"
-          inert={active !== playerPage}
-          className={cn(pageClassName, "overflow-y-auto")}
-        >
-          <NowPlaying current={current} large />
-        </section>
-        <div inert={active !== queuePage} className={cn(pageClassName, "p-3")}>
-          <div className="flex min-h-0 flex-1 flex-col rounded-xl border bg-card">
-            <QueueList queue={queue} nowPlayingId={nowPlayingId} />
-          </div>
-        </div>
         <div inert={active !== filesPage} className={cn(pageClassName, "p-3")}>
           <FilesView state={filesState} className="flex-1" />
         </div>
@@ -154,6 +138,7 @@ export function MobileShell({
           <ArtistPage className="flex-1" />
         </div>
       </div>
+      <CompactPlayer player={player} />
       <MobileNav active={active} onNavigate={navigate} />
     </div>
   )
