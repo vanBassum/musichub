@@ -4,6 +4,7 @@ import { AppHeader, type AppView } from "@/components/app-header"
 import { ArtistPage } from "@/components/artist-page"
 import { FilesView } from "@/components/files-view"
 import { FilterSidebar } from "@/components/filter-sidebar"
+import { JobsView } from "@/components/jobs-view"
 import { MobileShell } from "@/components/mobile-shell"
 import { PlayerPanel } from "@/components/player-panel"
 import { TrackDetailsSheet } from "@/components/track-details-sheet"
@@ -11,6 +12,7 @@ import { TrackTable } from "@/components/track-table"
 import type { AudioFilter } from "@/lib/catalog-api"
 import { useTracks } from "@/lib/use-catalog"
 import { useFiles } from "@/lib/use-files"
+import { useJobs } from "@/lib/use-jobs"
 import { useIsDesktop } from "@/lib/use-media-query"
 import { usePlayer } from "@/lib/use-player"
 
@@ -28,6 +30,7 @@ export function App() {
   const catalog = useTracks(search, audio, page)
   // Held here so uploads survive navigation and the desktop/mobile layout swap.
   const filesState = useFiles()
+  const jobsState = useJobs()
   // One placeholder player state for every layout, so it survives navigation and resizing.
   const player = usePlayer()
 
@@ -88,6 +91,7 @@ export function App() {
           table={table(false)}
           player={player}
           filesState={filesState}
+          jobsState={jobsState}
           onSelectTrack={setSelectedId}
         />
         {details}
@@ -107,6 +111,10 @@ export function App() {
           <main className="flex min-h-0 min-w-0 flex-1 flex-col">
             <FilesView state={filesState} className="flex-1" />
           </main>
+        ) : view === "jobs" ? (
+          <main className="flex min-h-0 min-w-0 flex-1 flex-col">
+            <JobsView state={jobsState} className="flex-1" />
+          </main>
         ) : view === "artists" ? (
           <main className="flex min-h-0 min-w-0 flex-1 flex-col">
             <ArtistPage className="flex-1" />
@@ -119,6 +127,7 @@ export function App() {
         )}
         <PlayerPanel player={player} className="w-80 shrink-0 xl:w-96" />
       </div>
+=======
       {details}
     </div>
   )

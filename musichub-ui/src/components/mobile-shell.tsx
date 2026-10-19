@@ -12,6 +12,7 @@ import { BuildInfoSheet } from "@/components/build-info-sheet"
 import { CompactPlayer } from "@/components/compact-player"
 import { FilesView } from "@/components/files-view"
 import { GlobalSearch } from "@/components/global-search"
+import { JobsView } from "@/components/jobs-view"
 import { MobileNav } from "@/components/mobile-nav"
 import { mobilePageIndex } from "@/components/mobile-pages"
 import { Button } from "@/components/ui/button"
@@ -22,6 +23,7 @@ import {
   SheetTrigger,
 } from "@/components/ui/sheet"
 import type { FilesState } from "@/lib/use-files"
+import type { JobsState } from "@/lib/use-jobs"
 import type { PlayerState } from "@/lib/use-player"
 import { cn } from "@/lib/utils"
 
@@ -32,17 +34,19 @@ interface MobileShellProps {
   table: ReactNode
   player: PlayerState
   filesState: FilesState
+  jobsState: JobsState
   onSelectTrack: (trackId: number) => void
 }
 
 const libraryPage = mobilePageIndex("library")
 const filesPage = mobilePageIndex("files")
 const artistsPage = mobilePageIndex("artists")
+const jobsPage = mobilePageIndex("jobs")
 
 const pageClassName =
   "flex h-full w-full shrink-0 snap-center snap-always flex-col overflow-hidden"
 
-// Below `lg` the Library, Files and Artists views become full-width pages in a
+// Below `lg` the Library, Files, Artists and Jobs views become full-width pages in a
 // horizontal scroll-snap strip, opening on the Library. The compact player sits between
 // the strip and the page navigation. Pages that aren't showing are inert, so keyboard
 // focus can't land in them.
@@ -52,6 +56,7 @@ export function MobileShell({
   table,
   player,
   filesState,
+  jobsState,
   onSelectTrack,
 }: MobileShellProps) {
   const strip = useRef<HTMLDivElement>(null)
@@ -136,6 +141,9 @@ export function MobileShell({
         </div>
         <div inert={active !== artistsPage} className={cn(pageClassName, "p-3")}>
           <ArtistPage className="flex-1" />
+        </div>
+        <div inert={active !== jobsPage} className={cn(pageClassName, "p-3")}>
+          <JobsView state={jobsState} className="flex-1" />
         </div>
       </div>
       <CompactPlayer player={player} />
