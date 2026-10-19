@@ -1,4 +1,3 @@
-using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using MusicHub.Api.Data;
 
@@ -21,29 +20,18 @@ public static class WishlistStatus
 
     /// <summary>The track was already wanted; nothing changed.</summary>
     public const string AlreadyWanted = "alreadyWanted";
-
-    /// <summary>The identity could not be established. Nothing is wanted yet; a review case is waiting.</summary>
-    public const string Unresolved = "unresolved";
 }
 
 /// <param name="Status">One of <see cref="WishlistStatus"/>.</param>
-/// <param name="Track">The catalog track, for <see cref="WishlistStatus.Added"/> and <see cref="WishlistStatus.AlreadyWanted"/>.</param>
+/// <param name="Track">The catalog track that is wanted.</param>
 /// <param name="Created">The catalog track was created by this call.</param>
-/// <param name="ReviewId">The pending identity review, for <see cref="WishlistStatus.Unresolved"/>.</param>
-/// <param name="CandidateTrackIds">The catalog tracks that resemble the external track without proof, for <see cref="WishlistStatus.Unresolved"/>.</param>
-public record WishlistResponse(
-    string Status,
-    TrackResponse? Track,
-    bool Created,
-    int? ReviewId,
-    List<int> CandidateTrackIds);
+public record WishlistResponse(string Status, TrackResponse Track, bool Created);
 
 /// <summary>
-/// Marks catalog tracks wanted, idempotently. An external track is resolved on reliable evidence only: a provider
-/// identifier already mapped to a catalog track reuses that track. With no such mapping, a catalog track with the same
-/// title and a shared artist is a candidate, but title and artist similarity never proves identity, so the external
-/// track is not merged and not created: a pending <see cref="IdentityReview"/> is kept and nothing becomes wanted. Only
-/// when no catalog track resembles it is a new track created (with the provider identifier as its evidence) and wanted.
+/// Marks catalog tracks wanted, idempotently. An external track the user chose reuses the catalog track its provider
+/// identifier is already mapped to. Otherwise a new track is created, with the provider identifier as its evidence,
+/// and wanted. A resembling title and artist is never proof of identity, so nothing is merged, and it does not block
+/// the add either: an occasional duplicate catalog track is accepted, and cleanup is deferred.
 /// </summary>
 public sealed class Wishlist(MusicHubDbContext db, TimeProvider time)
 {
@@ -72,29 +60,6 @@ public sealed class Wishlist(MusicHubDbContext db, TimeProvider time)
             if (known is not null)
                 return await WantAsync(known, created: false, cancellationToken);
 
-            var review = await db.IdentityReviews.FirstOrDefaultAsync(
-                r => r.Provider == provider && r.ExternalId == externalId, cancellationToken);
-            if (review is not null)
-                return Unresolved(review);
-
-            var candidates = await FindCandidatesAsync(title, artists, cancellationToken);
-            if (candidates.Count > 0)
-            {
-                review = new IdentityReview
-                {
-                    Provider = provider,
-                    ExternalId = externalId,
-                    Title = title,
-                    Disambiguation = version,
-                    ArtistsJson = JsonSerializer.Serialize(artists),
-                    CandidateTrackIdsJson = JsonSerializer.Serialize(candidates),
-                    CreatedAt = time.GetUtcNow(),
-                };
-                db.IdentityReviews.Add(review);
-                await db.SaveChangesAsync(cancellationToken);
-                return Unresolved(review);
-            }
-
             var track = await CreateTrackAsync(provider, externalId, title, version, artists, cancellationToken);
             return await WantAsync(track, created: true, cancellationToken);
         }
@@ -119,30 +84,7 @@ public sealed class Wishlist(MusicHubDbContext db, TimeProvider time)
             .Where(t => t.Id == track.Id)
             .Select(TrackResponse.Projection)
             .SingleAsync(cancellationToken);
-        return new WishlistResponse(status, response, created, null, []);
-    }
-
-    private static WishlistResponse Unresolved(IdentityReview review) => new(
-        WishlistStatus.Unresolved, null, false, review.Id,
-        JsonSerializer.Deserialize<List<int>>(review.CandidateTrackIdsJson) ?? []);
-
-    // Same title, ignoring case, and at least one artist in common. The version is deliberately not compared: a
-    // differing version is not proof of a distinct recording either.
-    private async Task<List<int>> FindCandidatesAsync(
-        string title, List<string> artists, CancellationToken cancellationToken)
-    {
-        var lower = title.ToLower();
-        var sameTitle = await db.Tracks.AsNoTracking()
-            .Include(t => t.Artists).ThenInclude(a => a.Artist)
-            .Where(t => t.Title.ToLower() == lower)
-            .OrderBy(t => t.Id)
-            .ToListAsync(cancellationToken);
-
-        var wanted = artists.ToHashSet(StringComparer.OrdinalIgnoreCase);
-        return sameTitle
-            .Where(t => t.Artists.Any(a => wanted.Contains(a.Artist.Name.Trim())))
-            .Select(t => t.Id)
-            .ToList();
+        return new WishlistResponse(status, response, created);
     }
 
     private async Task<Track> CreateTrackAsync(

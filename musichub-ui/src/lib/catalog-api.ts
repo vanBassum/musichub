@@ -157,19 +157,15 @@ export function fetchExternalTracks(
   )
 }
 
-// "unresolved": the identity is not established, nothing is wanted yet and an identity
-// review case holds the external track.
 export interface WishlistResult {
-  status: "added" | "alreadyWanted" | "unresolved"
-  track: CatalogTrack | null
+  status: "added" | "alreadyWanted"
+  track: CatalogTrack
   created: boolean
-  reviewId: number | null
-  candidateTrackIds: number[]
 }
 
 async function sendWish(url: string, init: RequestInit) {
   const response = await fetch(url, init)
-  if (!response.ok && response.status !== 202) {
+  if (!response.ok) {
     throw new Error(`The server answered ${response.status}.`)
   }
   return (await response.json()) as WishlistResult

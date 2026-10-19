@@ -110,57 +110,33 @@ public sealed class WishlistTests : IDisposable
     }
 
     [Fact]
-    public async Task Resembling_catalog_track_without_evidence_is_not_merged_and_not_wanted()
+    public async Task Resembling_catalog_track_is_not_merged_nor_wanted_and_a_new_track_is_created()
     {
         var existing = await Seed("song", null, "BAND");
 
         var result = await WantExternal(External());
 
-        Assert.Equal(202, result.Status);
-        Assert.Equal(WishlistStatus.Unresolved, result.Body.Status);
-        Assert.Null(result.Body.Track);
-        Assert.Equal([existing], result.Body.CandidateTrackIds);
+        Assert.Equal(201, result.Status);
+        Assert.Equal(WishlistStatus.Added, result.Body.Status);
+        Assert.NotEqual(existing, result.Body.Track.Id);
         using var db = CreateDb();
-        Assert.Equal(1, await db.Tracks.CountAsync());
+        Assert.Equal(2, await db.Tracks.CountAsync());
         Assert.Null(await WantedAt(existing));
-        Assert.Equal(0, await db.TrackExternalIds.CountAsync());
+        Assert.Equal(1, await db.TrackExternalIds.CountAsync());
     }
 
     [Fact]
-    public async Task Repeating_an_unresolved_selection_keeps_one_review_case()
+    public async Task Repeating_a_selection_that_resembles_a_catalog_track_stays_one_new_track()
     {
         await Seed("Song", "Live", "Band");
 
         var first = await WantExternal(External(disambiguation: "studio"));
         var second = await WantExternal(External(disambiguation: "studio"));
 
-        Assert.Equal(first.Body.ReviewId, second.Body.ReviewId);
-        using var db = CreateDb();
-        Assert.Equal(1, await db.IdentityReviews.CountAsync());
-        Assert.Equal(1, await db.Tracks.CountAsync());
-    }
-
-    [Fact]
-    public async Task Same_title_by_other_artists_is_not_a_candidate()
-    {
-        await Seed("Song", null, "Other");
-
-        var result = await WantExternal(External());
-
-        Assert.Equal(WishlistStatus.Added, result.Body.Status);
+        Assert.Equal(first.Body.Track.Id, second.Body.Track.Id);
+        Assert.Equal(WishlistStatus.AlreadyWanted, second.Body.Status);
         using var db = CreateDb();
         Assert.Equal(2, await db.Tracks.CountAsync());
-    }
-
-    [Fact]
-    public async Task Ambiguous_candidates_are_all_reported()
-    {
-        var a = await Seed("Song", null, "Band");
-        var b = await Seed("Song", "Live", "Band", "Guest");
-
-        var result = await WantExternal(External());
-
-        Assert.Equal([a, b], result.Body.CandidateTrackIds);
     }
 
     [Fact]

@@ -62,8 +62,8 @@ public class TracksController(MusicHubDbContext db, Wishlist wishlist) : Control
 
     /// <summary>
     /// Wants a track the user chose from external search results. Idempotent. Answers 201 when the catalog track was
-    /// created, 200 when an existing track was reused (status added or alreadyWanted), and 202 with status unresolved
-    /// when the identity is not established: nothing is wanted then, and a pending identity review holds the case.
+    /// created (no catalog track is mapped to the provider identifier), and 200 when the mapped track was reused
+    /// (status added or alreadyWanted).
     /// </summary>
     [HttpPost("wishlist/external")]
     public async Task<IActionResult> WantExternal(
@@ -87,11 +87,7 @@ public class TracksController(MusicHubDbContext db, Wishlist wishlist) : Control
             return BadRequest(new ValidationProblemDetails(errors));
 
         var result = await wishlist.AddExternalTrackAsync(request, cancellationToken);
-        return result.Status == WishlistStatus.Unresolved
-            ? StatusCode(StatusCodes.Status202Accepted, result)
-            : result.Created
-                ? StatusCode(StatusCodes.Status201Created, result)
-                : Ok(result);
+        return result.Created ? StatusCode(StatusCodes.Status201Created, result) : Ok(result);
     }
 
     // Checked on the trimmed value, which is what is stored.

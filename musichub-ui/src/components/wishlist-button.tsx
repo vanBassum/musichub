@@ -4,7 +4,7 @@ import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import type { WishlistResult } from "@/lib/catalog-api"
 
-type State = "idle" | "saving" | "wanted" | "unresolved" | "error"
+type State = "idle" | "saving" | "wanted" | "error"
 
 interface WishlistButtonProps {
   // Already wanted when shown (a catalog track that was wanted before).
@@ -13,16 +13,15 @@ interface WishlistButtonProps {
 }
 
 // Adds one track to the wishlist when pressed. Wanted is the user's intent: it says
-// nothing about whether audio is stored. An unresolved identity is shown as such, not
-// as wanted: the track waits for an identity review.
+// nothing about whether audio is stored.
 export function WishlistButton({ wanted = false, onWant }: WishlistButtonProps) {
   const [state, setState] = useState<State>(wanted ? "wanted" : "idle")
 
   const press = async () => {
     setState("saving")
     try {
-      const result = await onWant()
-      setState(result.status === "unresolved" ? "unresolved" : "wanted")
+      await onWant()
+      setState("wanted")
     } catch {
       setState("error")
     }
@@ -33,13 +32,6 @@ export function WishlistButton({ wanted = false, onWant }: WishlistButtonProps) 
       <Button size="sm" variant="secondary" disabled>
         <Check data-icon="inline-start" />
         Wanted
-      </Button>
-    )
-  }
-  if (state === "unresolved") {
-    return (
-      <Button size="sm" variant="outline" disabled>
-        Needs identity review
       </Button>
     )
   }

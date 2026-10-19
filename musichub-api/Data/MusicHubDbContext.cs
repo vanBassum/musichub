@@ -11,7 +11,6 @@ public class MusicHubDbContext(DbContextOptions<MusicHubDbContext> options) : Db
     public DbSet<Artist> Artists => Set<Artist>();
     public DbSet<TrackArtist> TrackArtists => Set<TrackArtist>();
     public DbSet<TrackExternalId> TrackExternalIds => Set<TrackExternalId>();
-    public DbSet<IdentityReview> IdentityReviews => Set<IdentityReview>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -40,15 +39,6 @@ public class MusicHubDbContext(DbContextOptions<MusicHubDbContext> options) : Db
             // A provider recording is one catalog track.
             external.HasIndex(e => new { e.Provider, e.ExternalId }).IsUnique();
             external.HasIndex(e => e.TrackId);
-        });
-
-        modelBuilder.Entity<IdentityReview>(review =>
-        {
-            review.Property(r => r.Provider).HasMaxLength(CatalogLimits.Provider);
-            review.Property(r => r.ExternalId).HasMaxLength(CatalogLimits.ExternalId);
-            review.Property(r => r.Title).HasMaxLength(CatalogLimits.Title);
-            review.Property(r => r.Disambiguation).HasMaxLength(CatalogLimits.Version);
-            review.HasIndex(r => new { r.Provider, r.ExternalId }).IsUnique();
         });
 
         modelBuilder.Entity<Artist>().Property(a => a.Name).HasMaxLength(CatalogLimits.ArtistName);
