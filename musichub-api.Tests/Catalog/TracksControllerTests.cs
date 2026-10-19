@@ -67,11 +67,11 @@ public sealed class TracksControllerTests : IDisposable
     }
 
     private async Task<PagedResponse<TrackResponse>> List(
-        string? search = null, bool? hasAudio = null, int page = 1, int pageSize = 25)
+        string? search = null, bool? hasAudio = null, int page = 1, int pageSize = 25, string? fields = null)
     {
         using var db = CreateDb();
         return Body<PagedResponse<TrackResponse>>(
-            await new TracksController(db).List(search, hasAudio, page, pageSize, default));
+            await new TracksController(db).List(search, hasAudio, fields, page, pageSize, default));
     }
 
     private async Task<IActionResult> GetDetail(int id)
@@ -135,7 +135,7 @@ public sealed class TracksControllerTests : IDisposable
     public async Task List_WithInvalidPaging_IsRejected(int page, int pageSize)
     {
         using var db = CreateDb();
-        Invalid(await new TracksController(db).List(null, null, page, pageSize, default));
+        Invalid(await new TracksController(db).List(null, null, null, page, pageSize, default));
     }
 
     [Fact]
@@ -181,13 +181,36 @@ public sealed class TracksControllerTests : IDisposable
     }
 
     [Fact]
+    public async Task List_WithFields_SearchesOnlyThoseFields()
+    {
+        await Seed("Echo", null, ("Bob", "Main"));
+        await Seed("Other", null, ("Echo Band", "Main"));
+
+        Assert.Equal(["Echo"], (await List("echo", fields: "title")).Items.Select(t => t.Title));
+        Assert.Equal(["Other"], (await List("echo", fields: "artist")).Items.Select(t => t.Title));
+        Assert.Equal(2, (await List("echo", fields: "title,artist")).Total);
+        Assert.Equal(2, (await List("echo")).Total);
+    }
+
+    [Theory]
+    [InlineData("album")]
+    [InlineData("title,album")]
+    [InlineData(",")]
+    public async Task List_WithUnknownOrEmptyFields_ReturnsBadRequest(string fields)
+    {
+        using var db = CreateDb();
+        var result = await new TracksController(db).List("a", null, fields, 1, 25, default);
+        Assert.Contains("fields", Invalid(result).Errors.Keys);
+    }
+
+    [Fact]
     public void ListQueries_TranslateToPostgres()
     {
         // The other tests run on SQLite; this proves the queries also translate for the production provider.
         using var db = new MusicHubDbContext(
             new DbContextOptionsBuilder<MusicHubDbContext>().UseNpgsql("Host=localhost").Options);
 
-        var filtered = TrackListQuery.Filter(db.Tracks.AsNoTracking(), "a", hasAudio: true);
+        var filtered = TrackListQuery.Filter(db.Tracks.AsNoTracking(), "a", hasAudio: true, fields: (true, false));
 
         Assert.NotEmpty(filtered.ToQueryString());
         Assert.NotEmpty(TrackListQuery.Page(filtered, 1, 25).ToQueryString());
