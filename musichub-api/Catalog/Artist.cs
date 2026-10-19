@@ -7,4 +7,5 @@ public class Artist
     public required string Name { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
     public List<TrackArtist> Tracks { get; set; } = [];
+    public List<ArtistExternalLink> ExternalLinks { get; set; } = [];
 }

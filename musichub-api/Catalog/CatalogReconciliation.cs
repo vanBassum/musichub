@@ -35,6 +35,8 @@ public sealed class CatalogReconciliation(
     // exclusive across processes).
     private static readonly SemaphoreSlim CatalogLock = new(1, 1);
 
+    private readonly ArtistExternalLinks links = new(db, time);
+
     public async Task<CatalogReconciliationSummary> RunAsync(CancellationToken cancellationToken)
     {
         var ids = await db.Files.AsNoTracking()
@@ -116,7 +118,8 @@ public sealed class CatalogReconciliation(
 
             var track = await FindTrackAsync(identity, cancellationToken);
             var createdTrack = track is null;
-            track ??= await CreateTrackAsync(identity, cancellationToken);
+            var linkEvidence = $"Credited with this identifier on a recording identified from: {evidence}";
+            track ??= await CreateTrackAsync(identity, linkEvidence, cancellationToken);
 
             // One SaveChanges: the track, its artists and the link are stored together or not at all.
             current.Track = track;
@@ -177,19 +180,53 @@ public sealed class CatalogReconciliation(
             t.Artists.Select(a => a.Artist.Name.Trim()).ToHashSet(StringComparer.OrdinalIgnoreCase).SetEquals(wanted));
     }
 
-    private async Task<Track> CreateTrackAsync(ProposedRecordingIdentity identity, CancellationToken cancellationToken)
+    private async Task<Track> CreateTrackAsync(
+        ProposedRecordingIdentity identity, string linkEvidence, CancellationToken cancellationToken)
     {
         var now = time.GetUtcNow();
         var track = new Track { Title = identity.Title, CreatedAt = now };
         foreach (var name in identity.Artists)
         {
-            var lower = name.ToLower();
-            var artist = await db.Artists.OrderBy(a => a.Id)
-                             .FirstOrDefaultAsync(a => a.Name.ToLower() == lower, cancellationToken)
-                         ?? new Artist { Name = name, CreatedAt = now };
+            var artist = await ResolveArtistAsync(name, ReferenceFor(identity, name), linkEvidence, now, cancellationToken);
             track.Artists.Add(new TrackArtist { Artist = artist });
         }
         db.Tracks.Add(track);
         return track;
     }
+
+    // The artist for a credited name. An identifier from the evidence decides first: the artist it is linked to. A name
+    // alone is not evidence of identity, so an identifier nobody has is never linked to an existing artist because the
+    // names match: it goes to a new, separate artist (merging stays a person's decision). Without an identifier the name
+    // picks the oldest artist with that name, as it did before identifiers existed, and no link is made.
+    private async Task<Artist> ResolveArtistAsync(
+        string name, ArtistReference? reference, string linkEvidence, DateTimeOffset now, CancellationToken cancellationToken)
+    {
+        if (reference is not null && await links.FindLinkedArtistAsync(reference, cancellationToken) is { } linked)
+            return linked;
+
+        if (reference is null)
+        {
+            var lower = name.ToLower();
+            return await db.Artists.OrderBy(a => a.Id).FirstOrDefaultAsync(a => a.Name.ToLower() == lower, cancellationToken)
+                   ?? new Artist { Name = name, CreatedAt = now };
+        }
+
+        var artist = new Artist { Name = name, CreatedAt = now };
+        await TryLinkAsync(artist, reference, linkEvidence, cancellationToken);
+        return artist;
+    }
+
+    private async Task TryLinkAsync(
+        Artist artist, ArtistReference reference, string linkEvidence, CancellationToken cancellationToken)
+    {
+        var outcome = await links.TryLinkAutomaticallyAsync(artist, reference, linkEvidence, cancellationToken);
+        if (outcome is LinkCheck.Free or LinkCheck.AlreadyLinked)
+            return;
+        logger.LogInformation(
+            "Artist \"{Name}\" was not linked to {Source} identifier {ExternalId}: {Outcome}.",
+            artist.Name, reference.Source, reference.ExternalId, outcome);
+    }
+
+    private static ArtistReference? ReferenceFor(ProposedRecordingIdentity identity, string name) =>
+        identity.ArtistReferences?.FirstOrDefault(r => string.Equals(r.Name.Trim(), name, StringComparison.OrdinalIgnoreCase));
 }
