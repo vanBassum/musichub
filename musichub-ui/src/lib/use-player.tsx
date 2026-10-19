@@ -63,9 +63,21 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       setError(describeMediaError(audio.error))
       setStatus("error")
     }
+    const settle = () =>
+      setStatus((current) =>
+        current === "loading" ? (audio.paused ? "paused" : "playing") : current,
+      )
     const listeners: Record<string, () => void> = {
-      loadstart: () => setStatus("loading"),
-      waiting: () => setStatus("loading"),
+      // Loading only counts while audio is meant to play; a seek or load while paused
+      // fires no `playing` later, so canplay/seeked settle it back to paused.
+      loadstart: () => {
+        if (!audio.paused) setStatus("loading")
+      },
+      waiting: () => {
+        if (!audio.paused) setStatus("loading")
+      },
+      canplay: settle,
+      seeked: settle,
       playing: () => setStatus("playing"),
       pause: () => {
         if (!audio.ended && !audio.error) setStatus("paused")

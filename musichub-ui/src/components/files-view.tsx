@@ -12,11 +12,19 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
+import {
   isAudioFilename,
   type FileRegistration,
   type FileStatus,
 } from "@/lib/files-api"
 import { formatBytes } from "@/lib/format"
+import { MAX_CONCURRENCY, MIN_CONCURRENCY } from "@/lib/upload-queue"
 import type {
   BulkDeleteState,
   DeleteState,
@@ -34,6 +42,11 @@ const statusClassNames: Record<FileStatus, string> = {
   Expired: "bg-muted text-muted-foreground",
   Deleting: "bg-warning text-warning-foreground",
 }
+
+const concurrencyOptions = Array.from(
+  { length: MAX_CONCURRENCY - MIN_CONCURRENCY + 1 },
+  (_, i) => MIN_CONCURRENCY + i
+)
 
 const statusHints: Record<FileStatus, string> = {
   Stored: "Storage confirmed",
@@ -60,10 +73,14 @@ export function FilesView({
     bulkDeletion,
     refresh,
     start,
+    concurrency,
+    setConcurrency,
+    cancelAll,
     dismiss,
     remove,
     removeFailed,
   } = state
+  const unfinished = uploads.filter((u) => u.cancel).length
   const input = useRef<HTMLInputElement>(null)
   const [confirming, setConfirming] = useState<string | null>(null)
   const [confirmingBulk, setConfirmingBulk] = useState(false)
@@ -124,6 +141,37 @@ export function FilesView({
             onChange={(event) => onSelect(event.target.files)}
           />
         </div>
+      </div>
+
+      <div className="flex shrink-0 flex-wrap items-center gap-2 border-t px-4 py-2 text-sm">
+        <span id="concurrency-label" className="text-muted-foreground">
+          Simultaneous uploads
+        </span>
+        <Select
+          value={String(concurrency)}
+          onValueChange={(value) => setConcurrency(Number(value))}
+        >
+          <SelectTrigger aria-labelledby="concurrency-label">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {concurrencyOptions.map((n) => (
+              <SelectItem key={n} value={String(n)}>
+                {n}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        {unfinished > 0 && (
+          <Button
+            variant="outline"
+            size="sm"
+            className="ml-auto"
+            onClick={cancelAll}
+          >
+            Cancel all uploads
+          </Button>
+        )}
       </div>
 
       {uploads.length > 0 && (
@@ -400,6 +448,11 @@ function DeleteControl({
 
 function describeUpload(upload: UploadItem, percent: number) {
   switch (upload.state) {
+    case "queued":
+      return {
+        label: "Queued",
+        detail: "Waiting for a free upload slot. Nothing has been sent yet.",
+      }
     case "uploading":
       return {
         label: `Uploading ${percent}%`,
@@ -429,7 +482,8 @@ function UploadRow({
   onDismiss: () => void
 }) {
   const percent = upload.size === 0 ? 100 : Math.floor((upload.loaded / upload.size) * 100)
-  const active = upload.state === "uploading" || upload.state === "sent"
+  const active = upload.cancel !== undefined
+  const transferring = upload.state === "uploading" || upload.state === "sent"
 
   const { label, detail } = describeUpload(upload, percent)
 
@@ -438,7 +492,7 @@ function UploadRow({
       <span className="min-w-0 flex-1 truncate" title={upload.name}>
         {upload.name}
       </span>
-      {active && (
+      {transferring && (
         <progress
           value={upload.loaded}
           max={upload.size || 1}
