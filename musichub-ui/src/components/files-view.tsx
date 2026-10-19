@@ -39,6 +39,10 @@ const statusHints: Record<FileStatus, string> = {
   Deleting: "Deletion not finished: delete it again to retry",
 }
 
+function fileSize(bytes: number | null) {
+  return bytes === null ? "Unknown" : formatBytes(bytes)
+}
+
 export function FilesView({
   state,
   className,
@@ -85,7 +89,7 @@ export function FilesView({
         <span className="text-muted-foreground">
           Uploaded files as stored, not the music catalog
         </span>
-        <div className="ml-auto flex items-center gap-2">
+        <div className="ml-auto flex flex-wrap items-center gap-2">
           <Button
             variant="outline"
             size="lg"
@@ -147,14 +151,14 @@ export function FilesView({
       )}
 
       <div className="min-h-0 flex-1 overflow-auto border-t [&_[data-slot=table-container]]:overflow-visible">
-        <Table className="min-w-[36rem] text-sm">
+        <Table className="table-fixed text-sm sm:table-auto">
           <TableHeader className="sticky top-0 z-10 bg-card">
             <TableRow className="hover:bg-transparent">
               <TableHead className="pl-4">Filename</TableHead>
-              <TableHead>Size</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead>Started</TableHead>
-              <TableHead className="pr-4">
+              <TableHead className="hidden sm:table-cell">Size</TableHead>
+              <TableHead className="w-24 sm:w-auto">Status</TableHead>
+              <TableHead className="hidden sm:table-cell">Started</TableHead>
+              <TableHead className="w-14 pr-4 sm:w-auto">
                 <span className="sr-only">Actions</span>
               </TableHead>
             </TableRow>
@@ -162,11 +166,14 @@ export function FilesView({
           <TableBody>
             {files?.map((file) => (
               <TableRow key={file.id}>
-                <TableCell className="max-w-80 truncate pl-4" title={file.originalFilename}>
+                <TableCell className="truncate pl-4 sm:max-w-80" title={file.originalFilename}>
                   {file.originalFilename}
+                  <span className="block truncate text-xs text-muted-foreground sm:hidden">
+                    {fileSize(file.sizeBytes)} · {new Date(file.startedAt).toLocaleString()}
+                  </span>
                 </TableCell>
-                <TableCell>
-                  {file.sizeBytes === null ? "Unknown" : formatBytes(file.sizeBytes)}
+                <TableCell className="hidden sm:table-cell">
+                  {fileSize(file.sizeBytes)}
                 </TableCell>
                 <TableCell>
                   <Badge
@@ -180,7 +187,9 @@ export function FilesView({
                     {file.status}
                   </Badge>
                 </TableCell>
-                <TableCell>{new Date(file.startedAt).toLocaleString()}</TableCell>
+                <TableCell className="hidden sm:table-cell">
+                  {new Date(file.startedAt).toLocaleString()}
+                </TableCell>
                 <TableCell className="pr-4">
                   <DeleteControl
                     name={file.originalFilename}
@@ -232,7 +241,7 @@ function DeleteFailedControl({
       <span
         role="group"
         aria-label="Confirm deleting all failed files"
-        className="flex items-center gap-1.5"
+        className="flex flex-wrap items-center gap-1.5"
       >
         <span className="text-sm">
           Delete {count} failed {count === 1 ? "file" : "files"}? This cannot be undone.
@@ -334,7 +343,7 @@ function DeleteControl({
       <span
         role="group"
         aria-label={`Confirm deleting ${name}`}
-        className="flex items-center gap-1.5"
+        className="flex flex-wrap items-center gap-1.5"
       >
         <span className="text-xs">Delete the stored file?</span>
         <Button
