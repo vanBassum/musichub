@@ -1,4 +1,4 @@
-import { RefreshCw, Trash2, Upload, X } from "lucide-react"
+import { Pause, Play, RefreshCw, Trash2, Upload, X } from "lucide-react"
 import { useRef, useState } from "react"
 
 import { Badge } from "@/components/ui/badge"
@@ -18,7 +18,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import type { FileStatus } from "@/lib/files-api"
+import {
+  isAudioFilename,
+  type FileRegistration,
+  type FileStatus,
+} from "@/lib/files-api"
 import { formatBytes } from "@/lib/format"
 import { MAX_CONCURRENCY, MIN_CONCURRENCY } from "@/lib/upload-queue"
 import type {
@@ -27,6 +31,7 @@ import type {
   FilesState,
   Upload as UploadItem,
 } from "@/lib/use-files"
+import { usePlayer } from "@/lib/use-player"
 import { cn } from "@/lib/utils"
 
 const statusClassNames: Record<FileStatus, string> = {
@@ -230,18 +235,24 @@ export function FilesView({
                 </TableCell>
                 <TableCell>{new Date(file.startedAt).toLocaleString()}</TableCell>
                 <TableCell className="pr-4">
-                  <DeleteControl
-                    name={file.originalFilename}
-                    state={deletions[file.id]}
-                    retry={file.status === "Deleting"}
-                    confirming={confirming === file.id}
-                    onAsk={() => setConfirming(file.id)}
-                    onCancel={() => setConfirming(null)}
-                    onConfirm={() => {
-                      setConfirming(null)
-                      remove(file.id)
-                    }}
-                  />
+                  <span className="flex items-center justify-end gap-1">
+                    {file.status === "Stored" &&
+                      isAudioFilename(file.originalFilename) && (
+                        <PlayControl file={file} />
+                      )}
+                    <DeleteControl
+                      name={file.originalFilename}
+                      state={deletions[file.id]}
+                      retry={file.status === "Deleting"}
+                      confirming={confirming === file.id}
+                      onAsk={() => setConfirming(file.id)}
+                      onCancel={() => setConfirming(null)}
+                      onConfirm={() => {
+                        setConfirming(null)
+                        remove(file.id)
+                      }}
+                    />
+                  </span>
                 </TableCell>
               </TableRow>
             ))}
@@ -256,6 +267,23 @@ export function FilesView({
         </Table>
       </div>
     </section>
+  )
+}
+
+// Plays a Stored audio file in the shared player; the row of the loaded file toggles pause.
+function PlayControl({ file }: { file: FileRegistration }) {
+  const { source, status, playFile, toggle } = usePlayer()
+  const current = source?.id === file.id && status !== "error"
+  const playing = current && (status === "playing" || status === "loading")
+  return (
+    <Button
+      variant="ghost"
+      size="icon-sm"
+      aria-label={`${playing ? "Pause" : "Play"} ${file.originalFilename}`}
+      onClick={() => (current ? toggle() : playFile(file))}
+    >
+      {playing ? <Pause /> : <Play />}
+    </Button>
   )
 }
 
