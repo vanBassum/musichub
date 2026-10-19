@@ -64,20 +64,20 @@ public sealed class CatalogReconciliationJobService(JobEngine engine)
     public async Task<string?> ActiveExecutionIdAsync(CancellationToken cancellationToken)
     {
         var monitor = (await engine.StorageAsync(cancellationToken)).GetMonitoringApi();
-        return Ids(monitor.EnqueuedJobs(Queue, 0, PerState), j => j.Job)
-            .Concat(Ids(monitor.ProcessingJobs(0, PerState), j => j.Job))
-            .Concat(Ids(monitor.ScheduledJobs(0, PerState), j => j.Job))
-            .OrderByDescending(IdOrder)
-            .FirstOrDefault();
+        return ActiveIds(monitor).OrderByDescending(IdOrder).FirstOrDefault();
     }
+
+    // An active run is enqueued, scheduled for a retry, or processing.
+    private static IEnumerable<string> ActiveIds(IMonitoringApi monitor) =>
+        Ids(monitor.EnqueuedJobs(Queue, 0, PerState), j => j.Job)
+            .Concat(Ids(monitor.ProcessingJobs(0, PerState), j => j.Job))
+            .Concat(Ids(monitor.ScheduledJobs(0, PerState), j => j.Job));
 
     /// <summary>The newest executions, newest first.</summary>
     public async Task<IReadOnlyList<JobExecution>> ListAsync(int count, CancellationToken cancellationToken)
     {
         var monitor = (await engine.StorageAsync(cancellationToken)).GetMonitoringApi();
-        return Ids(monitor.EnqueuedJobs(Queue, 0, PerState), j => j.Job)
-            .Concat(Ids(monitor.ProcessingJobs(0, PerState), j => j.Job))
-            .Concat(Ids(monitor.ScheduledJobs(0, PerState), j => j.Job))
+        return ActiveIds(monitor)
             .Concat(Ids(monitor.SucceededJobs(0, PerState), j => j.Job))
             .Concat(Ids(monitor.FailedJobs(0, PerState), j => j.Job))
             .Distinct()
@@ -110,7 +110,10 @@ public sealed class CatalogReconciliationJobService(JobEngine engine)
         var last = details.History.OrderBy(h => h.CreatedAt).Last();
         var processing = details.History.Where(h => h.StateName == "Processing").MaxBy(h => h.CreatedAt);
         var succeeded = details.History.FirstOrDefault(h => h.StateName == "Succeeded");
-        var failed = details.History.Where(h => h.Data.ContainsKey("ExceptionMessage")).MaxBy(h => h.CreatedAt);
+        // A run that failed, was retried and then Succeeded reports no error.
+        var failed = last.StateName == "Succeeded"
+            ? null
+            : details.History.Where(h => h.Data.ContainsKey("ExceptionMessage")).MaxBy(h => h.CreatedAt);
         var finished = FinalStates.Contains(last.StateName);
 
         var execution = new JobExecution(

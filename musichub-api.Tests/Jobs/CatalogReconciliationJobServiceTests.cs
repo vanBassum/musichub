@@ -28,33 +28,8 @@ public class CatalogReconciliationJobServiceTests
         services.AddSingleton(TimeProvider.System);
     }
 
-    private static async Task<JobExecutionDetails> WaitForAsync(JobsHost host, string id, string state)
-    {
-        var deadline = DateTime.UtcNow.AddSeconds(30);
-        JobExecutionDetails? details = null;
-        while (DateTime.UtcNow < deadline)
-        {
-            details = await host.Catalog.GetAsync(id, CancellationToken.None);
-            if (details?.Execution.State == state)
-                break;
-            await Task.Delay(100);
-        }
-        return details!;
-    }
-
-    private static async Task<JobExecutionDetails> WaitForErrorAsync(JobsHost host, string id)
-    {
-        var deadline = DateTime.UtcNow.AddSeconds(30);
-        JobExecutionDetails? details = null;
-        while (DateTime.UtcNow < deadline)
-        {
-            details = await host.Catalog.GetAsync(id, CancellationToken.None);
-            if (details?.Execution.Error is not null)
-                break;
-            await Task.Delay(100);
-        }
-        return details!;
-    }
+    private static async Task<JobExecutionDetails> WaitForAsync(JobsHost host, string id, Func<JobExecutionDetails?, bool> done) =>
+        (await JobsHost.WaitUntilAsync(() => host.Catalog.GetAsync(id, CancellationToken.None), done))!;
 
     [Fact]
     public async Task StartedRun_Succeeds_WithSummaryAndHistory()
@@ -65,7 +40,7 @@ public class CatalogReconciliationJobServiceTests
         var id = await host.Catalog.TryStartAsync(CancellationToken.None);
 
         Assert.NotNull(id);
-        var details = await WaitForAsync(host, id, "Succeeded");
+        var details = await WaitForAsync(host, id, d => d?.Execution.State == "Succeeded");
         Assert.Equal("Succeeded", details.Execution.State);
         Assert.Equal(0, details.Execution.Summary?.Examined);
         Assert.NotNull(details.Execution.StartedAt);
@@ -113,7 +88,7 @@ public class CatalogReconciliationJobServiceTests
         var id = await host.Catalog.TryStartAsync(CancellationToken.None);
 
         // Hangfire's retry policy is process-wide, so the run is either Failed or waiting for a retry.
-        var details = await WaitForErrorAsync(host, id!);
+        var details = await WaitForAsync(host, id!, d => d?.Execution.Error is not null);
         Assert.Contains(details.Execution.State, new[] { "Failed", "Scheduled" });
         Assert.False(string.IsNullOrWhiteSpace(details.Execution.Error));
         Assert.NotNull(details.ErrorType);

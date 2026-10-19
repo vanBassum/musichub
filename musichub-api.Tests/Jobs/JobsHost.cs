@@ -46,16 +46,18 @@ internal sealed class JobsHost : IAsyncDisposable
     }
 
     /// <summary>Waits until the job reaches <paramref name="state"/>; returns the last state seen.</summary>
-    public async Task<string?> WaitForStateAsync(string jobId, string state)
+    public Task<string?> WaitForStateAsync(string jobId, string state) =>
+        WaitUntilAsync(() => Pings.GetStateAsync(jobId, CancellationToken.None), current => current == state);
+
+    /// <summary>Polls <paramref name="read"/> for up to 30 s until <paramref name="done"/> accepts the value; returns the last value read.</summary>
+    public static async Task<T> WaitUntilAsync<T>(Func<Task<T>> read, Func<T, bool> done)
     {
-        string? current = null;
         var deadline = DateTime.UtcNow.AddSeconds(30);
-        while (DateTime.UtcNow < deadline)
+        var current = await read();
+        while (!done(current) && DateTime.UtcNow < deadline)
         {
-            current = await Pings.GetStateAsync(jobId, CancellationToken.None);
-            if (current == state)
-                break;
             await Task.Delay(100);
+            current = await read();
         }
         return current;
     }

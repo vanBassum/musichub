@@ -38,7 +38,7 @@ export function useJobs(): JobsState {
   const [refreshing, setRefreshing] = useState(true)
   const [picked, setPicked] = useState<string | null>(null)
   const [loaded, setLoaded] = useState<JobExecutionDetails | null>(null)
-  const [detailsError, setDetailsError] = useState<string | null>(null)
+  const [failedLoad, setFailedLoad] = useState<{ id: string; message: string } | null>(null)
   const [starting, setStarting] = useState(false)
   const [startError, setStartError] = useState<string | null>(null)
   const latest = useRef<AbortController | null>(null)
@@ -47,6 +47,7 @@ export function useJobs(): JobsState {
   const selectedId = picked ?? executions?.[0]?.id ?? null
   // Details of another execution are not shown while the new ones load.
   const details = loaded?.execution.id === selectedId ? loaded : null
+  const detailsError = failedLoad?.id === selectedId ? failedLoad.message : null
 
   // Only the newest request may write state: starting one aborts the previous.
   const load = useCallback(() => {
@@ -103,13 +104,14 @@ export function useJobs(): JobsState {
       (result) => {
         if (controller.signal.aborted) return
         setLoaded(result)
-        setDetailsError(null)
+        setFailedLoad(null)
       },
       (error: unknown) => {
         if (controller.signal.aborted) return
-        setDetailsError(
-          error instanceof Error ? error.message : "Loading failed."
-        )
+        setFailedLoad({
+          id: selectedId,
+          message: error instanceof Error ? error.message : "Loading failed.",
+        })
       }
     )
     return () => controller.abort()

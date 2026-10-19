@@ -103,8 +103,6 @@ export function JobsView({
     refreshing,
     selectedId,
     select,
-    details,
-    detailsError,
     starting,
     startError,
     refresh,
@@ -215,14 +213,14 @@ export function JobsView({
                       data-state={selected ? "selected" : undefined}
                     >
                       <TableCell className="pl-4">
-                        <button
-                          type="button"
+                        <Button
+                          variant="link"
                           aria-current={selected ? "true" : undefined}
                           onClick={() => select(execution.id)}
-                          className="rounded-sm text-left underline-offset-4 hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+                          className="h-auto p-0 text-left text-foreground"
                         >
                           {when(execution.startedAt ?? execution.createdAt)}
-                        </button>
+                        </Button>
                       </TableCell>
                       <TableCell>{elapsed(execution)}</TableCell>
                       <TableCell>
@@ -249,7 +247,7 @@ export function JobsView({
           </div>
         </section>
 
-        <ExecutionDetails state={state} details={details} detailsError={detailsError} />
+        <ExecutionDetails state={state} />
       </div>
     </section>
   )
@@ -277,15 +275,27 @@ function SummaryFacts({ summary }: { summary: JobSummary }) {
   )
 }
 
-function ExecutionDetails({
-  state,
-  details,
+function DetailsPlaceholder({
+  selectedId,
   detailsError,
-}: {
-  state: JobsState
-  details: JobsState["details"]
-  detailsError: string | null
-}) {
+}: Pick<JobsState, "selectedId" | "detailsError">) {
+  if (selectedId === null)
+    return (
+      <p className="text-sm text-muted-foreground">
+        Select an execution to see its details.
+      </p>
+    )
+  if (detailsError)
+    return (
+      <p role="alert" className="text-sm text-destructive">
+        {detailsError}
+      </p>
+    )
+  return <Skeleton className="h-32 w-full" />
+}
+
+function ExecutionDetails({ state }: { state: JobsState }) {
+  const { details, detailsError, selectedId } = state
   return (
     <section
       aria-labelledby="details-heading"
@@ -298,17 +308,7 @@ function ExecutionDetails({
         {details && <StatusBadge execution={details.execution} />}
       </div>
       {!details ? (
-        detailsError && state.selectedId ? (
-          <p role="alert" className="text-sm text-destructive">
-            {detailsError}
-          </p>
-        ) : state.selectedId ? (
-          <Skeleton className="h-32 w-full" />
-        ) : (
-          <p className="text-sm text-muted-foreground">
-            Select an execution to see its details.
-          </p>
-        )
+        <DetailsPlaceholder selectedId={selectedId} detailsError={detailsError} />
       ) : (
         <>
           <dl className="flex flex-col gap-2 text-sm">
