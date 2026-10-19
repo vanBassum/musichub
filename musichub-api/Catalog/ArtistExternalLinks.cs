@@ -60,10 +60,10 @@ public sealed class ArtistExternalLinks(MusicHubDbContext db, TimeProvider time)
         var rows = await db.ArtistExternalLinks.AsNoTracking()
             .Where(l => l.Source == source && l.ExternalId == id)
             .ToListAsync(ct);
-        var linked = rows.FirstOrDefault(l => l.ExternalId == id && l.Status == ExternalLinkStatus.Linked);
+        var linked = rows.FirstOrDefault(l => l.Status == ExternalLinkStatus.Linked);
         if (linked is not null)
             return linked.ArtistId == artistId ? LinkCheck.AlreadyLinked : LinkCheck.TakenByOtherArtist;
-        if (rows.Any(l => l.ExternalId == id && l.ArtistId == artistId))
+        if (rows.Any(l => l.ArtistId == artistId))
             return LinkCheck.Unlinked;
         return LinkCheck.Free;
     }
@@ -114,7 +114,7 @@ public sealed class ArtistExternalLinks(MusicHubDbContext db, TimeProvider time)
             };
             db.ArtistExternalLinks.Add(link);
         }
-        if (link.Status != ExternalLinkStatus.Linked || link.Origin != ExternalLinkOrigin.Manual || link.Id == 0)
+        if (link.Status != ExternalLinkStatus.Linked || link.Origin != ExternalLinkOrigin.Manual)
         {
             link.Status = ExternalLinkStatus.Linked;
             link.Origin = ExternalLinkOrigin.Manual;
