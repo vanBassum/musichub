@@ -27,14 +27,14 @@ public class MusicHubDbContext(DbContextOptions<MusicHubDbContext> options) : Db
 
         modelBuilder.Entity<Track>(track =>
         {
-            track.Property(t => t.Title).HasMaxLength(500);
-            track.Property(t => t.Version).HasMaxLength(500);
+            track.Property(t => t.Title).HasMaxLength(CatalogLimits.Title);
+            track.Property(t => t.Version).HasMaxLength(CatalogLimits.Version);
         });
 
         modelBuilder.Entity<TrackExternalId>(external =>
         {
-            external.Property(e => e.Provider).HasMaxLength(100);
-            external.Property(e => e.ExternalId).HasMaxLength(200);
+            external.Property(e => e.Provider).HasMaxLength(CatalogLimits.Provider);
+            external.Property(e => e.ExternalId).HasMaxLength(CatalogLimits.ExternalId);
             external.HasOne(e => e.Track).WithMany(t => t.ExternalIds)
                 .HasForeignKey(e => e.TrackId).OnDelete(DeleteBehavior.Cascade);
             // A provider recording is one catalog track.
@@ -44,18 +44,18 @@ public class MusicHubDbContext(DbContextOptions<MusicHubDbContext> options) : Db
 
         modelBuilder.Entity<IdentityReview>(review =>
         {
-            review.Property(r => r.Provider).HasMaxLength(100);
-            review.Property(r => r.ExternalId).HasMaxLength(200);
-            review.Property(r => r.Title).HasMaxLength(500);
-            review.Property(r => r.Disambiguation).HasMaxLength(500);
+            review.Property(r => r.Provider).HasMaxLength(CatalogLimits.Provider);
+            review.Property(r => r.ExternalId).HasMaxLength(CatalogLimits.ExternalId);
+            review.Property(r => r.Title).HasMaxLength(CatalogLimits.Title);
+            review.Property(r => r.Disambiguation).HasMaxLength(CatalogLimits.Version);
             review.HasIndex(r => new { r.Provider, r.ExternalId }).IsUnique();
         });
 
-        modelBuilder.Entity<Artist>().Property(a => a.Name).HasMaxLength(500);
+        modelBuilder.Entity<Artist>().Property(a => a.Name).HasMaxLength(CatalogLimits.ArtistName);
 
         modelBuilder.Entity<TrackArtist>(link =>
         {
-            link.Property(l => l.Role).HasMaxLength(100);
+            link.Property(l => l.Role).HasMaxLength(CatalogLimits.Role);
             link.HasOne(l => l.Track).WithMany(t => t.Artists)
                 .HasForeignKey(l => l.TrackId).OnDelete(DeleteBehavior.Cascade);
             link.HasOne(l => l.Artist).WithMany(a => a.Tracks)

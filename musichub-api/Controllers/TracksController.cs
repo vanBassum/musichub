@@ -77,12 +77,12 @@ public class TracksController(MusicHubDbContext db, Wishlist wishlist) : Control
             errors["artists"] = ["Artists must be a list of artists with a name."];
         else if (!request.Artists.Any(a => !string.IsNullOrWhiteSpace(a.Name)))
             errors["artists"] = ["At least one artist with a name is required."];
-        else if (request.Artists.Any(a => a.Name?.Trim().Length > MaxArtistNameLength))
-            errors["artists"] = [$"An artist name is at most {MaxArtistNameLength} characters."];
-        if (TooLong(request.Provider, MaxProviderLength)) errors["provider"] = [$"Provider is at most {MaxProviderLength} characters."];
-        if (TooLong(request.ExternalId, MaxExternalIdLength)) errors["externalId"] = [$"External id is at most {MaxExternalIdLength} characters."];
-        if (TooLong(request.Title, MaxTitleLength)) errors["title"] = [$"Title is at most {MaxTitleLength} characters."];
-        if (TooLong(request.Disambiguation, MaxTitleLength)) errors["disambiguation"] = [$"Disambiguation is at most {MaxTitleLength} characters."];
+        else if (request.Artists.Any(a => a.Name?.Trim().Length > CatalogLimits.ArtistName))
+            errors["artists"] = [$"An artist name is at most {CatalogLimits.ArtistName} characters."];
+        if (TooLong(request.Provider, CatalogLimits.Provider)) errors["provider"] = [$"Provider is at most {CatalogLimits.Provider} characters."];
+        if (TooLong(request.ExternalId, CatalogLimits.ExternalId)) errors["externalId"] = [$"External id is at most {CatalogLimits.ExternalId} characters."];
+        if (TooLong(request.Title, CatalogLimits.Title)) errors["title"] = [$"Title is at most {CatalogLimits.Title} characters."];
+        if (TooLong(request.Disambiguation, CatalogLimits.Version)) errors["disambiguation"] = [$"Disambiguation is at most {CatalogLimits.Version} characters."];
         if (errors.Count > 0)
             return BadRequest(new ValidationProblemDetails(errors));
 
@@ -94,12 +94,7 @@ public class TracksController(MusicHubDbContext db, Wishlist wishlist) : Control
                 : Ok(result);
     }
 
-    // The column limits of the catalog tables (MusicHubDbContext), checked on the trimmed value that is stored.
-    private const int MaxProviderLength = 100;
-    private const int MaxExternalIdLength = 200;
-    private const int MaxTitleLength = 500;
-    private const int MaxArtistNameLength = 500;
-
+    // Checked on the trimmed value, which is what is stored.
     private static bool TooLong(string? value, int max) => value?.Trim().Length > max;
 
     private Task<TrackResponse?> FindResponse(int id, CancellationToken cancellationToken) =>
