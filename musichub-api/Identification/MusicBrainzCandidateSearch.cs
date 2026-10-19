@@ -12,7 +12,7 @@ namespace MusicHub.Api.Identification;
 /// nothing is picked here. Requests are spaced to MusicBrainz's rate limit, and transient failures are retried; a
 /// search that still fails throws <see cref="CandidateSearchUnavailableException"/>, never an empty result.
 /// </summary>
-public sealed class MusicBrainzCandidateSearch : ICandidateSearch
+public sealed partial class MusicBrainzCandidateSearch : ICandidateSearch
 {
     public const string HttpClientName = "musicbrainz";
 
