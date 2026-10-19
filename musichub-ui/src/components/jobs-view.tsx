@@ -1,6 +1,7 @@
 import { Database, Play, RefreshCw } from "lucide-react"
 import type { ReactNode } from "react"
 
+import { IdentificationOutcomes } from "@/components/identification-outcomes"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -325,6 +326,10 @@ function ExecutionDetails({ state }: { state: JobsState }) {
               {details.execution.error}
             </p>
           )}
+          <IdentificationOutcomes
+            executionId={details.execution.id}
+            version={`${details.execution.state}:${details.execution.summary?.examined ?? ""}`}
+          />
           <div>
             <h3 className="mb-2 text-sm font-semibold">State history</h3>
             <ol className="flex flex-col gap-1 rounded-lg border bg-muted/40 p-3 font-mono text-xs">
