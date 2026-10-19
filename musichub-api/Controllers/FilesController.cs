@@ -124,21 +124,22 @@ public class FilesController(
             return NotFound();
 
         var contentType = AudioStreaming.ContentTypeFor(record.OriginalFilename);
-        if (contentType is null || record.SizeBytes is null)
+        if (contentType is null)
             return Problem(
-                title: contentType is null ? "Not a playable audio file" : "File length unknown",
-                detail: contentType is null
-                    ? "The file's extension is not a supported audio type."
-                    : "The file cannot be streamed without its stored length.",
-                statusCode: contentType is null
-                    ? StatusCodes.Status415UnsupportedMediaType
-                    : StatusCodes.Status502BadGateway);
+                title: "Not a playable audio file",
+                detail: "The file's extension is not a supported audio type.",
+                statusCode: StatusCodes.Status415UnsupportedMediaType);
 
-        var total = record.SizeBytes.Value;
+        if (record.SizeBytes is not { } total)
+            return Problem(
+                title: "File length unknown",
+                detail: "The file cannot be streamed without its stored length.",
+                statusCode: StatusCodes.Status502BadGateway);
+
         Response.Headers.AcceptRanges = "bytes";
         Response.Headers.XContentTypeOptions = "nosniff";
 
-        var range = AudioStreaming.ResolveRange(Request.Headers.Range.ToString() is { Length: > 0 } header ? header : null, total);
+        var range = AudioStreaming.ResolveRange(Request.Headers.Range.ToString(), total);
         if (!range.IsSatisfiable)
         {
             Response.Headers.ContentRange = $"bytes */{total}";

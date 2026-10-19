@@ -11,6 +11,7 @@ import { ArtistPage } from "@/components/artist-page"
 import { BuildInfoSheet } from "@/components/build-info-sheet"
 import { FilesView } from "@/components/files-view"
 import { GlobalSearch } from "@/components/global-search"
+import { JobsView } from "@/components/jobs-view"
 import { MobileNav } from "@/components/mobile-nav"
 import { mobilePageIndex } from "@/components/mobile-pages"
 import { NowPlaying, QueueList } from "@/components/player-panel"
@@ -23,6 +24,7 @@ import {
 } from "@/components/ui/sheet"
 import type { Track } from "@/data/mock-tracks"
 import type { FilesState } from "@/lib/use-files"
+import type { JobsState } from "@/lib/use-jobs"
 import { cn } from "@/lib/utils"
 
 interface MobileShellProps {
@@ -33,6 +35,7 @@ interface MobileShellProps {
   queue: Track[]
   nowPlayingId: string
   filesState: FilesState
+  jobsState: JobsState
   onSelectTrack: (trackId: number) => void
 }
 
@@ -41,12 +44,13 @@ const playerPage = mobilePageIndex("player")
 const queuePage = mobilePageIndex("queue")
 const filesPage = mobilePageIndex("files")
 const artistsPage = mobilePageIndex("artists")
+const jobsPage = mobilePageIndex("jobs")
 
 const pageClassName =
   "flex h-full w-full shrink-0 snap-center snap-always flex-col overflow-hidden"
 
 // Below `lg` the panels and the Files view become full-width pages in a horizontal
-// scroll-snap strip (Library, Player, Queue, Files, Artists), opening on the Player. Pages that aren't showing
+// scroll-snap strip (Library, Player, Queue, Files, Artists, Jobs), opening on the Player. Pages that aren't showing
 // are inert, so keyboard focus can't land in them.
 export function MobileShell({
   total,
@@ -55,6 +59,7 @@ export function MobileShell({
   queue,
   nowPlayingId,
   filesState,
+  jobsState,
   onSelectTrack,
 }: MobileShellProps) {
   const strip = useRef<HTMLDivElement>(null)
@@ -151,6 +156,9 @@ export function MobileShell({
         </div>
         <div inert={active !== artistsPage} className={cn(pageClassName, "p-3")}>
           <ArtistPage className="flex-1" />
+        </div>
+        <div inert={active !== jobsPage} className={cn(pageClassName, "p-3")}>
+          <JobsView state={jobsState} className="flex-1" />
         </div>
       </div>
       <MobileNav active={active} onNavigate={navigate} />

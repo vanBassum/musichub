@@ -32,11 +32,10 @@ public static class AudioStreaming
     /// non-byte or multi-range header is ignored (the whole object is served, as RFC 9110 allows); a single
     /// range that starts beyond the end is unsatisfiable. An end beyond the object is clamped to it.
     /// </summary>
-    public static AudioRange ResolveRange(string? rangeHeader, long totalLength)
+    public static AudioRange ResolveRange(string rangeHeader, long totalLength)
     {
         var whole = new AudioRange(0, totalLength - 1, false, true);
-        if (rangeHeader is null
-            || !RangeHeaderValue.TryParse(rangeHeader, out var header)
+        if (!RangeHeaderValue.TryParse(rangeHeader, out var header)
             || !string.Equals(header.Unit, "bytes", StringComparison.OrdinalIgnoreCase)
             || header.Ranges.Count != 1)
             return whole;

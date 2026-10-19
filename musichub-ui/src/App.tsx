@@ -4,6 +4,7 @@ import { AppHeader, type AppView } from "@/components/app-header"
 import { ArtistPage } from "@/components/artist-page"
 import { FilesView } from "@/components/files-view"
 import { FilterSidebar } from "@/components/filter-sidebar"
+import { JobsView } from "@/components/jobs-view"
 import { MobileShell } from "@/components/mobile-shell"
 import { PlayerPanel } from "@/components/player-panel"
 import { TrackDetailsSheet } from "@/components/track-details-sheet"
@@ -12,6 +13,7 @@ import { mockNowPlayingId, mockQueue } from "@/data/mock-tracks"
 import type { AudioFilter } from "@/lib/catalog-api"
 import { useTracks } from "@/lib/use-catalog"
 import { useFiles } from "@/lib/use-files"
+import { useJobs } from "@/lib/use-jobs"
 import { useIsDesktop } from "@/lib/use-media-query"
 
 const searchDelayMs = 300
@@ -28,6 +30,7 @@ export function App() {
   const catalog = useTracks(search, audio, page)
   // Held here so uploads survive navigation and the desktop/mobile layout swap.
   const filesState = useFiles()
+  const jobsState = useJobs()
 
   useEffect(() => {
     const term = searchInput.trim()
@@ -87,6 +90,7 @@ export function App() {
           queue={mockQueue}
           nowPlayingId={mockNowPlayingId}
           filesState={filesState}
+          jobsState={jobsState}
           onSelectTrack={setSelectedId}
         />
         {details}
@@ -101,7 +105,11 @@ export function App() {
         onNavigate={setView}
         onSelectTrack={setSelectedId}
       />
-      {view === "files" || view === "artists" ? (
+      {view === "jobs" ? (
+        <main className="flex min-h-0 flex-1 flex-col p-4">
+          <JobsView state={jobsState} className="flex-1" />
+        </main>
+      ) : view === "files" || view === "artists" ? (
         // The player stays docked beside every view, so playback can be controlled anywhere.
         <main className="grid min-h-0 flex-1 gap-4 p-4 lg:grid-cols-[minmax(0,1fr)_20rem] xl:grid-cols-[minmax(0,1fr)_24rem]">
           {view === "files" ? (
