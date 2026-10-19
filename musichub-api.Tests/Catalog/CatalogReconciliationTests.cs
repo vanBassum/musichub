@@ -358,6 +358,19 @@ public sealed class CatalogReconciliationTests : IDisposable
     }
 
     [Fact]
+    public async Task A_file_name_longer_than_the_column_is_truncated_so_the_outcome_is_still_recorded()
+    {
+        var longName = new string('a', 600) + ".mp3";
+        _identities[longName] = () => Unresolved("nothing", Method("musicbrainz", IdentificationMethodStatus.NothingFound));
+        await AddFileAsync(longName);
+
+        await RunAsync(executionId: "7");
+
+        var outcome = Assert.Single(await OutcomesAsync("7"));
+        Assert.Equal(longName[..500], outcome.FileName);
+    }
+
+    [Fact]
     public async Task Repeated_executions_keep_their_own_outcomes()
     {
         _identities["x.mp3"] = () => Unresolved("nothing", Method("musicbrainz", IdentificationMethodStatus.NothingFound));

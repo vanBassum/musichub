@@ -131,7 +131,7 @@ public sealed class CatalogReconciliation(
             {
                 JobExecutionId = executionId,
                 FileId = fileId,
-                FileName = attempt.FileName,
+                FileName = attempt.FileName.Length > 500 ? attempt.FileName[..500] : attempt.FileName,
                 Decision = attempt.Decision,
                 Reason = attempt.Reason.Length > 2000 ? attempt.Reason[..2000] : attempt.Reason,
                 TrackId = attempt.TrackId,
