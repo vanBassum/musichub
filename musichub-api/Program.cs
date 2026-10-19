@@ -1,4 +1,5 @@
 using MusicHub.Api.Identification;
+using MusicHub.Api.Jobs;
 using MusicHub.Api.Ingestion;
 using MusicHub.Api.Storage;
 using System.Text.Json;
@@ -34,6 +35,9 @@ builder.Services.AddIdentification(builder.Configuration);
 // Pending migrations are applied after startup by a hosted service; `--migrate` runs the same migration and exits.
 builder.Services.AddSingleton<MigrationState>();
 builder.Services.AddHostedService<DatabaseMigrationService>();
+
+// Hangfire starts after the migrations; it has no dashboard and no HTTP endpoints.
+builder.Services.AddBackgroundJobs(builder.Configuration);
 
 builder.Services.AddHealthChecks()
     .AddCheck<DatabaseHealthCheck>("database", tags: ["ready"])

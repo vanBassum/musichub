@@ -68,6 +68,23 @@ docker run --rm -e Database__Host=… -e Database__Database=… -e Database__Use
 dotnet MusicHub.Api.dll --migrate   # without Docker
 ```
 
+**Background jobs** run on Hangfire, stored in the same PostgreSQL database in its own
+`hangfire` schema (created on first start). The server starts after the migrations; jobs
+queued in PostgreSQL survive a restart, and a stopping instance lets running jobs finish
+(up to `ShutdownTimeoutSeconds`). There is no dashboard and no HTTP endpoint for jobs.
+Optional keys (the `Hangfire` section):
+
+| Key | Default | Meaning |
+| --- | --- | --- |
+| `Hangfire__WorkerCount` | `2` | Concurrent jobs (1–32) |
+| `Hangfire__RetryAttempts` | `3` | Retries of a failed job (0–20) |
+| `Hangfire__RetentionHours` | `168` | How long finished jobs are kept |
+| `Hangfire__ShutdownTimeoutSeconds` | `15` | Wait for running jobs on stop (1–25) |
+| `Hangfire__SchemaName` | `hangfire` | PostgreSQL schema |
+
+The PostgreSQL persistence test runs only when `MUSICHUB_TEST_POSTGRES` holds the
+connection string of a disposable database; otherwise it is reported as skipped.
+
 **Health endpoints** (anonymous, JSON body with `status` and per-check `name`/`status`,
 no details):
 
