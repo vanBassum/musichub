@@ -99,3 +99,75 @@ export function fetchTrack(id: number, signal: AbortSignal) {
 export function artistNames(track: CatalogTrack) {
   return track.artists.map((artist) => artist.name).join(", ")
 }
+
+export interface ExternalArtistCredit {
+  name: string
+  externalId: string | null
+}
+
+// External results are never catalog records: `provider` and `externalId` say where
+// they came from and identify them stably.
+export interface ExternalTrack {
+  provider: string
+  externalId: string
+  title: string
+  disambiguation: string | null
+  url: string
+  artists: ExternalArtistCredit[]
+}
+
+export interface ExternalArtist {
+  provider: string
+  externalId: string
+  name: string
+  disambiguation: string | null
+  url: string
+}
+
+// The API answers 503 with a problem detail when the provider is missing, rate
+// limited or unreachable; its text is the message.
+async function getExternal<T>(url: string, signal: AbortSignal): Promise<T> {
+  const response = await fetch(url, { signal })
+  if (!response.ok) {
+    const problem = (await response.json().catch(() => null)) as {
+      detail?: string
+    } | null
+    throw new Error(
+      problem?.detail ?? `The server answered ${response.status}.`
+    )
+  }
+  return (await response.json()) as T
+}
+
+export function fetchExternalTracks(
+  query: { search: string; limit: number; fields: SearchFields },
+  signal: AbortSignal
+) {
+  const fields = [
+    query.fields.title && "title",
+    query.fields.artist && "artist",
+  ].filter(Boolean)
+  const params = new URLSearchParams({
+    search: query.search,
+    limit: String(query.limit),
+    fields: fields.join(","),
+  })
+  return getExternal<{ provider: string; items: ExternalTrack[] }>(
+    `/api/external/tracks?${params}`,
+    signal
+  )
+}
+
+export function fetchExternalArtists(
+  query: { search: string; limit: number },
+  signal: AbortSignal
+) {
+  const params = new URLSearchParams({
+    search: query.search,
+    limit: String(query.limit),
+  })
+  return getExternal<{ provider: string; items: ExternalArtist[] }>(
+    `/api/external/artists?${params}`,
+    signal
+  )
+}

@@ -1,4 +1,9 @@
-import { Search, SlidersHorizontal, UserRound } from "lucide-react"
+import {
+  ExternalLink,
+  Search,
+  SlidersHorizontal,
+  UserRound,
+} from "lucide-react"
 import { useId, useState, type ReactNode } from "react"
 
 import { Badge } from "@/components/ui/badge"
@@ -12,6 +17,7 @@ import {
 } from "@/components/ui/popover"
 import { Skeleton } from "@/components/ui/skeleton"
 import { artistNames } from "@/lib/catalog-api"
+import { useExternalSearch } from "@/lib/use-external-search"
 import { useGlobalSearch } from "@/lib/use-global-search"
 import { useSearchFields } from "@/lib/use-search-fields"
 import { cn } from "@/lib/utils"
@@ -50,6 +56,121 @@ function Group({
 const rowClassName =
   "flex h-auto w-full justify-start gap-2 py-1.5 text-left font-normal"
 
+const providerLabels: Record<string, string> = { musicbrainz: "MusicBrainz" }
+
+function ExternalRow({
+  provider,
+  url,
+  kind,
+  name,
+  detail,
+}: {
+  provider: string
+  url: string
+  kind: "Track" | "Artist"
+  name: string
+  detail?: string
+}) {
+  const label = providerLabels[provider] ?? provider
+  return (
+    <li className="flex items-center gap-2 px-2 py-1.5 text-sm">
+      <Badge variant="outline">{kind}</Badge>
+      <span className="min-w-0 flex-1 truncate">{name}</span>
+      {detail && (
+        <span className="max-w-[40%] truncate text-muted-foreground">
+          {detail}
+        </span>
+      )}
+      <a
+        href={url}
+        target="_blank"
+        rel="noreferrer"
+        aria-label={`Open on ${label}`}
+        className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+      >
+        {label}
+        <ExternalLink className="size-3" aria-hidden="true" />
+      </a>
+    </li>
+  )
+}
+
+// Results of the external provider. They are not catalog items: they can't be opened
+// here, and viewing them stores nothing.
+function ExternalResults({
+  search,
+  showArtists,
+}: {
+  search: ReturnType<typeof useExternalSearch>
+  showArtists: boolean
+}) {
+  return (
+    <section
+      aria-label="External results"
+      className="flex flex-col gap-0.5 rounded-md border border-dashed p-1"
+    >
+      <h3 className="px-2 pt-1 text-xs font-medium text-muted-foreground">
+        External results (not in your catalog)
+      </h3>
+      {search.status === "loading" && (
+        <div
+          role="status"
+          aria-label="Searching external sources"
+          className="flex flex-col gap-1.5 p-2"
+        >
+          <Skeleton className="h-4 w-3/5" />
+          <Skeleton className="h-4 w-1/2" />
+        </div>
+      )}
+      {search.status === "error" && (
+        <div role="alert" className="flex items-center gap-2 p-2 text-xs">
+          <span className="flex-1">
+            {search.error ?? "The external search failed."}
+          </span>
+          <Button size="sm" variant="outline" onClick={search.retry}>
+            Retry
+          </Button>
+        </div>
+      )}
+      {search.status === "ready" &&
+        (search.tracks.length === 0 &&
+        (!showArtists || search.artists.length === 0) ? (
+          <p className="px-2 py-1.5 text-xs text-muted-foreground">
+            No external matches.
+          </p>
+        ) : (
+          <ul>
+            {search.tracks.map((track) => (
+              <ExternalRow
+                key={`${track.provider}:track:${track.externalId}`}
+                provider={track.provider}
+                url={track.url}
+                kind="Track"
+                name={
+                  track.disambiguation
+                    ? `${track.title} (${track.disambiguation})`
+                    : track.title
+                }
+                detail={track.artists.map((a) => a.name).join(", ")}
+              />
+            ))}
+            {showArtists &&
+              search.artists.map((artist) => (
+                <ExternalRow
+                  key={`${artist.provider}:artist:${artist.externalId}`}
+                  provider={artist.provider}
+                  url={artist.url}
+                  kind="Artist"
+                  name={artist.name}
+                  detail={artist.disambiguation ?? undefined}
+                />
+              ))}
+          </ul>
+        ))}
+    </section>
+  )
+}
+
 // Searches the local catalog from anywhere in the app. Which fields it looks in is a
 // per-browser preference.
 export function GlobalSearch({
@@ -61,6 +182,7 @@ export function GlobalSearch({
   const [open, setOpen] = useState(false)
   const { fields, setField } = useSearchFields()
   const search = useGlobalSearch(input, fields)
+  const external = useExternalSearch(input, fields)
   const resultsId = useId()
   const showResults = open && search.status !== "idle"
 
@@ -212,6 +334,7 @@ export function GlobalSearch({
               )}
             </>
           )}
+          <ExternalResults search={external} showArtists={fields.artist} />
         </div>
       )}
     </div>
