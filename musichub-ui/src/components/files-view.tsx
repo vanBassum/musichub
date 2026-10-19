@@ -1,5 +1,5 @@
 import { RefreshCw, Trash2, Upload, X } from "lucide-react"
-import { useRef, useState } from "react"
+import { Fragment, useRef, useState } from "react"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -165,7 +165,8 @@ export function FilesView({
           </TableHeader>
           <TableBody>
             {files?.map((file) => (
-              <TableRow key={file.id}>
+              <Fragment key={file.id}>
+              <TableRow>
                 <TableCell className="truncate pl-4 sm:max-w-80" title={file.originalFilename}>
                   {file.originalFilename}
                   <span className="block truncate text-xs text-muted-foreground sm:hidden">
@@ -205,6 +206,22 @@ export function FilesView({
                   />
                 </TableCell>
               </TableRow>
+              {confirming === file.id && !deletions[file.id]?.pending && (
+                <TableRow className="sm:hidden">
+                  <TableCell colSpan={3} className="px-4 whitespace-normal">
+                    <ConfirmDelete
+                      name={file.originalFilename}
+                      className="flex"
+                      onCancel={() => setConfirming(null)}
+                      onConfirm={() => {
+                        setConfirming(null)
+                        remove(file.id)
+                      }}
+                    />
+                  </TableCell>
+                </TableRow>
+              )}
+              </Fragment>
             ))}
             {files?.length === 0 && (
               <TableRow className="hover:bg-transparent">
@@ -313,6 +330,39 @@ function BulkDeleteResult({
   )
 }
 
+function ConfirmDelete({
+  name,
+  onCancel,
+  onConfirm,
+  className,
+}: {
+  name: string
+  onCancel: () => void
+  onConfirm: () => void
+  className: string
+}) {
+  return (
+    <span
+      role="group"
+      aria-label={`Confirm deleting ${name}`}
+      className={cn("flex-wrap items-center gap-1.5", className)}
+    >
+      <span className="text-xs">Delete the stored file?</span>
+      <Button
+        variant="destructive"
+        size="sm"
+        aria-label={`Confirm delete of ${name}`}
+        onClick={onConfirm}
+      >
+        Delete
+      </Button>
+      <Button variant="outline" size="sm" onClick={onCancel}>
+        Keep
+      </Button>
+    </span>
+  )
+}
+
 // Delete with an inline confirmation. On success the row leaves the list (the list is refreshed); a failure shows here and the row stays.
 function DeleteControl({
   name,
@@ -339,25 +389,14 @@ function DeleteControl({
     )
   }
   if (confirming) {
+    // Below sm the actions column is too narrow: the confirmation shows in a full-width row under the file instead.
     return (
-      <span
-        role="group"
-        aria-label={`Confirm deleting ${name}`}
-        className="flex flex-wrap items-center gap-1.5"
-      >
-        <span className="text-xs">Delete the stored file?</span>
-        <Button
-          variant="destructive"
-          size="sm"
-          aria-label={`Confirm delete of ${name}`}
-          onClick={onConfirm}
-        >
-          Delete
-        </Button>
-        <Button variant="outline" size="sm" onClick={onCancel}>
-          Keep
-        </Button>
-      </span>
+      <ConfirmDelete
+        name={name}
+        onCancel={onCancel}
+        onConfirm={onConfirm}
+        className="hidden sm:flex"
+      />
     )
   }
   return (
