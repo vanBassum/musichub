@@ -194,13 +194,13 @@ export function JobsView({
             Recent executions
           </h2>
           <div className="min-h-0 flex-1 overflow-auto border-t [&_[data-slot=table-container]]:overflow-visible">
-            <Table className="min-w-[32rem] text-sm">
+            <Table className="table-fixed text-sm sm:table-auto">
               <TableHeader className="sticky top-0 z-10 bg-card">
                 <TableRow className="hover:bg-transparent">
                   <TableHead className="pl-4">Started</TableHead>
-                  <TableHead>Duration</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead className="pr-4">Result</TableHead>
+                  <TableHead className="hidden sm:table-cell">Duration</TableHead>
+                  <TableHead className="w-28 pr-4 sm:w-auto sm:pr-2">Status</TableHead>
+                  <TableHead className="hidden pr-4 sm:table-cell">Result</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -221,12 +221,15 @@ export function JobsView({
                         >
                           {when(execution.startedAt ?? execution.createdAt)}
                         </Button>
+                        <p className="mt-0.5 text-xs whitespace-normal text-muted-foreground sm:hidden">
+                          {elapsed(execution)} · {result.main}
+                        </p>
                       </TableCell>
-                      <TableCell>{elapsed(execution)}</TableCell>
-                      <TableCell>
+                      <TableCell className="hidden sm:table-cell">{elapsed(execution)}</TableCell>
+                      <TableCell className="pr-4 sm:pr-2">
                         <StatusBadge execution={execution} />
                       </TableCell>
-                      <TableCell className="max-w-72 pr-4 whitespace-normal">
+                      <TableCell className="hidden max-w-72 pr-4 whitespace-normal sm:table-cell">
                         <p>{result.main}</p>
                         {result.sub && (
                           <p className="text-muted-foreground">{result.sub}</p>
