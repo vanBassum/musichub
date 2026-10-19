@@ -34,7 +34,8 @@ export function useGlobalSearch(input: string, fields: SearchFields) {
     return () => clearTimeout(timer)
   }, [typed])
 
-  const key = `${term}|${fields.title}|${fields.artist}`
+  // `attempt` is part of the key so a retry shows the loading state again.
+  const key = `${term}|${fields.title}|${fields.artist}|${attempt}`
 
   useEffect(() => {
     if (term === "") return

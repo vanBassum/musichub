@@ -131,6 +131,10 @@ export function GlobalSearch({
       {showResults && (
         <div
           id={resultsId}
+          // Safari (macOS, iOS) doesn't focus buttons on click, so a press in the
+          // list would blur the input and close the list before the click lands.
+          // Keeping focus where it is makes selection work with mouse and touch.
+          onMouseDown={(event) => event.preventDefault()}
           className="absolute top-full right-0 left-0 z-50 mt-1 flex max-h-[70dvh] flex-col gap-2 overflow-y-auto rounded-lg border bg-popover p-1 text-popover-foreground shadow-md"
         >
           {search.status === "loading" && (
