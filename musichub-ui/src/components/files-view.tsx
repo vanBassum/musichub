@@ -43,6 +43,10 @@ function fileSize(bytes: number | null) {
   return bytes === null ? "Unknown" : formatBytes(bytes)
 }
 
+function deleteError(state: DeleteState | undefined) {
+  return state && !state.pending ? state.error : null
+}
+
 export function FilesView({
   state,
   className,
@@ -206,18 +210,28 @@ export function FilesView({
                   />
                 </TableCell>
               </TableRow>
-              {confirming === file.id && !deletions[file.id]?.pending && (
+              {(confirming === file.id || deletions[file.id]) && (
                 <TableRow className="sm:hidden">
                   <TableCell colSpan={3} className="px-4 whitespace-normal">
-                    <ConfirmDelete
-                      name={file.originalFilename}
-                      className="flex"
-                      onCancel={() => setConfirming(null)}
-                      onConfirm={() => {
-                        setConfirming(null)
-                        remove(file.id)
-                      }}
-                    />
+                    {deletions[file.id]?.pending ? (
+                      <span role="status" className="text-xs text-muted-foreground">
+                        Deleting…
+                      </span>
+                    ) : confirming === file.id ? (
+                      <ConfirmDelete
+                        name={file.originalFilename}
+                        className="flex"
+                        onCancel={() => setConfirming(null)}
+                        onConfirm={() => {
+                          setConfirming(null)
+                          remove(file.id)
+                        }}
+                      />
+                    ) : (
+                      <span role="alert" className="text-xs text-destructive">
+                        {deleteError(deletions[file.id])}
+                      </span>
+                    )}
                   </TableCell>
                 </TableRow>
               )}
@@ -383,13 +397,13 @@ function DeleteControl({
 }) {
   if (state?.pending) {
     return (
-      <span role="status" className="text-xs text-muted-foreground">
+      <span role="status" className="hidden text-xs text-muted-foreground sm:inline">
         Deleting…
       </span>
     )
   }
   if (confirming) {
-    // Below sm the actions column is too narrow: the confirmation shows in a full-width row under the file instead.
+    // Below sm the actions column is too narrow: the confirmation, the pending state and the error show in a full-width row under the file instead.
     return (
       <ConfirmDelete
         name={name}
@@ -402,7 +416,7 @@ function DeleteControl({
   return (
     <span className="flex items-center gap-2">
       {state && (
-        <span role="alert" className="text-xs text-destructive">
+        <span role="alert" className="hidden text-xs text-destructive sm:inline">
           {state.error}
         </span>
       )}
