@@ -1,3 +1,5 @@
+import type { Availability } from "@/lib/artist"
+
 export interface CatalogArtist {
   artistId: number
   name: string
@@ -12,6 +14,11 @@ export interface CatalogTrack {
   artists: CatalogArtist[]
   // False for Missing Music: no available (Stored) file is linked.
   hasAudio: boolean
+}
+
+// The one place a catalog track's audio becomes an availability.
+export function catalogAvailability(hasAudio: boolean): Availability {
+  return hasAudio ? "available" : "missing"
 }
 
 export interface PagedTracks {

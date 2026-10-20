@@ -20,7 +20,11 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { AddToLibraryButton } from "@/components/add-to-library-button"
 import { AvailabilityBadge } from "@/components/availability-badge"
 import { providerLabel, type ArtistRef } from "@/lib/artist"
-import { addExternalTrackToLibrary, artistNames } from "@/lib/catalog-api"
+import {
+  addExternalTrackToLibrary,
+  artistNames,
+  catalogAvailability,
+} from "@/lib/catalog-api"
 import type { SearchStatus } from "@/lib/use-debounced-search"
 import { useExternalSearch } from "@/lib/use-external-search"
 import { useGlobalSearch } from "@/lib/use-global-search"
@@ -218,7 +222,7 @@ function LocalTrackRow({
       <span className="max-w-[40%] truncate text-muted-foreground">
         {artistNames(track)}
       </span>
-      <AvailabilityBadge availability={track.hasAudio ? "available" : "missing"} />
+      <AvailabilityBadge availability={catalogAvailability(track.hasAudio)} />
     </li>
   )
 }
