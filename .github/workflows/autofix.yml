@@ -1,0 +1,69 @@
+name: Autofix
+# Quoted: an unquoted " #" starts a YAML comment, which would drop the number.
+run-name: "${{ github.event_name == 'push' && 'Autofix: check open PRs after a push to main' || format('Autofix check #{0}', inputs.pr) }}"
+
+# Keeps Claude's PRs moving without Bas restarting them. For a PR of Claude's
+# (a claude/ branch) it starts an Autofix run of claude.yml when the PR conflicts
+# with main, the build fails or a reviewer says FIX, and reruns a review that left
+# no verdict. It stops at a reviewer's STOP (a decision for Bas) and after five
+# Autofix runs per PR; .github/scripts/autofix.sh decides and says why.
+#
+# Started with workflow_dispatch, always from main, by the `autofix` jobs at the end
+# of build.yml and claude-review.yml, and by the push job below after every push to
+# main. Its decisions come from GitHub's own state: check runs and run history.
+
+on:
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: Pull request number
+        required: true
+  push:
+    branches: [main]
+
+permissions: {}
+
+jobs:
+  decide:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: [self-hosted, strato]
+    timeout-minutes: 5
+    # One decision at a time per PR, so two finishing checks can't both start a fix.
+    concurrency:
+      group: autofix-${{ inputs.pr }}
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      pull-requests: read
+      checks: read
+      # Start claude.yml and rerun a review.
+      actions: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Decide and act
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ inputs.pr }}
+        run: bash .github/scripts/autofix.sh "$PR"
+
+  # A push to main can make an open PR conflict with it, and a conflicting PR gets
+  # no checks, so nothing else would notice.
+  after-main:
+    if: github.event_name == 'push'
+    runs-on: [self-hosted, strato]
+    timeout-minutes: 5
+    permissions:
+      pull-requests: read
+      actions: write
+    steps:
+      - name: Check every open PR of Claude's
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh pr list -R "$GITHUB_REPOSITORY" --state open --limit 100 --json number,headRefName \
+            --jq '.[] | select(.headRefName | startswith("claude/")) | .number' |
+          while read -r pr; do
+            gh workflow run autofix.yml -R "$GITHUB_REPOSITORY" --ref main -f pr="$pr"
+          done

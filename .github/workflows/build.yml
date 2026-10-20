@@ -25,10 +25,10 @@ env:
   IMAGE: ghcr.io/vanbassum/musichub
 
 jobs:
-  # The reviewers' verdict check (against a fake gh), the sandbox (against a stub
-  # docker), the Claude action settings in the workflows, and the Claude guard in
-  # .claude/hooks/. They run only scripts under .github/ and .claude/, which Bas
-  # reviews by hand, so they run on the runner.
+  # The reviewers' verdict check and the autofix controller (against a fake gh),
+  # the sandbox (against a stub docker), the Claude action settings in the
+  # workflows, and the Claude guard in .claude/hooks/. They run only scripts under
+  # .github/ and .claude/, which Bas reviews by hand, so they run on the runner.
   guard-tests:
     runs-on: [self-hosted, strato]
     timeout-minutes: 15
@@ -39,6 +39,7 @@ jobs:
         with:
           node-version: '22'
       - run: bash .github/scripts/review-verdict.test.sh
+      - run: bash .github/scripts/autofix.test.sh
       - run: bash .github/scripts/workflows.test.sh
       - run: bash .github/scripts/sandbox.test.sh
       - run: node .claude/hooks/guard.test.js
@@ -72,6 +73,22 @@ jobs:
     timeout-minutes: 5
     steps:
       - run: echo "guard-tests and test passed."
+
+  # A PR of Claude's: the autofix controller (autofix.yml) decides what's next now
+  # that the build is done, also when it failed.
+  autofix:
+    name: Start autofix
+    needs: build
+    if: always() && github.event_name == 'pull_request' && startsWith(github.head_ref, 'claude/')
+    runs-on: [self-hosted, strato]
+    timeout-minutes: 5
+    permissions:
+      actions: write
+    steps:
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+        run: gh workflow run autofix.yml -R "$GITHUB_REPOSITORY" --ref main -f pr="$PR"
 
   # The image, built and published only for main.
   image:

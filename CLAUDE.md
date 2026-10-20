@@ -50,11 +50,14 @@ something through).
      musichub-understanding; does it compose existing capabilities instead of
      building beside them; security) and **smells** (code smells in the new code,
      from the refactoring.guru catalog). They post inline comments plus one summary
-     comment each, ending in a `<!-- claude-review: <reviewer> sha=<SHA> blocking=<N> -->`
-     verdict for the exact head commit. A reviewer's job is green only when it
-     passed that commit with `blocking=0`: red means a blocking finding (read its
-     comment) or no valid verdict (rerun the job). Blocking findings are `[bug]`,
-     `[risk]` and `[smell]`; `[convention]` findings don't block.
+     comment each, titled PASS, FIX or STOP, ending in a
+     `<!-- claude-review: <reviewer> sha=<SHA> blocking=<N> -->` verdict for the
+     exact head commit. A reviewer's job is green only when it passed that commit
+     with `blocking=0`: red means a blocking finding (read its comment) or no valid
+     verdict (rerun the job). Blocking findings are `[bug]`, `[risk]` and `[smell]`;
+     `[convention]` findings don't block. The job also publishes the verdict as the
+     check run `verdict · <reviewer>`: PASS, FIX (a code change fixes it) or STOP (a
+     decision for Bas), with the blocking findings.
 4. The reviewers run by themselves when a PR is opened, reopened or marked ready for
    review, and again on every push. A newer push cancels the run in progress. The
    workflow runs on `pull_request_target`: the workflow and the reviewer rules
@@ -99,7 +102,18 @@ the self-hosted runner. Claude follows `.github/autopilot.md`.
   do that.
 - **`@claude` in a comment** on an issue or a PR: Claude does what the comment asks.
   On a PR it pushes to the PR's branch, for example after "@claude fix the review
-  findings". Fix rounds start this way, by a person.
+  findings".
+- **Autofix** (`.github/workflows/autofix.yml`): Claude's own PRs (`claude/…`
+  branches) are fixed without a person. When the build and the reviewers are done,
+  or after a push to `main`, the controller (`.github/scripts/autofix.sh`) reads
+  the PR's check runs. On a conflict with `main`, a failed build or a reviewer's
+  FIX it starts an Autofix run of `claude.yml` for that head commit; a review that
+  left no verdict is rerun (at most three attempts). It stops at a reviewer's STOP,
+  which is a decision for Bas, and after five Autofix runs per PR, counted from the
+  Actions run history ("Autofix #<PR>"). Each Autofix run reports in one PR comment
+  (`AUTOFIX · …`), for people only. PRs that touch `.github/`, `.claude/` or
+  `.githooks/`, drafts and other people's PRs are left alone. An `@claude` comment
+  still works and doesn't count.
 - Its PR gets the same build check and four reviewers as any other.
 - It authenticates as the Claude GitHub App (OIDC, a short-lived token for this
   repository), so its pushes and merges start the build and the reviewers. Only
