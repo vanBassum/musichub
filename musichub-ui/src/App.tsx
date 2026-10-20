@@ -12,6 +12,7 @@ import {
   syncSearchHash,
 } from "@/components/mobile-pages"
 import { PlayerPanel } from "@/components/player-panel"
+import { ProblemsView } from "@/components/problems-view"
 import { SearchPage } from "@/components/search-page"
 import { TrackDetailsSheet } from "@/components/track-details-sheet"
 import { TrackTable } from "@/components/track-table"
@@ -22,6 +23,7 @@ import { useTracks } from "@/lib/use-catalog"
 import { useFiles } from "@/lib/use-files"
 import { useJobs } from "@/lib/use-jobs"
 import { useIsDesktop } from "@/lib/use-media-query"
+import { useProblems } from "@/lib/use-problems"
 
 const searchDelayMs = 300
 
@@ -46,6 +48,7 @@ export function App() {
   // Held here so uploads survive navigation and the desktop/mobile layout swap.
   const filesState = useFiles()
   const jobsState = useJobs()
+  const problemsState = useProblems()
 
   useEffect(() => {
     const term = searchInput.trim()
@@ -69,6 +72,11 @@ export function App() {
   const openArtist =(artist: ArtistRef) => {
     setArtistRef(artist)
     setView("artists")
+  }
+
+  const openExecution = (executionId: string) => {
+    jobsState.select(executionId)
+    setView("jobs")
   }
 
   const changeAudio =(value: AudioFilter) => {
@@ -121,6 +129,7 @@ export function App() {
           nowPlayingId={mockNowPlayingId}
           filesState={filesState}
           jobsState={jobsState}
+          problemsState={problemsState}
           artistRef={artistRef}
           searchQuery={searchQuery}
           onSearchQueryChange={setSearchQuery}
@@ -157,6 +166,12 @@ export function App() {
             <FilesView state={filesState} className="min-h-0" />
           ) : view === "jobs" ? (
             <JobsView state={jobsState} className="min-h-0" />
+          ) : view === "problems" ? (
+            <ProblemsView
+              state={problemsState}
+              onOpenExecution={openExecution}
+              className="min-h-0"
+            />
           ) : (
             <ArtistPage artistRef={artistRef} className="min-h-0" />
           )}

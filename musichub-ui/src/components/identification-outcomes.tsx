@@ -14,7 +14,7 @@ import type {
 } from "@/lib/jobs-api"
 import { useOutcomes } from "@/lib/use-outcomes"
 
-const decisionLabels: Record<IdentificationDecision, string> = {
+export const decisionLabels: Record<IdentificationDecision, string> = {
   Identified: "Linked",
   NoMatch: "No match",
   InsufficientEvidence: "Not enough evidence",
@@ -24,7 +24,7 @@ const decisionLabels: Record<IdentificationDecision, string> = {
   Error: "Error",
 }
 
-const decisionClassNames: Record<IdentificationDecision, string> = {
+export const decisionClassNames: Record<IdentificationDecision, string> = {
   Identified: "bg-success text-success-foreground",
   NoMatch: "bg-muted text-muted-foreground",
   InsufficientEvidence: "bg-warning text-warning-foreground",

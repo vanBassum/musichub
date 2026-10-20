@@ -89,6 +89,19 @@ public sealed class CatalogReconciliationJobService(JobEngine engine)
             .ToList();
     }
 
+    /// <summary>The newest executions that ended Failed, newest first.</summary>
+    public async Task<IReadOnlyList<JobExecutionDetails>> FailedAsync(int count, CancellationToken cancellationToken)
+    {
+        var monitor = (await engine.StorageAsync(cancellationToken)).GetMonitoringApi();
+        return Ids(monitor.FailedJobs(0, PerState), j => j.Job)
+            .OrderByDescending(IdOrder)
+            .Take(count)
+            .Select(id => (Id: id, Details: monitor.JobDetails(id)))
+            .Where(job => job.Details is not null)
+            .Select(job => ToDetails(job.Id, job.Details!))
+            .ToList();
+    }
+
     public async Task<JobExecutionDetails?> GetAsync(string id, CancellationToken cancellationToken)
     {
         var details = (await engine.StorageAsync(cancellationToken)).GetMonitoringApi().JobDetails(id);

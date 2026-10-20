@@ -90,7 +90,7 @@ async function problemDetail(response: Response) {
   }
 }
 
-async function getJson<T>(url: string, what: string, signal?: AbortSignal) {
+export async function getJson<T>(url: string, what: string, signal?: AbortSignal) {
   const response = await fetch(url, { signal })
   if (!response.ok) {
     throw new Error(
