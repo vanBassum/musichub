@@ -27,7 +27,6 @@ export type PlaybackStatus =
 // (no catalog metadata, so its original filename is the title) or as the audio of a catalog
 // track. `id` is the Stored file's id in both cases, so one file is one loaded source.
 export interface PlayerSource {
-  kind: "file" | "track"
   id: string
   title: string
   // The artists of a catalog track; null for a file.
@@ -39,6 +38,20 @@ export type PlayableTrack = CatalogTrack & { audioFileId: number }
 
 export function isPlayable(track: CatalogTrack): track is PlayableTrack {
   return track.audioFileId !== null
+}
+
+// Whether a Stored file is the one loaded (and not failed), and whether audio is meant to
+// be heard: the one owner of both decisions for every play button and player.
+export function isLoaded(
+  source: PlayerSource | null,
+  status: PlaybackStatus,
+  fileId: string
+) {
+  return source?.id === fileId && status !== "error"
+}
+
+export function isAudible(status: PlaybackStatus) {
+  return status === "playing" || status === "loading"
 }
 
 export interface PlayerState {
@@ -126,7 +139,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   // The one place a Stored file is loaded, whoever asks: Files or a catalog track.
   const play = useCallback(
     (next: PlayerSource) => {
-      if (source?.id === next.id && status !== "error") {
+      if (isLoaded(source, status, next.id)) {
         if (status === "ended") audio.currentTime = 0
         start()
         return
@@ -145,7 +158,6 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   const playFile = useCallback(
     (file: { id: string; originalFilename: string }) =>
       play({
-        kind: "file",
         id: file.id,
         title: file.originalFilename,
         subtitle: null,
@@ -156,7 +168,6 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   const playTrack = useCallback(
     (track: PlayableTrack) =>
       play({
-        kind: "track",
         id: String(track.audioFileId),
         title: trackTitle(track),
         subtitle: artistNames(track) || null,

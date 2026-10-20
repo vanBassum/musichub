@@ -16,7 +16,7 @@ import { Button } from "@/components/ui/button"
 import { Slider } from "@/components/ui/slider"
 import type { Track } from "@/data/mock-tracks"
 import { formatDuration } from "@/lib/format"
-import { usePlayer, type PlaybackStatus } from "@/lib/use-player"
+import { isAudible, usePlayer, type PlaybackStatus } from "@/lib/use-player"
 import { cn } from "@/lib/utils"
 
 interface PlayerPanelProps {
@@ -58,7 +58,7 @@ export function NowPlaying({ large = false }: NowPlayingProps) {
   }
 
   const failed = status === "error"
-  const playing = status === "playing" || status === "loading"
+  const playing = isAudible(status)
   const shown = scrub ?? currentTime
 
   return (
