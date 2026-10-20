@@ -54,6 +54,9 @@ public enum AcquisitionFailure
 
     /// <summary>The provider reports it finished, but MusicHub cannot read the file.</summary>
     FileNotAccessible,
+
+    /// <summary>The file arrived, but MusicHub failed while processing it (hashing, identifying, importing).</summary>
+    ProcessingFailed,
 }
 
 /// <summary>A downloaded file, readable by MusicHub. The provider keeps ownership of the underlying storage.</summary>

@@ -82,15 +82,12 @@ public class JobsController(JobService jobs, MusicHubDbContext db, IServiceProvi
         if (await jobs.GetAsync(id, cancellationToken) is null)
             return NotFound();
 
-        var rows = await db.DownloadHistories.AsNoTracking()
+        var rows = await db.AcquisitionDownloads.AsNoTracking()
+            .Include(d => d.IntendedTrack)
             .Where(d => d.JobExecutionId == id)
             .OrderBy(d => d.Id)
-            .Select(d => new DownloadItem(
-                d.Id, d.TrackId, d.Track != null ? d.Track.Title : null, d.Provider, d.Source, d.SourcePath, d.SizeBytes,
-                d.BitrateKbps, d.Status, d.Reason, d.FileSha256, d.AudioSha256, d.AudioHashAlgorithm, d.FileId,
-                d.StartedAt, d.FinishedAt))
             .ToListAsync(cancellationToken);
-        return Ok(rows);
+        return Ok(rows.Select(DownloadItem.From));
     }
 
     /// <summary>Enqueues a catalog reconciliation run: 202 with the new execution. 409 while a run is already active.</summary>
@@ -147,7 +144,13 @@ public class JobsController(JobService jobs, MusicHubDbContext db, IServiceProvi
     public sealed record DownloadItem(
         int Id, int? TrackId, string? TrackTitle, string Provider, string Source, string SourcePath, long SizeBytes,
         int? BitrateKbps, DownloadStatus Status, string Reason, string? FileSha256, string? AudioSha256,
-        string? AudioHashAlgorithm, int? FileId, DateTimeOffset StartedAt, DateTimeOffset? FinishedAt);
+        string? AudioHashAlgorithm, int? FileId, DateTimeOffset StartedAt, DateTimeOffset? FinishedAt)
+    {
+        public static DownloadItem From(AcquisitionDownload d) => new(
+            d.Id, d.IntendedTrackId, d.IntendedTrack?.Title, d.Provider, d.Source, d.RemotePath, d.SizeBytes ?? 0,
+            d.BitrateKbps, d.Status, d.Reason ?? "", d.ContentHash, d.AudioSha256, d.AudioHashAlgorithm, d.FileId,
+            d.StartedAt, d.FinishedAt);
+    }
 
     public sealed record JobInfo(string Id, string Name, string Description, string? ActiveExecutionId);
 }

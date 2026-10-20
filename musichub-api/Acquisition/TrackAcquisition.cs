@@ -30,7 +30,7 @@ public enum TrackAcquisitionOutcome
     Failed,
 }
 
-/// <summary>What a run did for one track. <paramref name="DownloadId"/> is the <see cref="DownloadHistory"/> of the import, when there was one.</summary>
+/// <summary>What a run did for one track. <paramref name="DownloadId"/> is the <see cref="AcquisitionDownload"/> of the import, when there was one.</summary>
 public sealed record TrackAcquisitionResult(
     int TrackId, string Title, string Artists, TrackAcquisitionOutcome Outcome, string Detail, int? DownloadId = null);
 
@@ -38,12 +38,13 @@ public sealed record TrackAcquisitionResult(
 /// Acquires one missing track: searches, tries the best-ranked candidates one at a time, and imports the first that is
 /// identified as the wanted recording. A downloaded file is judged only by identification, never by what its source
 /// claimed; one that is not accepted stays outside the library (in the provider's download area) and is recorded as
-/// rejected, so it is not downloaded again. Every attempted download is a <see cref="DownloadHistory"/> with the hashes
-/// of its bytes, and every identification of it is a permanent <see cref="IdentificationOutcome"/>. Nothing existing in
-/// the library is changed: an import adds one file and links it to the track.
+/// rejected, so it is not downloaded again. Every attempted download is recorded through <see cref="AcquisitionHistory"/>
+/// with the hashes of its bytes, and every identification of it is a permanent <see cref="IdentificationOutcome"/>.
+/// Nothing existing in the library is changed: an import adds one file and links it to the track.
 /// </summary>
 public sealed class TrackAcquisition(
     MusicHubDbContext db,
+    AcquisitionHistory history,
     IAcquisitionProvider provider,
     IRecordingIdentifier identifier,
     AcquisitionHandoff handoff,
@@ -77,18 +78,22 @@ public sealed class TrackAcquisition(
         }
 
         var plausible = CandidateRanking.Rank(wanted, offered);
-        var known = await RejectedOrImportedAsync(trackId, cancellationToken);
-        var fresh = plausible.Where(c => !known.Contains((c.Provider, c.Source, c.Path))).ToList();
+        // A candidate rejected before is not downloaded again. A failed or cancelled transfer judged nothing, so it may be
+        // tried again.
+        var fresh = new List<AcquisitionCandidate>();
+        foreach (var candidate in plausible)
+            if (!await history.WasRejectedAsync(candidate, cancellationToken))
+                fresh.Add(candidate);
         if (fresh.Count == 0)
             return Result(TrackAcquisitionOutcome.NothingFound,
-                $"{offered.Count} results, {plausible.Count} plausible MP3s, {plausible.Count - fresh.Count} of them rejected or imported earlier.");
+                $"{offered.Count} results, {plausible.Count} plausible MP3s, {plausible.Count - fresh.Count} of them rejected earlier.");
 
-        var tried = new List<DownloadHistory>();
+        var tried = new List<AcquisitionDownload>();
         foreach (var candidate in fresh.Take(options.Value.MaxDownloadsPerTrack))
         {
             var download = await TryAsync(track, wanted, candidate, executionId, cancellationToken);
             if (download.Status == DownloadStatus.Imported)
-                return Result(TrackAcquisitionOutcome.Imported, download.Reason, download.Id);
+                return Result(TrackAcquisitionOutcome.Imported, download.Reason ?? "", download.Id);
             tried.Add(download);
         }
 
@@ -99,54 +104,30 @@ public sealed class TrackAcquisition(
     private Task<bool> HasStoredAudioAsync(int trackId, CancellationToken cancellationToken) =>
         db.Files.AnyAsync(f => f.TrackId == trackId && f.Status == FileStatus.Stored, cancellationToken);
 
-    // A candidate that was rejected for this track, or already imported for it, is not downloaded again. A failed or
-    // cancelled transfer judged nothing, so it may be tried again.
-    private async Task<HashSet<(string Provider, string Source, string Path)>> RejectedOrImportedAsync(
-        int trackId, CancellationToken cancellationToken)
-    {
-        var rows = await db.DownloadHistories.AsNoTracking()
-            .Where(d => d.TrackId == trackId && (d.Status == DownloadStatus.Rejected || d.Status == DownloadStatus.Imported))
-            .Select(d => new { d.Provider, d.Source, d.SourcePath })
-            .ToListAsync(cancellationToken);
-        return rows.Select(d => (d.Provider, d.Source, d.SourcePath)).ToHashSet();
-    }
-
-    private async Task<DownloadHistory> TryAsync(
+    private async Task<AcquisitionDownload> TryAsync(
         Track track, WantedRecording wanted, AcquisitionCandidate candidate, string executionId, CancellationToken cancellationToken)
     {
-        var download = new DownloadHistory
-        {
-            TrackId = track.Id,
-            Provider = candidate.Provider,
-            Source = Cut(candidate.Source, DownloadHistory.SourceMaxLength),
-            SourcePath = Cut(candidate.Path, DownloadHistory.PathMaxLength),
-            SizeBytes = candidate.SizeBytes,
-            BitrateKbps = candidate.BitrateKbps,
-            Status = DownloadStatus.Downloading,
-            JobExecutionId = executionId,
-            StartedAt = time.GetUtcNow(),
-        };
-        db.DownloadHistories.Add(download);
-        await db.SaveChangesAsync(cancellationToken);
+        var download = await history.BeginAsync(candidate, track.Id, cancellationToken, executionId);
 
         try
         {
             var outcome = await provider.DownloadAsync(candidate, cancellationToken);
             if (outcome.File is null)
-                await FinishAsync(download, DownloadStatus.Failed, $"{outcome.Failure}: {outcome.Detail}", cancellationToken);
+                await history.FailedAsync(download, outcome.Failure ?? AcquisitionFailure.TransferFailed, outcome.Detail ?? "", cancellationToken);
             else
                 await EvaluateAsync(track, wanted, download, outcome, cancellationToken);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
-            await FinishAsync(download, DownloadStatus.Cancelled, "The run was cancelled; the candidate may be tried again.", CancellationToken.None);
+            await history.CancelledAsync(download, "The run was cancelled; the candidate may be tried again.", CancellationToken.None);
             throw;
         }
         catch (Exception ex)
         {
             logger.LogError(ex, "Acquiring {Path} for track {TrackId} failed.", candidate.Path, track.Id);
             // Only the exception type: the message may carry paths or storage details.
-            await FinishAsync(download, DownloadStatus.Failed, $"Processing failed ({ex.GetType().Name}); the candidate may be tried again.", CancellationToken.None);
+            await history.FailedAsync(download, AcquisitionFailure.ProcessingFailed,
+                $"Processing failed ({ex.GetType().Name}); the candidate may be tried again.", CancellationToken.None);
         }
         return download;
     }
@@ -154,7 +135,7 @@ public sealed class TrackAcquisition(
     // The downloaded bytes: hash them (kept whatever follows), then identify them, and import only an identification
     // that is the wanted recording.
     private async Task EvaluateAsync(
-        Track track, WantedRecording wanted, DownloadHistory download, AcquisitionDownloadOutcome outcome, CancellationToken cancellationToken)
+        Track track, WantedRecording wanted, AcquisitionDownload download, AcquisitionDownloadOutcome outcome, CancellationToken cancellationToken)
     {
         var file = outcome.File!;
         FileHashes hashes;
@@ -165,27 +146,17 @@ public sealed class TrackAcquisition(
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or NotSupportedException)
         {
-            await FinishAsync(download, DownloadStatus.Failed,
+            await history.FailedAsync(download, AcquisitionFailure.FileNotAccessible,
                 $"The downloaded file could not be read ({ex.GetType().Name}).", cancellationToken);
             return;
         }
 
-        download.FileSha256 = hashes.FileSha256;
-        download.AudioSha256 = hashes.AudioSha256;
-        download.AudioHashAlgorithm = hashes.AudioHashAlgorithm;
-        await db.SaveChangesAsync(cancellationToken);
+        await history.DownloadedAsync(download, hashes, cancellationToken);
 
-        // The same bytes were rejected for this track before: nothing new to find out. Equal bytes say nothing about
-        // any other track, so only a rejection for this one counts.
-        var earlier = await db.DownloadHistories.AsNoTracking()
-            .Where(d => d.Id != download.Id && d.TrackId == track.Id && d.Status == DownloadStatus.Rejected
-                        && d.FileSha256 == hashes.FileSha256)
-            .OrderBy(d => d.Id)
-            .FirstOrDefaultAsync(cancellationToken);
-        if (earlier is not null)
+        // The same bytes were rejected for this track before: nothing new to find out.
+        if (await history.WasContentRejectedAsync(hashes.FileSha256, cancellationToken, track.Id))
         {
-            await FinishAsync(download, DownloadStatus.Rejected,
-                $"The same bytes were already rejected (download #{earlier.Id}: {earlier.Reason})", cancellationToken);
+            await history.RejectedAsync(download, "The same bytes were already rejected.", cancellationToken);
             return;
         }
 
@@ -218,7 +189,7 @@ public sealed class TrackAcquisition(
     }
 
     private async Task ImportAsync(
-        Track track, DownloadHistory download, AcquisitionDownloadOutcome outcome, FileHashes hashes,
+        Track track, AcquisitionDownload download, AcquisitionDownloadOutcome outcome, FileHashes hashes,
         IReadOnlyList<IdentificationMethodResult> methods, string reason, CancellationToken cancellationToken)
     {
         FileRecord stored;
@@ -231,7 +202,7 @@ public sealed class TrackAcquisition(
             // The identification said yes, but the bytes did not reach the library intact: nothing was imported.
             var failure = $"Import failed ({ex.GetType().Name}); nothing was added to the library.";
             AddAttempt(download, outcome.File!.FileName, IdentificationDecision.Error, methods, failure, null);
-            await FinishAsync(download, DownloadStatus.Failed, failure, cancellationToken);
+            await history.FailedAsync(download, AcquisitionFailure.ProcessingFailed, failure, cancellationToken);
             return;
         }
 
@@ -251,9 +222,7 @@ public sealed class TrackAcquisition(
                 Attempt = attempt,
                 AppliedAt = attempt.RecordedAt,
             });
-            Finish(download, DownloadStatus.Imported, $"{reason} Imported as file #{stored.Id}.");
-            download.File = stored;
-            await db.SaveChangesAsync(cancellationToken);
+            await history.AcceptedAsync(download, stored.Id, $"{reason} Imported as file #{stored.Id}.", cancellationToken);
             await transaction.CommitAsync(cancellationToken);
         }
         finally
@@ -264,21 +233,21 @@ public sealed class TrackAcquisition(
     }
 
     private Task RejectAsync(
-        DownloadHistory download, string fileName, IdentificationDecision decision,
+        AcquisitionDownload download, string fileName, IdentificationDecision decision,
         IReadOnlyList<IdentificationMethodResult> methods, string reason, CancellationToken cancellationToken)
     {
         AddAttempt(download, fileName, decision, methods, reason, null);
-        return FinishAsync(download, DownloadStatus.Rejected, reason, cancellationToken);
+        return history.RejectedAsync(download, reason, cancellationToken);
     }
 
     // Adds the attempt to the context; the caller saves it together with what else belongs to it.
     private IdentificationOutcome AddAttempt(
-        DownloadHistory download, string fileName, IdentificationDecision decision,
+        AcquisitionDownload download, string fileName, IdentificationDecision decision,
         IReadOnlyList<IdentificationMethodResult> methods, string reason, int? trackId)
     {
         var attempt = new IdentificationOutcome
         {
-            JobExecutionId = download.JobExecutionId,
+            JobExecutionId = download.JobExecutionId ?? "",
             Download = download,
             FileName = IdentificationOutcome.Truncate(fileName, IdentificationOutcome.FileNameMaxLength),
             Decision = decision,
@@ -292,18 +261,4 @@ public sealed class TrackAcquisition(
         return attempt;
     }
 
-    private void Finish(DownloadHistory download, DownloadStatus status, string reason)
-    {
-        download.Status = status;
-        download.Reason = Cut(reason, DownloadHistory.ReasonMaxLength);
-        download.FinishedAt = time.GetUtcNow();
-    }
-
-    private Task FinishAsync(DownloadHistory download, DownloadStatus status, string reason, CancellationToken cancellationToken)
-    {
-        Finish(download, status, reason);
-        return db.SaveChangesAsync(cancellationToken);
-    }
-
-    private static string Cut(string value, int maxLength) => IdentificationOutcome.Truncate(value, maxLength);
 }

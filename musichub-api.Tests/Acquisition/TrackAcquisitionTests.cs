@@ -100,7 +100,7 @@ public sealed class TrackAcquisitionTests : IDisposable
     {
         using var db = CreateDb();
         var acquisition = new TrackAcquisition(
-            db, _provider, new ByNameIdentifier(_identities, _identified),
+            db, new AcquisitionHistory(db, TimeProvider.System), _provider, new ByNameIdentifier(_identities, _identified),
             new AcquisitionHandoff(new FileIngestionService(db, _storage, new ActiveUploadTracker())),
             Options.Create(new MissingMusicOptions { MaxDownloadsPerTrack = 3 }), TimeProvider.System,
             NullLogger<TrackAcquisition>.Instance);
@@ -122,13 +122,13 @@ public sealed class TrackAcquisitionTests : IDisposable
         Assert.Equal(trackId, file.TrackId);
         Assert.Equal(FileStatus.Stored, file.Status);
         Assert.Equal("acquisition:slskd", file.Source);
-        var download = await db.DownloadHistories.SingleAsync();
+        var download = await db.AcquisitionDownloads.SingleAsync();
         Assert.Equal(DownloadStatus.Imported, download.Status);
         Assert.Equal(file.Id, download.FileId);
-        Assert.Equal(file.ContentHash, download.FileSha256);
+        Assert.Equal(file.ContentHash, download.ContentHash);
         Assert.Equal(AudioHashing.Mp3PayloadAlgorithm, download.AudioHashAlgorithm);
         Assert.NotNull(download.AudioSha256);
-        Assert.Equal(("slskd", "peer", @"Oasis\Wonderwall.mp3"), (download.Provider, download.Source, download.SourcePath));
+        Assert.Equal(("slskd", "peer", @"Oasis\Wonderwall.mp3"), (download.Provider, download.Source, download.RemotePath));
         Assert.Equal("7", download.JobExecutionId);
 
         var attempt = await db.IdentificationOutcomes.SingleAsync();
@@ -156,9 +156,9 @@ public sealed class TrackAcquisitionTests : IDisposable
         Assert.Single(_provider.Downloaded);
         using var db = CreateDb();
         Assert.Empty(await db.Files.ToListAsync());
-        var download = await db.DownloadHistories.SingleAsync();
+        var download = await db.AcquisitionDownloads.SingleAsync();
         Assert.Equal(DownloadStatus.Rejected, download.Status);
-        Assert.NotNull(download.FileSha256);
+        Assert.NotNull(download.ContentHash);
         Assert.Contains("Mike Flowers Pops", download.Reason);
         var attempt = await db.IdentificationOutcomes.SingleAsync();
         Assert.Equal(IdentificationDecision.Mismatch, attempt.Decision);
@@ -191,8 +191,8 @@ public sealed class TrackAcquisitionTests : IDisposable
 
         Assert.Equal(TrackAcquisitionOutcome.Imported, result.Outcome);
         using var db = CreateDb();
-        Assert.Equal([DownloadStatus.Rejected, DownloadStatus.Imported], (await db.DownloadHistories.OrderBy(d => d.Id).ToListAsync()).Select(d => d.Status));
-        Assert.Equal(128, (await db.DownloadHistories.SingleAsync(d => d.Status == DownloadStatus.Imported)).BitrateKbps);
+        Assert.Equal([DownloadStatus.Rejected, DownloadStatus.Imported], (await db.AcquisitionDownloads.OrderBy(d => d.Id).ToListAsync()).Select(d => d.Status));
+        Assert.Equal(128, (await db.AcquisitionDownloads.SingleAsync(d => d.Outcome == AcquisitionOutcome.Accepted)).BitrateKbps);
     }
 
     [Fact]
@@ -208,10 +208,10 @@ public sealed class TrackAcquisitionTests : IDisposable
         Assert.Equal(TrackAcquisitionOutcome.NoAcceptableCandidate, result.Outcome);
         Assert.Single(_identified);
         using var db = CreateDb();
-        var second = await db.DownloadHistories.OrderBy(d => d.Id).LastAsync();
+        var second = await db.AcquisitionDownloads.OrderBy(d => d.Id).LastAsync();
         Assert.Equal(DownloadStatus.Rejected, second.Status);
         Assert.Contains("already rejected", second.Reason);
-        Assert.NotNull(second.FileSha256);
+        Assert.NotNull(second.ContentHash);
     }
 
     [Fact]
@@ -230,8 +230,8 @@ public sealed class TrackAcquisitionTests : IDisposable
         Assert.Equal(TrackAcquisitionOutcome.NoAcceptableCandidate, first.Outcome);
         Assert.Equal(TrackAcquisitionOutcome.Imported, second.Outcome);
         using var db = CreateDb();
-        Assert.Equal([DownloadStatus.Failed, DownloadStatus.Imported], (await db.DownloadHistories.OrderBy(d => d.Id).ToListAsync()).Select(d => d.Status));
-        Assert.Contains("peer went away", (await db.DownloadHistories.OrderBy(d => d.Id).FirstAsync()).Reason);
+        Assert.Equal([DownloadStatus.Failed, DownloadStatus.Imported], (await db.AcquisitionDownloads.OrderBy(d => d.Id).ToListAsync()).Select(d => d.Status));
+        Assert.Contains("peer went away", (await db.AcquisitionDownloads.OrderBy(d => d.Id).FirstAsync()).Reason);
     }
 
     [Fact]
@@ -261,7 +261,7 @@ public sealed class TrackAcquisitionTests : IDisposable
         Assert.Equal(TrackAcquisitionOutcome.ProviderUnavailable, down.Outcome);
         Assert.Empty(_provider.Downloaded);
         using var db = CreateDb();
-        Assert.Empty(await db.DownloadHistories.ToListAsync());
+        Assert.Empty(await db.AcquisitionDownloads.ToListAsync());
     }
 
     [Fact]
@@ -297,14 +297,14 @@ public sealed class TrackAcquisitionTests : IDisposable
         using (var db = CreateDb())
         {
             var acquisition = new TrackAcquisition(
-                db, _provider, new ByNameIdentifier(_identities, _identified),
+                db, new AcquisitionHistory(db, TimeProvider.System), _provider, new ByNameIdentifier(_identities, _identified),
                 new AcquisitionHandoff(new FileIngestionService(db, _storage, new ActiveUploadTracker())),
                 Options.Create(new MissingMusicOptions()), TimeProvider.System, NullLogger<TrackAcquisition>.Instance);
             await Assert.ThrowsAnyAsync<OperationCanceledException>(() => acquisition.RunAsync(trackId, "1", cts.Token));
         }
 
         using var read = CreateDb();
-        Assert.Equal(DownloadStatus.Cancelled, (await read.DownloadHistories.SingleAsync()).Status);
+        Assert.Equal(DownloadStatus.Cancelled, (await read.AcquisitionDownloads.SingleAsync()).Status);
         Assert.Empty(await read.Files.ToListAsync());
     }
 
@@ -327,6 +327,7 @@ public sealed class TrackAcquisitionTests : IDisposable
         services.Configure<MissingMusicOptions>(o => o.MaxConcurrentTracks = 2);
         services.AddScoped<FileIngestionService>();
         services.AddScoped<AcquisitionHandoff>();
+        services.AddScoped<AcquisitionHistory>();
         services.AddScoped<TrackAcquisition>();
         services.AddScoped<MissingMusicAcquisition>();
         await using var provider = services.BuildServiceProvider();

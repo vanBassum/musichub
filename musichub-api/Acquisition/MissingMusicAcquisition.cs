@@ -8,7 +8,7 @@ namespace MusicHub.Api.Acquisition;
 
 /// <summary>
 /// What one run did. <paramref name="Tracks"/> is each track's result (at most <see cref="MissingMusicAcquisition.MaxListed"/>,
-/// the counts always cover all of them); the downloads of the run are the permanent <see cref="DownloadHistory"/> rows.
+/// the counts always cover all of them); the downloads of the run are the permanent <see cref="AcquisitionDownload"/> rows.
 /// </summary>
 public sealed record MissingMusicSummary(
     int Examined, int Imported, int NothingFound, int NoAcceptableCandidate, int ProviderUnavailable, int Skipped, int Failed,

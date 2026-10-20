@@ -12,8 +12,8 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace MusicHub.Api.Migrations
 {
     [DbContext(typeof(MusicHubDbContext))]
-    [Migration("20261020134527_AddDownloadHistory")]
-    partial class AddDownloadHistory
+    [Migration("20261020135803_AcquisitionDownloadsForMissingMusic")]
+    partial class AcquisitionDownloadsForMissingMusic
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -25,7 +25,7 @@ namespace MusicHub.Api.Migrations
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
-            modelBuilder.Entity("MusicHub.Api.Acquisition.DownloadHistory", b =>
+            modelBuilder.Entity("MusicHub.Api.Acquisition.AcquisitionDownload", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -44,32 +44,50 @@ namespace MusicHub.Api.Migrations
                     b.Property<int?>("BitrateKbps")
                         .HasColumnType("integer");
 
-                    b.Property<int?>("FileId")
-                        .HasColumnType("integer");
-
-                    b.Property<string>("FileSha256")
+                    b.Property<string>("ContentHash")
                         .HasMaxLength(64)
                         .HasColumnType("character varying(64)");
+
+                    b.Property<DateTimeOffset?>("DecidedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Failure")
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)");
+
+                    b.Property<int?>("FileId")
+                        .HasColumnType("integer");
 
                     b.Property<DateTimeOffset?>("FinishedAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<int?>("IntendedTrackId")
+                        .HasColumnType("integer");
+
                     b.Property<string>("JobExecutionId")
-                        .IsRequired()
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)");
+
+                    b.Property<string>("Outcome")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
 
                     b.Property<string>("Provider")
                         .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)");
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
 
                     b.Property<string>("Reason")
-                        .IsRequired()
-                        .HasMaxLength(2000)
-                        .HasColumnType("character varying(2000)");
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
 
-                    b.Property<long>("SizeBytes")
+                    b.Property<string>("RemotePath")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.Property<long?>("SizeBytes")
                         .HasColumnType("bigint");
 
                     b.Property<string>("Source")
@@ -77,35 +95,29 @@ namespace MusicHub.Api.Migrations
                         .HasMaxLength(200)
                         .HasColumnType("character varying(200)");
 
-                    b.Property<string>("SourcePath")
-                        .IsRequired()
-                        .HasMaxLength(1000)
-                        .HasColumnType("character varying(1000)");
-
                     b.Property<DateTimeOffset>("StartedAt")
                         .HasColumnType("timestamp with time zone");
 
-                    b.Property<string>("Status")
+                    b.Property<string>("State")
                         .IsRequired()
                         .HasMaxLength(20)
                         .HasColumnType("character varying(20)");
 
-                    b.Property<int?>("TrackId")
-                        .HasColumnType("integer");
-
                     b.HasKey("Id");
 
-                    b.HasIndex("AudioSha256");
+                    b.HasIndex("ContentHash");
 
                     b.HasIndex("FileId");
 
-                    b.HasIndex("FileSha256");
+                    b.HasIndex("IntendedTrackId");
 
                     b.HasIndex("JobExecutionId");
 
-                    b.HasIndex("TrackId", "Provider", "Source");
+                    b.HasIndex("StartedAt");
 
-                    b.ToTable("DownloadHistories");
+                    b.HasIndex("Provider", "Source", "RemotePath");
+
+                    b.ToTable("AcquisitionDownloads");
                 });
 
             modelBuilder.Entity("MusicHub.Api.Catalog.AppliedIdentification", b =>
@@ -423,21 +435,21 @@ namespace MusicHub.Api.Migrations
                     b.ToTable("Files");
                 });
 
-            modelBuilder.Entity("MusicHub.Api.Acquisition.DownloadHistory", b =>
+            modelBuilder.Entity("MusicHub.Api.Acquisition.AcquisitionDownload", b =>
                 {
                     b.HasOne("MusicHub.Api.Ingestion.FileRecord", "File")
                         .WithMany()
                         .HasForeignKey("FileId")
                         .OnDelete(DeleteBehavior.SetNull);
 
-                    b.HasOne("MusicHub.Api.Catalog.Track", "Track")
+                    b.HasOne("MusicHub.Api.Catalog.Track", "IntendedTrack")
                         .WithMany()
-                        .HasForeignKey("TrackId")
+                        .HasForeignKey("IntendedTrackId")
                         .OnDelete(DeleteBehavior.SetNull);
 
                     b.Navigation("File");
 
-                    b.Navigation("Track");
+                    b.Navigation("IntendedTrack");
                 });
 
             modelBuilder.Entity("MusicHub.Api.Catalog.AppliedIdentification", b =>
@@ -478,7 +490,7 @@ namespace MusicHub.Api.Migrations
 
             modelBuilder.Entity("MusicHub.Api.Catalog.IdentificationOutcome", b =>
                 {
-                    b.HasOne("MusicHub.Api.Acquisition.DownloadHistory", "Download")
+                    b.HasOne("MusicHub.Api.Acquisition.AcquisitionDownload", "Download")
                         .WithMany()
                         .HasForeignKey("DownloadId")
                         .OnDelete(DeleteBehavior.Cascade);

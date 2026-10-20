@@ -93,7 +93,7 @@ public class IdentificationOutcome
 
     /// <summary>The download whose bytes were identified; null for an attempt on a stored file.</summary>
     public int? DownloadId { get; set; }
-    public DownloadHistory? Download { get; set; }
+    public AcquisitionDownload? Download { get; set; }
 
     /// <summary>
     /// The MusicHub build whose identification methods made the attempt (its commit, or its version): what to compare

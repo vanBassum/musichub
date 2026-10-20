@@ -18,10 +18,34 @@ public class MusicHubDbContext(DbContextOptions<MusicHubDbContext> options) : Db
 
     public DbSet<AppliedIdentification> AppliedIdentifications => Set<AppliedIdentification>();
 
-    public DbSet<DownloadHistory> DownloadHistories => Set<DownloadHistory>();
+    public DbSet<AcquisitionDownload> AcquisitionDownloads => Set<AcquisitionDownload>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
+        modelBuilder.Entity<AcquisitionDownload>(download =>
+        {
+            download.Property(d => d.Provider).HasMaxLength(AcquisitionDownload.ProviderMaxLength);
+            download.Property(d => d.Source).HasMaxLength(AcquisitionDownload.SourceMaxLength);
+            download.Property(d => d.RemotePath).HasMaxLength(AcquisitionDownload.RemotePathMaxLength);
+            download.Property(d => d.Reason).HasMaxLength(AcquisitionDownload.ReasonMaxLength);
+            download.Property(d => d.ContentHash).HasMaxLength(64);
+            download.Property(d => d.AudioSha256).HasMaxLength(64);
+            download.Property(d => d.AudioHashAlgorithm).HasMaxLength(AcquisitionDownload.HashAlgorithmMaxLength);
+            download.Property(d => d.JobExecutionId).HasMaxLength(AcquisitionDownload.JobExecutionIdMaxLength);
+            download.Property(d => d.State).HasConversion<string>().HasMaxLength(20);
+            download.Property(d => d.Failure).HasConversion<string>().HasMaxLength(30);
+            download.Property(d => d.Outcome).HasConversion<string>().HasMaxLength(20);
+            // History outlives its track and its file: deleting either only empties the reference.
+            download.HasOne(d => d.IntendedTrack).WithMany()
+                .HasForeignKey(d => d.IntendedTrackId).OnDelete(DeleteBehavior.SetNull);
+            download.HasOne(d => d.File).WithMany()
+                .HasForeignKey(d => d.FileId).OnDelete(DeleteBehavior.SetNull);
+            download.HasIndex(d => new { d.Provider, d.Source, d.RemotePath });
+            download.HasIndex(d => d.ContentHash);
+            download.HasIndex(d => d.StartedAt);
+            download.HasIndex(d => d.JobExecutionId);
+        });
+
         modelBuilder.Entity<AppliedIdentification>(applied =>
         {
             applied.Property(a => a.Source).HasConversion<string>().HasMaxLength(50);
@@ -53,28 +77,6 @@ public class MusicHubDbContext(DbContextOptions<MusicHubDbContext> options) : Db
             outcome.HasIndex(o => o.RecordedAt);
             outcome.HasIndex(o => o.FileId);
             outcome.HasIndex(o => o.DownloadId);
-        });
-
-        modelBuilder.Entity<DownloadHistory>(download =>
-        {
-            download.Property(d => d.Provider).HasMaxLength(CatalogLimits.Provider);
-            download.Property(d => d.Source).HasMaxLength(DownloadHistory.SourceMaxLength);
-            download.Property(d => d.SourcePath).HasMaxLength(DownloadHistory.PathMaxLength);
-            download.Property(d => d.Reason).HasMaxLength(DownloadHistory.ReasonMaxLength);
-            download.Property(d => d.Status).HasConversion<string>().HasMaxLength(20);
-            download.Property(d => d.FileSha256).HasMaxLength(64);
-            download.Property(d => d.AudioSha256).HasMaxLength(64);
-            download.Property(d => d.AudioHashAlgorithm).HasMaxLength(DownloadHistory.HashAlgorithmMaxLength);
-            download.Property(d => d.JobExecutionId).HasMaxLength(100);
-            // Deleting a track or the imported file only empties the reference: the history stays.
-            download.HasOne(d => d.Track).WithMany()
-                .HasForeignKey(d => d.TrackId).OnDelete(DeleteBehavior.SetNull);
-            download.HasOne(d => d.File).WithMany()
-                .HasForeignKey(d => d.FileId).OnDelete(DeleteBehavior.SetNull);
-            download.HasIndex(d => new { d.TrackId, d.Provider, d.Source });
-            download.HasIndex(d => d.FileSha256);
-            download.HasIndex(d => d.AudioSha256);
-            download.HasIndex(d => d.JobExecutionId);
         });
 
         modelBuilder.Entity<FileRecord>(file =>
