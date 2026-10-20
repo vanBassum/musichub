@@ -26,7 +26,7 @@ public record AcquisitionCandidate(
     int? QueueLength = null)
 {
     /// <summary>The last segment of <see cref="Path"/>, whichever separator the source uses.</summary>
-    public string FileName => RemotePath.Segments(Path)[^1];
+    public string FileName => RemotePath.FileName(Path);
 }
 
 /// <summary>Reads a path as a source gave it, which may use either separator.</summary>
