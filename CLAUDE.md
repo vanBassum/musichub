@@ -91,7 +91,10 @@ PR open.
 ### Claude in GitHub: the `autopilot` label and `@claude`
 
 `.github/workflows/claude.yml` runs the official `anthropics/claude-code-action` on
-the self-hosted runner. Claude follows `.github/autopilot.md`.
+the self-hosted runner. Claude follows `.github/autopilot.md` as it is on `main`,
+also on an older PR branch (a copy at `main-rules/`, ignored by git), and pushes
+with exactly `git push origin HEAD`. Commits that never reached GitHub are reported:
+`not pushed` in an Autofix comment, a `NOT PUSHED` comment otherwise.
 
 - **`autopilot` on an issue**: Claude reads the issue and the understanding, builds
   it on a `claude/…` branch and opens the PR. When the work needs a decision that
