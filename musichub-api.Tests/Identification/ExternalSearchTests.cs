@@ -92,6 +92,49 @@ public class ExternalSearchTests
 
         public Task<IReadOnlyList<ExternalArtist>> SearchArtistsAsync(string term, int limit, CancellationToken ct) =>
             throw new CandidateSearchUnavailableException("rate limited");
+
+        public Task<ExternalArtist?> GetArtistAsync(string externalId, CancellationToken ct) =>
+            throw new CandidateSearchUnavailableException("rate limited");
+
+        public Task<IReadOnlyList<ExternalTrack>> GetArtistTracksAsync(string externalId, int limit, CancellationToken ct) =>
+            throw new CandidateSearchUnavailableException("rate limited");
+    }
+
+    [Fact]
+    public async Task One_artist_is_read_by_id_with_type_and_area_and_an_unknown_id_is_null()
+    {
+        var handler = new StubHandler(request => request.RequestUri!.AbsolutePath.EndsWith("/art-1")
+            ? Json("""{"id":"art-1","name":"The Band","type":"Group","area":{"name":"United Kingdom"},"disambiguation":""}""")
+            : new HttpResponseMessage(HttpStatusCode.NotFound));
+        var search = Search(handler);
+
+        var artist = await search.GetArtistAsync("art-1", CancellationToken.None);
+
+        Assert.Equal(
+            new ExternalArtist("musicbrainz", "art-1", "The Band", null, "https://musicbrainz.org/artist/art-1", "Group", "United Kingdom"),
+            artist);
+        Assert.Null(await search.GetArtistAsync("art-2", CancellationToken.None));
+        Assert.Equal("/ws/2/artist/art-1?fmt=json", handler.Urls[0]);
+    }
+
+    [Fact]
+    public async Task An_artists_tracks_are_browsed_by_artist_id_without_a_ranking()
+    {
+        var handler = new StubHandler(_ => Json("""{"recordings":[{"id":"rec-1","title":"Song"}]}"""));
+
+        var tracks = await Search(handler).GetArtistTracksAsync("art-1", 10, CancellationToken.None);
+
+        Assert.Equal("rec-1", Assert.Single(tracks).ExternalId);
+        Assert.Equal("/ws/2/recording?artist=art-1&inc=artist-credits&limit=10&fmt=json", handler.Urls[0]);
+    }
+
+    [Fact]
+    public async Task A_failing_artist_read_is_unavailable_not_missing()
+    {
+        var handler = new StubHandler(_ => new HttpResponseMessage(HttpStatusCode.BadGateway));
+
+        await Assert.ThrowsAsync<CandidateSearchUnavailableException>(
+            () => Search(handler).GetArtistAsync("art-1", CancellationToken.None));
     }
 
     [Fact]

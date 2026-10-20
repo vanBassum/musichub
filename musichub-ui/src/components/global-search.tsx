@@ -18,6 +18,7 @@ import {
 import { Skeleton } from "@/components/ui/skeleton"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { WishlistButton } from "@/components/wishlist-button"
+import { providerLabel, type ArtistRef } from "@/lib/artist"
 import { artistNames, wantExternalTrack } from "@/lib/catalog-api"
 import { useExternalSearch } from "@/lib/use-external-search"
 import { useGlobalSearch } from "@/lib/use-global-search"
@@ -26,7 +27,7 @@ import { cn } from "@/lib/utils"
 
 interface GlobalSearchProps {
   onSelectTrack: (trackId: number) => void
-  onSelectArtist: (artistId: number) => void
+  onSelectArtist: (artist: ArtistRef) => void
   // "popover" (default) drops the results over the page; "page" shows them inline,
   // split into All / My Music / External.
   variant?: "popover" | "page"
@@ -63,8 +64,6 @@ function Group({
 const rowClassName =
   "flex h-auto w-full justify-start gap-2 py-1.5 text-left font-normal"
 
-const providerLabels: Record<string, string> = { musicbrainz: "MusicBrainz" }
-
 function ExternalRow({
   provider,
   url,
@@ -72,6 +71,7 @@ function ExternalRow({
   name,
   detail,
   action,
+  onOpen,
 }: {
   provider: string
   url: string
@@ -79,12 +79,24 @@ function ExternalRow({
   name: string
   detail?: string
   action?: ReactNode
+  // Opens the result's page; a result without one is only listed.
+  onOpen?: () => void
 }) {
-  const label = providerLabels[provider] ?? provider
+  const label = providerLabel(provider)
   return (
     <li className="flex items-center gap-2 px-2 py-1.5 text-sm">
       <Badge variant="outline">{kind}</Badge>
-      <span className="min-w-0 flex-1 truncate">{name}</span>
+      {onOpen ? (
+        <button
+          type="button"
+          onClick={onOpen}
+          className="min-w-0 flex-1 truncate text-left hover:underline"
+        >
+          {name}
+        </button>
+      ) : (
+        <span className="min-w-0 flex-1 truncate">{name}</span>
+      )}
       {detail && (
         <span className="max-w-[40%] truncate text-muted-foreground">
           {detail}
@@ -105,14 +117,17 @@ function ExternalRow({
   )
 }
 
-// Results of the external provider. They are not catalog items: they can't be opened
-// here, and viewing them stores nothing. Only the explicit "Add to wishlist" does.
+// Results of the external provider. They are not catalog items: an artist opens the
+// artist page, and viewing a result stores nothing. Only the explicit "Add to
+// wishlist" does.
 function ExternalResults({
   search,
   showArtists,
+  onOpenArtist,
 }: {
   search: ReturnType<typeof useExternalSearch>
   showArtists: boolean
+  onOpenArtist: (artist: ArtistRef) => void
 }) {
   return (
     <section
@@ -176,6 +191,14 @@ function ExternalResults({
                   kind="Artist"
                   name={artist.name}
                   detail={artist.disambiguation ?? undefined}
+                  onOpen={() =>
+                    onOpenArtist({
+                      kind: "external",
+                      provider: artist.provider,
+                      externalId: artist.externalId,
+                      name: artist.name,
+                    })
+                  }
                 />
               ))}
           </ul>
@@ -357,7 +380,9 @@ export function GlobalSearch({
                         variant="ghost"
                         className={rowClassName}
                         onClick={() =>
-                          choose(() => onSelectArtist(artist.id))
+                          choose(() =>
+                            onSelectArtist({ kind: "local", id: artist.id })
+                          )
                         }
                       >
                         <Badge variant="secondary">
@@ -379,7 +404,11 @@ export function GlobalSearch({
             </>
           )}
           {showExternal && (
-            <ExternalResults search={external} showArtists={fields.artist} />
+            <ExternalResults
+              search={external}
+              showArtists={fields.artist}
+              onOpenArtist={(artist) => choose(() => onSelectArtist(artist))}
+            />
           )}
         </div>
       )}

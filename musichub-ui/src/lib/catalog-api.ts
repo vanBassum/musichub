@@ -43,7 +43,7 @@ export type AudioFilter = "all" | "with" | "without"
 
 export const pageSize = 25
 
-async function getJson<T>(url: string, signal: AbortSignal): Promise<T> {
+export async function getJson<T>(url: string, signal: AbortSignal): Promise<T> {
   const response = await fetch(url, { signal })
   if (!response.ok) {
     throw new Error(
@@ -125,11 +125,13 @@ export interface ExternalArtist {
   name: string
   disambiguation: string | null
   url: string
+  type?: string | null
+  area?: string | null
 }
 
 // The API answers 503 with a problem detail when the provider is missing, rate
 // limited or unreachable; its text is the message.
-async function getExternal<T>(url: string, signal: AbortSignal): Promise<T> {
+export async function getExternal<T>(url: string, signal: AbortSignal): Promise<T> {
   const response = await fetch(url, { signal })
   if (!response.ok) {
     const problem = (await response.json().catch(() => null)) as {

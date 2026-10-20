@@ -27,6 +27,7 @@ import {
 } from "@/components/ui/sheet"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import type { Track } from "@/data/mock-tracks"
+import type { ArtistRef } from "@/lib/artist"
 import type { FilesState } from "@/lib/use-files"
 import type { JobsState } from "@/lib/use-jobs"
 import { cn } from "@/lib/utils"
@@ -40,7 +41,9 @@ interface MobileShellProps {
   nowPlayingId: string
   filesState: FilesState
   jobsState: JobsState
+  artistRef: ArtistRef | null
   onSelectTrack: (trackId: number) => void
+  onSelectArtist: (artist: ArtistRef) => void
 }
 
 const pageClassName = "flex min-h-0 flex-1 flex-col overflow-hidden"
@@ -92,7 +95,9 @@ export function MobileShell({
   nowPlayingId,
   filesState,
   jobsState,
+  artistRef,
   onSelectTrack,
+  onSelectArtist,
 }: MobileShellProps) {
   const hash = useSyncExternalStore(subscribe, getHash)
   const location = useMemo(() => parseLocation(hash), [hash])
@@ -110,7 +115,10 @@ export function MobileShell({
         <GlobalSearch
           variant="page"
           onSelectTrack={onSelectTrack}
-          onSelectArtist={() => openScreen("artists")}
+          onSelectArtist={(artist) => {
+            onSelectArtist(artist)
+            openScreen("artists")
+          }}
           className="flex-1"
         />
       </Page>
@@ -205,7 +213,7 @@ export function MobileShell({
             <FilesView state={filesState} className="flex-1" />
           )}
           {id === "jobs" && <JobsView state={jobsState} className="flex-1" />}
-          {id === "artists" && <ArtistPage className="flex-1" />}
+          {id === "artists" && <ArtistPage artistRef={artistRef} className="flex-1" />}
         </Page>
       ))}
       {tab !== "player" && (

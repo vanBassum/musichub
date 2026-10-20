@@ -15,12 +15,16 @@ public record ExternalTrack(
     IReadOnlyList<ExternalArtistCredit> Artists);
 
 /// <summary>An artist as an external provider names it: never a catalog record.</summary>
+/// <param name="Type">What kind of artist the provider says it is (person, group, ...), if it says.</param>
+/// <param name="Area">Where the provider places the artist, if it does.</param>
 public record ExternalArtist(
     string Provider,
     string ExternalId,
     string Name,
     string? Disambiguation,
-    string Url);
+    string Url,
+    string? Type = null,
+    string? Area = null);
 
 /// <summary>The text fields a track search may look in. Providers apply the ones they support.</summary>
 public record ExternalSearchFields(bool Title, bool Artist);
@@ -39,4 +43,13 @@ public interface IExternalMusicSearch
         string term, ExternalSearchFields fields, int limit, CancellationToken ct);
 
     Task<IReadOnlyList<ExternalArtist>> SearchArtistsAsync(string term, int limit, CancellationToken ct);
+
+    /// <summary>One artist by the provider's own identifier; null when the provider has no such artist.</summary>
+    Task<ExternalArtist?> GetArtistAsync(string externalId, CancellationToken ct);
+
+    /// <summary>
+    /// Recordings the provider credits to the artist, in the provider's order. That order is not a ranking: the
+    /// provider supplies no popularity data.
+    /// </summary>
+    Task<IReadOnlyList<ExternalTrack>> GetArtistTracksAsync(string externalId, int limit, CancellationToken ct);
 }
