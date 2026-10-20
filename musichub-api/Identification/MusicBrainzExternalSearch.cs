@@ -39,6 +39,32 @@ public sealed partial class MusicBrainzCandidateSearch : IExternalMusicSearch
         return Parse(json, "artists", ToExternalArtist);
     }
 
+    // The identifier is validated by the caller (a UUID), so it is safe in the path.
+    public async Task<ExternalArtist?> GetArtistAsync(string externalId, CancellationToken ct)
+    {
+        using var json = await GetJsonOrNullAsync($"artist/{Uri.EscapeDataString(externalId)}?fmt=json", ct);
+        if (json is null)
+        {
+            return null;
+        }
+        try
+        {
+            return ToExternalArtist(json.RootElement);
+        }
+        catch (Exception e) when (e is InvalidOperationException or KeyNotFoundException or FormatException)
+        {
+            throw new CandidateSearchUnavailableException("MusicBrainz answered in an unexpected shape.", e);
+        }
+    }
+
+    public async Task<IReadOnlyList<ExternalTrack>> GetArtistTracksAsync(
+        string externalId, int limit, CancellationToken ct)
+    {
+        using var json = await GetJsonAsync(
+            $"recording?artist={Uri.EscapeDataString(externalId)}&inc=artist-credits&limit={limit}&fmt=json", ct);
+        return Parse(json, "recordings", ToExternalTrack);
+    }
+
     private static List<T> Parse<T>(JsonDocument json, string property, Func<JsonElement, T?> convert)
         where T : class
     {
@@ -99,7 +125,10 @@ public sealed partial class MusicBrainzCandidateSearch : IExternalMusicSearch
         var name = Text(artist, "name");
         return id is null || string.IsNullOrWhiteSpace(name)
             ? null
-            : new ExternalArtist(Provider, id, name, NonEmpty(Text(artist, "disambiguation")), $"{SiteUrl}artist/{id}");
+            : new ExternalArtist(
+                Provider, id, name, NonEmpty(Text(artist, "disambiguation")), $"{SiteUrl}artist/{id}",
+                NonEmpty(Text(artist, "type")),
+                artist.TryGetProperty("area", out var area) ? NonEmpty(Text(area, "name")) : null);
     }
 
     private static string? NonEmpty(string? text) => string.IsNullOrWhiteSpace(text) ? null : text;

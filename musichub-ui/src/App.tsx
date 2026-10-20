@@ -10,6 +10,7 @@ import { PlayerPanel } from "@/components/player-panel"
 import { TrackDetailsSheet } from "@/components/track-details-sheet"
 import { TrackTable } from "@/components/track-table"
 import { mockNowPlayingId, mockQueue } from "@/data/mock-tracks"
+import type { ArtistRef } from "@/lib/artist"
 import type { AudioFilter } from "@/lib/catalog-api"
 import { useTracks } from "@/lib/use-catalog"
 import { useFiles } from "@/lib/use-files"
@@ -21,6 +22,8 @@ const searchDelayMs = 300
 export function App() {
   const [selectedId, setSelectedId] = useState<number | null>(null)
   const [view, setView] = useState<AppView>("library")
+  // The artist page shows this artist, found by a local or an external search.
+  const [artistRef, setArtistRef] = useState<ArtistRef | null>(null)
   // What the box shows now, and the term sent to the API once typing pauses.
   const [searchInput, setSearchInput] = useState("")
   const [search, setSearch] = useState("")
@@ -41,7 +44,12 @@ export function App() {
     return () => clearTimeout(timer)
   }, [searchInput])
 
-  const changeAudio = (value: AudioFilter) => {
+  const openArtist = (artist: ArtistRef) => {
+    setArtistRef(artist)
+    setView("artists")
+  }
+
+  const changeAudio =(value: AudioFilter) => {
     setAudio(value)
     setPage(1)
   }
@@ -91,7 +99,9 @@ export function App() {
           nowPlayingId={mockNowPlayingId}
           filesState={filesState}
           jobsState={jobsState}
+          artistRef={artistRef}
           onSelectTrack={setSelectedId}
+          onSelectArtist={setArtistRef}
         />
         {details}
       </>
@@ -104,6 +114,7 @@ export function App() {
         view={view}
         onNavigate={setView}
         onSelectTrack={setSelectedId}
+        onSelectArtist={openArtist}
       />
       {view === "library" ? (
         <main className="grid min-h-0 flex-1 gap-4 p-4 lg:grid-cols-[15rem_minmax(0,1fr)_20rem] xl:grid-cols-[17rem_minmax(0,1fr)_24rem]">
@@ -119,7 +130,7 @@ export function App() {
           ) : view === "jobs" ? (
             <JobsView state={jobsState} className="min-h-0" />
           ) : (
-            <ArtistPage className="min-h-0" />
+            <ArtistPage artistRef={artistRef} className="min-h-0" />
           )}
           <PlayerPanel queue={mockQueue} nowPlayingId={mockNowPlayingId} />
         </main>

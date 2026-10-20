@@ -187,7 +187,14 @@ public sealed partial class MusicBrainzCandidateSearch : ICandidateSearch
     // Inside a quoted Lucene phrase only the quote and the backslash are special.
     private static string Quote(string text) => text.Replace("\\", "\\\\").Replace("\"", "\\\"");
 
-    private async Task<JsonDocument> GetJsonAsync(string url, CancellationToken ct)
+    private async Task<JsonDocument> GetJsonAsync(string url, CancellationToken ct) =>
+        (await GetJsonCoreAsync(url, notFoundIsNull: false, ct))!;
+
+    /// <summary>Like <see cref="GetJsonAsync"/>, but a 404 (no such entity) answers null instead of failing.</summary>
+    private Task<JsonDocument?> GetJsonOrNullAsync(string url, CancellationToken ct) =>
+        GetJsonCoreAsync(url, notFoundIsNull: true, ct);
+
+    private async Task<JsonDocument?> GetJsonCoreAsync(string url, bool notFoundIsNull, CancellationToken ct)
     {
         for (var attempt = 0; ; attempt++)
         {
@@ -200,6 +207,10 @@ public sealed partial class MusicBrainzCandidateSearch : ICandidateSearch
                 if (response.IsSuccessStatusCode)
                 {
                     return await JsonDocument.ParseAsync(await response.Content.ReadAsStreamAsync(ct), cancellationToken: ct);
+                }
+                if (notFoundIsNull && response.StatusCode == HttpStatusCode.NotFound)
+                {
+                    return null;
                 }
                 if (response.StatusCode != HttpStatusCode.TooManyRequests && (int)response.StatusCode < 500)
                 {
