@@ -22,6 +22,81 @@ namespace MusicHub.Api.Migrations
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
+            modelBuilder.Entity("MusicHub.Api.Acquisition.AcquisitionDownload", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("ContentHash")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<DateTimeOffset?>("DecidedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Failure")
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)");
+
+                    b.Property<int?>("FileId")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTimeOffset?>("FinishedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int?>("IntendedTrackId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Outcome")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<string>("Provider")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
+                    b.Property<string>("Reason")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.Property<string>("RemotePath")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.Property<string>("Source")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<DateTimeOffset>("StartedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("State")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ContentHash");
+
+                    b.HasIndex("FileId");
+
+                    b.HasIndex("IntendedTrackId");
+
+                    b.HasIndex("StartedAt");
+
+                    b.HasIndex("Provider", "Source", "RemotePath");
+
+                    b.ToTable("AcquisitionDownloads");
+                });
+
             modelBuilder.Entity("MusicHub.Api.Catalog.AppliedIdentification", b =>
                 {
                     b.Property<int>("Id")
@@ -326,6 +401,23 @@ namespace MusicHub.Api.Migrations
                     b.HasIndex("TrackId");
 
                     b.ToTable("Files");
+                });
+
+            modelBuilder.Entity("MusicHub.Api.Acquisition.AcquisitionDownload", b =>
+                {
+                    b.HasOne("MusicHub.Api.Ingestion.FileRecord", "File")
+                        .WithMany()
+                        .HasForeignKey("FileId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("MusicHub.Api.Catalog.Track", "IntendedTrack")
+                        .WithMany()
+                        .HasForeignKey("IntendedTrackId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.Navigation("File");
+
+                    b.Navigation("IntendedTrack");
                 });
 
             modelBuilder.Entity("MusicHub.Api.Catalog.AppliedIdentification", b =>
