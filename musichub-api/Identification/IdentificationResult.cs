@@ -63,7 +63,12 @@ public sealed record IdentificationMethodResult(
     string Source, IdentificationMethodStatus Status, string Note, IReadOnlyList<string> Candidates);
 
 /// <summary>The identity a resolver proposes for a recording.</summary>
-public sealed record ProposedRecordingIdentity(string Title, IReadOnlyList<string> Artists, string? Album);
+/// <param name="ArtistReferences">The external identifiers a non-tag source gave for the credited artists, where it did.</param>
+public sealed record ProposedRecordingIdentity(
+    string Title,
+    IReadOnlyList<string> Artists,
+    string? Album,
+    IReadOnlyList<ArtistReference>? ArtistReferences = null);
 
 /// <summary>One piece of evidence: which tool produced it, and what it found.</summary>
 /// <param name="Source">The identification tool, e.g. <c>file-metadata</c>.</param>

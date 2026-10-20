@@ -59,8 +59,17 @@ public sealed class RuleBasedRecordingIdentifier(
         var agreed = identities[0].Select(c => c.Candidate).ToList();
         var first = agreed[0];
         var album = agreed.Select(c => c.Album).FirstOrDefault(a => !string.IsNullOrWhiteSpace(a));
-        return IdentificationResult.Identified(new ProposedRecordingIdentity(first.Title, first.Artists, album), evidence, methods);
+        return IdentificationResult.Identified(
+            new ProposedRecordingIdentity(first.Title, first.Artists, album, AgreedReferences(agreed)), evidence, methods);
     }
+
+    // An identifier counts only when every candidate that gives one for that artist and source gives the same one.
+    private static List<ArtistReference> AgreedReferences(List<EvidenceCandidate> agreed) => agreed
+        .SelectMany(c => c.ArtistReferences ?? [])
+        .GroupBy(r => (r.Source, Name: r.Name.Trim().ToUpperInvariant()))
+        .Where(g => g.Select(r => r.ExternalId).Distinct().Count() == 1)
+        .Select(g => g.First())
+        .ToList();
 
     private static string IdentityKey(EvidenceCandidate c) =>
         c.Title.Trim().ToUpperInvariant() + "\u001f" +
