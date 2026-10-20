@@ -243,6 +243,12 @@ jobs:
             stats=$(jq -r 'map(select(.type == "result")) | last | select(. != null)
               | " · \(.num_turns) turns · \(.duration_ms / 60000 | floor)m\(.duration_ms / 1000 % 60 | floor)s · ≈$\(.total_cost_usd * 100 | round / 100) API-eq"' \
               "$EXECUTION_FILE" || true)
+            # Why a run changed nothing: Claude's last message and the tool calls its
+            # permissions refused. Only here, in the run summary; the log hides them.
+            jq -r 'map(select(.type == "result")) | last | select(. != null)
+              | "### Claude'"'"'s last message\n\n\(.result // "(none)")\n\n### Refused tool calls\n\n"
+                + ([.permission_denials[]? | "- `\(.tool_name)`: `\(.tool_input | tojson)`"] | join("\n") | if . == "" then "None." else . end)' \
+              "$EXECUTION_FILE" >>"$GITHUB_STEP_SUMMARY" || true
           fi
           gh api --method PATCH "repos/$GITHUB_REPOSITORY/issues/comments/$COMMENT" \
             -f body="AUTOFIX · $REASON · $result$stats · [run]($RUN_URL)" >/dev/null
