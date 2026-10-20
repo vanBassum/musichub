@@ -10,7 +10,21 @@ internal static class EvidenceFormatting
         EvidenceAvailability.Provided => report.Candidates.Select(c =>
             new IdentificationEvidence(report.Source, $"{report.Note} Candidate {FormatWithReference(c)}.{(c.Detail is null ? "" : $" {c.Detail}")}")),
         EvidenceAvailability.NothingFound => [new IdentificationEvidence(report.Source, $"Found nothing. {report.Note}")],
+        EvidenceAvailability.Failed => [new IdentificationEvidence(report.Source, $"Failed. {report.Note}")],
         _ => [new IdentificationEvidence(report.Source, $"Unavailable. {report.Note}")],
+    };
+
+    /// <summary>One result per evidence tool, for the diagnostics of a result.</summary>
+    public static IdentificationMethodResult ToMethodResult(EvidenceReport report) =>
+        new(report.Source, StatusOf(report.Availability), report.Note,
+            report.Candidates.Select(c => $"{FormatWithReference(c)}{(c.Detail is null ? "" : $" {c.Detail}")}").ToList());
+
+    private static IdentificationMethodStatus StatusOf(EvidenceAvailability availability) => availability switch
+    {
+        EvidenceAvailability.Provided => IdentificationMethodStatus.Found,
+        EvidenceAvailability.NothingFound => IdentificationMethodStatus.NothingFound,
+        EvidenceAvailability.Failed => IdentificationMethodStatus.Failed,
+        _ => IdentificationMethodStatus.Unconfigured,
     };
 
     public static string Format(EvidenceCandidate c) => $"\"{c.Title}\" by {string.Join(", ", c.Artists)}";

@@ -19,6 +19,8 @@ internal sealed class JobsHost : IAsyncDisposable
         _server = server;
     }
 
+    public IServiceProvider Services => _provider;
+
     public CatalogReconciliationJobService Catalog => _provider.GetRequiredService<CatalogReconciliationJobService>();
 
     public PingJobService Pings =>_provider.GetRequiredService<PingJobService>();

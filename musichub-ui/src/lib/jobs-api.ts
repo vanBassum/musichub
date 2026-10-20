@@ -47,6 +47,41 @@ export interface JobExecutionDetails {
   errorType: string | null
 }
 
+// How the identification of one file in an execution ended. Only "Identified" links the file.
+export type IdentificationDecision =
+  | "Identified"
+  | "NoMatch"
+  | "InsufficientEvidence"
+  | "NoMethodRan"
+  | "MethodFailed"
+  | "Skipped"
+  | "Error"
+
+export type IdentificationMethodStatus =
+  | "Found"
+  | "NothingFound"
+  | "Unconfigured"
+  | "Failed"
+  | "NotRun"
+
+// What one identification method did for a file; `candidates` are the matches it suggested, as text.
+export interface IdentificationMethodResult {
+  source: string
+  status: IdentificationMethodStatus
+  note: string
+  candidates: string[]
+}
+
+export interface FileOutcome {
+  fileId: number
+  fileName: string
+  decision: IdentificationDecision
+  reason: string
+  trackId: number | null
+  recordedAt: string
+  methods: IdentificationMethodResult[]
+}
+
 async function problemDetail(response: Response) {
   try {
     return ((await response.json()) as { detail?: string }).detail
@@ -76,6 +111,14 @@ export const getExecution = (id: string, signal?: AbortSignal) =>
   getJson<JobExecutionDetails>(
     `/api/jobs/executions/${encodeURIComponent(id)}`,
     "The execution",
+    signal
+  )
+
+// GET /api/jobs/executions/{id}/outcomes: one outcome per file the execution examined.
+export const getOutcomes = (id: string, signal?: AbortSignal) =>
+  getJson<FileOutcome[]>(
+    `/api/jobs/executions/${encodeURIComponent(id)}/outcomes`,
+    "The file outcomes",
     signal
   )
 

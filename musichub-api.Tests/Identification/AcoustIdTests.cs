@@ -172,7 +172,7 @@ public class AcoustIdTests
     }
 
     [Fact]
-    public async Task The_evidence_provider_turns_an_unavailable_matcher_into_an_unavailable_report()
+    public async Task The_evidence_provider_turns_an_unavailable_matcher_into_a_failed_report()
     {
         var handler = new StubHandler(_ => Task.FromResult(Json("{}", HttpStatusCode.TooManyRequests)));
         var provider = new AudioFingerprintEvidenceProvider(Matcher(handler));
@@ -180,7 +180,7 @@ public class AcoustIdTests
 
         var report = await provider.CollectAsync(context, CancellationToken.None);
 
-        Assert.Equal(EvidenceAvailability.Unavailable, report.Availability);
+        Assert.Equal(EvidenceAvailability.Failed, report.Availability);
         Assert.Equal("acoustid", report.Source);
         Assert.Empty(report.Candidates);
     }

@@ -52,6 +52,54 @@ public class CatalogReconciliationJobServiceTests
         Assert.Null(await host.Catalog.ActiveExecutionIdAsync(CancellationToken.None));
     }
 
+    private sealed class UnresolvedIdentifier : IRecordingIdentifier
+    {
+        public Task<IdentificationResult> IdentifyAsync(Stream audio, string? fileNameHint, CancellationToken ct) =>
+            Task.FromResult(IdentificationResult.Unresolved(
+                "No identification tool produced a candidate.", [],
+                [new IdentificationMethodResult("musicbrainz", IdentificationMethodStatus.NothingFound, "No match.", [])]));
+    }
+
+    [Fact]
+    public async Task StartedRun_RecordsItsPerFileOutcomesUnderItsOwnExecutionId()
+    {
+        const string database = nameof(StartedRun_RecordsItsPerFileOutcomesUnderItsOwnExecutionId);
+        var storage = new FakeFileStorage();
+        await using var host = await JobsHost.StartAsync(
+            new FixedStorageFactory(new InMemoryStorage()),
+            configureServices: s =>
+            {
+                WithCatalog(s, database);
+                s.AddSingleton<IFileStorage>(storage);
+                s.AddSingleton<IRecordingIdentifier>(new UnresolvedIdentifier());
+            });
+        using (var scope = host.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<MusicHubDbContext>();
+            var record = new MusicHub.Api.Ingestion.FileRecord
+            {
+                OriginalFilename = "x.mp3", StorageLocation = "default", StorageKey = "library/aa/x",
+                Status = MusicHub.Api.Ingestion.FileStatus.Stored, Source = "upload", StartedAt = DateTimeOffset.UtcNow,
+            };
+            db.Files.Add(record);
+            await db.SaveChangesAsync();
+            await storage.PutAsync(record.StorageKey, new MemoryStream([1]), null, CancellationToken.None);
+        }
+
+        var id = await host.Catalog.TryStartAsync(CancellationToken.None);
+        await WaitForAsync(host, id!, d => d?.Execution.State == "Succeeded");
+
+        using var read = host.Services.CreateScope();
+        var controller = new JobsController(host.Catalog, read.ServiceProvider.GetRequiredService<MusicHubDbContext>());
+        var outcomes = Assert.IsAssignableFrom<IEnumerable<JobsController.FileOutcome>>(
+            Assert.IsType<OkObjectResult>(await controller.Outcomes(id!, CancellationToken.None)).Value);
+        var outcome = Assert.Single(outcomes);
+        Assert.Equal("x.mp3", outcome.FileName);
+        Assert.Equal(MusicHub.Api.Catalog.IdentificationDecision.NoMatch, outcome.Decision);
+        Assert.Equal("musicbrainz", Assert.Single(outcome.Methods).Source);
+        Assert.IsType<NotFoundResult>(await controller.Outcomes("999999", CancellationToken.None));
+    }
+
     [Fact]
     public async Task Start_WhileARunIsWaiting_IsRefused()
     {
@@ -114,7 +162,7 @@ public class CatalogReconciliationJobServiceTests
         await using var host = await JobsHost.StartAsync(
             new FixedStorageFactory(new InMemoryStorage()), configureServices: s => WithCatalog(s, nameof(Controller_StartsThenRefusesAndReportsNotFound)));
         await host.StopWhenReadyAsync();
-        var controller = new JobsController(host.Catalog)
+        var controller = new JobsController(host.Catalog, null!)
         {
             ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext() },
         };
@@ -137,7 +185,7 @@ public class CatalogReconciliationJobServiceTests
     {
         await using var host = await JobsHost.StartAsync(
             new FixedStorageFactory(new InMemoryStorage()), migrated: false, configureServices: s => WithCatalog(s, nameof(Controller_WhenTheEngineIsNotReady_Returns503)));
-        var controller = new JobsController(host.Catalog)
+        var controller = new JobsController(host.Catalog, null!)
         {
             ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext() },
         };

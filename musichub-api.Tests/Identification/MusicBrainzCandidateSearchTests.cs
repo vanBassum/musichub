@@ -168,12 +168,12 @@ public class MusicBrainzCandidateSearchTests
     }
 
     [Fact]
-    public async Task The_provider_reports_a_failed_search_as_unavailable()
+    public async Task The_provider_reports_a_failed_search_as_failed()
     {
         var provider = new CandidateSearchEvidenceProvider(Search(new StubHandler(Status(HttpStatusCode.InternalServerError))));
         var report = await provider.CollectAsync(Context(), CancellationToken.None);
 
-        Assert.Equal(EvidenceAvailability.Unavailable, report.Availability);
+        Assert.Equal(EvidenceAvailability.Failed, report.Availability);
         Assert.Empty(report.Candidates);
         Assert.Equal("musicbrainz", report.Source);
     }

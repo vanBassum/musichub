@@ -38,7 +38,7 @@ public sealed class AudioFingerprintEvidenceProvider(IAudioFingerprintMatcher? m
         }
         catch (FingerprintUnavailableException ex)
         {
-            return EvidenceReport.Unavailable(Source, ex.Message);
+            return EvidenceReport.Failed(Source, ex.Message);
         }
 
         return candidates.Count == 0

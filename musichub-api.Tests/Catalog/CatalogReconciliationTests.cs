@@ -73,13 +73,25 @@ public sealed class CatalogReconciliationTests : IDisposable
         return record.Id;
     }
 
-    private async Task<CatalogReconciliationSummary> RunAsync(ByNameIdentifier? identifier = null)
+    private async Task<CatalogReconciliationSummary> RunAsync(ByNameIdentifier? identifier = null, string? executionId = null)
     {
         using var db = CreateDb();
         var service = new CatalogReconciliation(
             db, _storage, identifier ?? new ByNameIdentifier(_identities), TimeProvider.System, _log);
-        return await service.RunAsync(CancellationToken.None);
+        return await service.RunAsync(executionId, CancellationToken.None);
     }
+
+    private async Task<List<IdentificationOutcome>> OutcomesAsync(string executionId)
+    {
+        using var db = CreateDb();
+        return await db.IdentificationOutcomes.Where(o => o.JobExecutionId == executionId).OrderBy(o => o.Id).ToListAsync();
+    }
+
+    private static IdentificationMethodResult Method(string source, IdentificationMethodStatus status, params string[] candidates) =>
+        new(source, status, $"{source} note", candidates);
+
+    private static IdentificationResult Unresolved(string reason, params IdentificationMethodResult[] methods) =>
+        IdentificationResult.Unresolved(reason, [], methods);
 
     [Fact]
     public async Task A_confidently_identified_file_is_linked_to_a_new_track_with_its_artists()
@@ -303,5 +315,123 @@ public sealed class CatalogReconciliationTests : IDisposable
         Assert.Equal(1, summary.Skipped);
         using var db = CreateDb();
         Assert.Equal(0, await db.Tracks.CountAsync());
+    }
+
+    [Fact]
+    public async Task Each_examined_file_gets_one_outcome_that_says_how_it_ended()
+    {
+        const string F = "found", N = "nothing", C = "conflict", U = "unconfigured", X = "failed", B = "boom";
+        _identities["linked.mp3"] = () => IdentificationResult.Identified(
+            new ProposedRecordingIdentity("Song", ["Artist"], null), [new("musicbrainz", "x")],
+            [Method("musicbrainz", IdentificationMethodStatus.Found, "\"Song\" by Artist")]);
+        _identities[N] = () => Unresolved("No identification tool produced a candidate.",
+            Method("musicbrainz", IdentificationMethodStatus.NothingFound), Method("acoustid", IdentificationMethodStatus.Unconfigured));
+        _identities[C] = () => Unresolved("The evidence names 2 different recordings.",
+            Method("file-metadata", IdentificationMethodStatus.Found, "\"A\" by X"), Method("musicbrainz", IdentificationMethodStatus.Found, "\"B\" by Y"));
+        _identities[U] = () => Unresolved("No identification tool produced a candidate.",
+            Method("musicbrainz", IdentificationMethodStatus.Unconfigured), Method("acoustid", IdentificationMethodStatus.NotRun));
+        _identities[X] = () => Unresolved("No identification tool produced a candidate.",
+            Method("musicbrainz", IdentificationMethodStatus.Failed), Method("acoustid", IdentificationMethodStatus.NothingFound));
+        _identities[B] = () => throw new InvalidOperationException("secret connection string");
+        _identities[F] = () => Unresolved("The file is not readable audio.");
+        foreach (var name in new[] { "linked.mp3", N, C, U, X, B, F })
+            await AddFileAsync(name);
+
+        var summary = await RunAsync(executionId: "42");
+
+        Assert.Equal(new CatalogReconciliationSummary(7, 1, 1, 5, 0, 1), summary);
+        var outcomes = await OutcomesAsync("42");
+        Assert.Equal(7, outcomes.Count);
+        IdentificationOutcome Of(string name) => outcomes.Single(o => o.FileName == name);
+        Assert.Equal(IdentificationDecision.Identified, Of("linked.mp3").Decision);
+        Assert.NotNull(Of("linked.mp3").TrackId);
+        Assert.Equal(IdentificationDecision.NoMatch, Of(N).Decision);
+        Assert.Equal(IdentificationDecision.InsufficientEvidence, Of(C).Decision);
+        Assert.Equal(IdentificationDecision.NoMethodRan, Of(U).Decision);
+        Assert.Equal(IdentificationDecision.MethodFailed, Of(X).Decision);
+        Assert.Equal(IdentificationDecision.NoMethodRan, Of(F).Decision);
+        Assert.Equal(IdentificationDecision.Error, Of(B).Decision);
+        Assert.DoesNotContain("secret", Of(B).Reason);
+        Assert.Contains("\"status\":\"Failed\"", Of(X).MethodsJson);
+        Assert.Contains("\"status\":\"Unconfigured\"", Of(N).MethodsJson);
+        Assert.Contains("\"\\u0022Song\\u0022 by Artist\"", Of("linked.mp3").MethodsJson);
+    }
+
+    [Fact]
+    public async Task A_file_name_longer_than_the_column_is_truncated_so_the_outcome_is_still_recorded()
+    {
+        var longName = new string('a', 600) + ".mp3";
+        _identities[longName] = () => Unresolved("nothing", Method("musicbrainz", IdentificationMethodStatus.NothingFound));
+        await AddFileAsync(longName);
+
+        await RunAsync(executionId: "7");
+
+        var outcome = Assert.Single(await OutcomesAsync("7"));
+        Assert.Equal(longName[..IdentificationOutcome.FileNameMaxLength], outcome.FileName);
+    }
+
+    [Fact]
+    public void Truncate_cuts_to_the_column_length_and_leaves_shorter_values_alone()
+    {
+        Assert.Equal(new string('x', IdentificationOutcome.ReasonMaxLength),
+            IdentificationOutcome.Truncate(new string('x', IdentificationOutcome.ReasonMaxLength + 50), IdentificationOutcome.ReasonMaxLength));
+        Assert.Equal("short", IdentificationOutcome.Truncate("short", IdentificationOutcome.ReasonMaxLength));
+    }
+
+    [Fact]
+    public void Methods_round_trip_through_the_outcome_and_unreadable_json_gives_an_empty_list()
+    {
+        var outcome = new IdentificationOutcome();
+        outcome.SetMethods([new IdentificationMethodResult("acoustid", IdentificationMethodStatus.Found, "one hit", ["\"Song\" by Artist"])]);
+
+        var method = Assert.Single(outcome.ReadMethods());
+        Assert.Equal(("acoustid", IdentificationMethodStatus.Found, "one hit"), (method.Source, method.Status, method.Note));
+        Assert.Equal("\"Song\" by Artist", Assert.Single(method.Candidates));
+
+        outcome.MethodsJson = "not json";
+        Assert.Empty(outcome.ReadMethods());
+    }
+
+    [Fact]
+    public async Task Repeated_executions_keep_their_own_outcomes()
+    {
+        _identities["x.mp3"] = () => Unresolved("nothing", Method("musicbrainz", IdentificationMethodStatus.NothingFound));
+        await AddFileAsync("x.mp3");
+
+        await RunAsync(executionId: "1");
+        await RunAsync(executionId: "2");
+        await RunAsync();
+
+        Assert.Single(await OutcomesAsync("1"));
+        Assert.Single(await OutcomesAsync("2"));
+        using var db = CreateDb();
+        Assert.Equal(2, await db.IdentificationOutcomes.CountAsync());
+    }
+
+    [Fact]
+    public async Task Outcomes_older_than_the_retention_are_pruned_and_a_deleted_file_takes_its_outcomes_along()
+    {
+        _identities["old.mp3"] = () => Unresolved("nothing");
+        _identities["new.mp3"] = () => Unresolved("nothing");
+        var old = await AddFileAsync("old.mp3");
+        await RunAsync(executionId: "1");
+        using (var db = CreateDb())
+        {
+            await db.IdentificationOutcomes.ExecuteUpdateAsync(s => s.SetProperty(o => o.RecordedAt, DateTimeOffset.UtcNow.AddDays(-30)));
+        }
+        await AddFileAsync("new.mp3");
+        await RunAsync(executionId: "2");
+
+        using (var db = CreateDb())
+        {
+            var service = new CatalogReconciliation(db, _storage, new ByNameIdentifier(_identities), TimeProvider.System, _log);
+            Assert.Equal(1, await service.PruneOutcomesAsync(TimeSpan.FromDays(7), CancellationToken.None));
+        }
+        Assert.Empty(await OutcomesAsync("1"));
+        Assert.Equal(2, (await OutcomesAsync("2")).Count);
+
+        using var cleanup = CreateDb();
+        await cleanup.Files.Where(f => f.Id == old).ExecuteDeleteAsync();
+        Assert.Single(await OutcomesAsync("2"));
     }
 }

@@ -12,8 +12,24 @@ public class MusicHubDbContext(DbContextOptions<MusicHubDbContext> options) : Db
     public DbSet<TrackArtist> TrackArtists => Set<TrackArtist>();
     public DbSet<ArtistExternalLink> ArtistExternalLinks => Set<ArtistExternalLink>();
 
+    public DbSet<IdentificationOutcome> IdentificationOutcomes => Set<IdentificationOutcome>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
+        modelBuilder.Entity<IdentificationOutcome>(outcome =>
+        {
+            outcome.Property(o => o.JobExecutionId).HasMaxLength(100);
+            outcome.Property(o => o.FileName).HasMaxLength(IdentificationOutcome.FileNameMaxLength);
+            outcome.Property(o => o.Reason).HasMaxLength(IdentificationOutcome.ReasonMaxLength);
+            outcome.Property(o => o.Decision).HasConversion<string>().HasMaxLength(50);
+            // A deleted file takes its diagnostics with it.
+            outcome.HasOne(o => o.File).WithMany()
+                .HasForeignKey(o => o.FileId).OnDelete(DeleteBehavior.Cascade);
+            outcome.HasIndex(o => new { o.JobExecutionId, o.FileId });
+            outcome.HasIndex(o => o.RecordedAt);
+            outcome.HasIndex(o => o.FileId);
+        });
+
         modelBuilder.Entity<FileRecord>(file =>
         {
             file.Property(f => f.Status).HasConversion<string>();

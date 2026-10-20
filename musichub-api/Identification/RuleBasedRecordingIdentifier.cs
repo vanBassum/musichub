@@ -32,10 +32,11 @@ public sealed class RuleBasedRecordingIdentifier(
         }
 
         var evidence = reports.SelectMany(Describe).ToList();
+        var methods = reports.Select(ToMethodResult).ToList();
         var candidates = reports.SelectMany(r => r.Candidates.Select(c => (r.Source, Candidate: c))).ToList();
         if (candidates.Count == 0)
         {
-            return IdentificationResult.Unresolved("No identification tool produced a candidate.", evidence);
+            return IdentificationResult.Unresolved("No identification tool produced a candidate.", evidence, methods);
         }
 
         var identities = candidates.GroupBy(c => IdentityKey(c.Candidate)).ToList();
@@ -45,21 +46,21 @@ public sealed class RuleBasedRecordingIdentifier(
                 $"{Format(g.First().Candidate)} ({string.Join(", ", g.Select(c => c.Source).Distinct())})");
             return IdentificationResult.Unresolved(
                 $"The evidence names {identities.Count} different recordings: {string.Join("; ", conflicts)}.",
-                evidence);
+                evidence, methods);
         }
 
         if (identities[0].All(c => c.Source == FileMetadataEvidenceProvider.SourceName))
         {
             return IdentificationResult.Unresolved(
                 "Only the embedded tags name this recording; tags are hints and need another source to agree.",
-                evidence);
+                evidence, methods);
         }
 
         var agreed = identities[0].Select(c => c.Candidate).ToList();
         var first = agreed[0];
         var album = agreed.Select(c => c.Album).FirstOrDefault(a => !string.IsNullOrWhiteSpace(a));
         return IdentificationResult.Identified(
-            new ProposedRecordingIdentity(first.Title, first.Artists, album, AgreedReferences(agreed)), evidence);
+            new ProposedRecordingIdentity(first.Title, first.Artists, album, AgreedReferences(agreed)), evidence, methods);
     }
 
     // An identifier counts only when every candidate that gives one for that artist and source gives the same one.

@@ -62,7 +62,7 @@ public sealed class ArtistExternalLinksTests : IDisposable
 
         var service = new CatalogReconciliation(
             db, _storage, new ByNameIdentifier(_identities), TimeProvider.System, NullLogger<CatalogReconciliation>.Instance);
-        var summary = await service.RunAsync(CancellationToken.None);
+        var summary = await service.RunAsync(null, CancellationToken.None);
         Assert.Equal(0, summary.Failed);
     }
 

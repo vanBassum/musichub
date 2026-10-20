@@ -45,7 +45,7 @@ public sealed class CandidateSearchEvidenceProvider(ICandidateSearch? search = n
         }
         catch (CandidateSearchUnavailableException e)
         {
-            return EvidenceReport.Unavailable(Source, $"The search for {query} failed: {e.Message}");
+            return EvidenceReport.Failed(Source, $"The search for {query} failed: {e.Message}");
         }
         return candidates.Count == 0
             ? EvidenceReport.NothingFound(Source, $"No match for {query}.")

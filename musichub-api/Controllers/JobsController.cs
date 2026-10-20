@@ -1,4 +1,8 @@
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+using MusicHub.Api.Catalog;
+using MusicHub.Api.Data;
+using MusicHub.Api.Identification;
 using MusicHub.Api.Jobs;
 
 namespace MusicHub.Api.Controllers;
@@ -10,7 +14,7 @@ namespace MusicHub.Api.Controllers;
 /// </summary>
 [ApiController]
 [Route("api/jobs")]
-public class JobsController(CatalogReconciliationJobService catalogReconciliation) : ControllerBase
+public class JobsController(CatalogReconciliationJobService catalogReconciliation, MusicHubDbContext db) : ControllerBase
 {
     private const string CatalogReconciliationId = "catalog-reconciliation";
     private const int RecentExecutions = 25;
@@ -49,6 +53,26 @@ public class JobsController(CatalogReconciliationJobService catalogReconciliatio
         return await catalogReconciliation.GetAsync(id, cancellationToken) is { } details ? Ok(details) : NotFound();
     }
 
+    /// <summary>
+    /// What happened to each file the execution examined, in the order it went through them: one outcome per file with
+    /// its decision, reason and what each identification method did. 404 when the execution is unknown or has expired.
+    /// </summary>
+    [HttpGet("executions/{id}/outcomes")]
+    public async Task<IActionResult> Outcomes(string id, CancellationToken cancellationToken)
+    {
+        if (!catalogReconciliation.IsReady)
+            return JobsUnavailable();
+        if (await catalogReconciliation.GetAsync(id, cancellationToken) is null)
+            return NotFound();
+
+        var rows = await db.IdentificationOutcomes.AsNoTracking()
+            .Where(o => o.JobExecutionId == id)
+            .OrderBy(o => o.Id)
+            .ToListAsync(cancellationToken);
+        return Ok(rows.Select(o => new FileOutcome(
+            o.FileId, o.FileName, o.Decision, o.Reason, o.TrackId, o.RecordedAt, o.ReadMethods())));
+    }
+
     /// <summary>Enqueues a catalog reconciliation run: 202 with the new execution. 409 while a run is already active.</summary>
     [HttpPost("catalog-reconciliation/start")]
     public async Task<IActionResult> StartCatalogReconciliation(CancellationToken cancellationToken)
@@ -70,6 +94,10 @@ public class JobsController(CatalogReconciliationJobService catalogReconciliatio
             title: "Background jobs are not running",
             detail: "The job engine has not started yet or is disabled. Try again shortly.",
             statusCode: StatusCodes.Status503ServiceUnavailable);
+
+    public sealed record FileOutcome(
+        int FileId, string FileName, IdentificationDecision Decision, string Reason, int? TrackId, DateTimeOffset RecordedAt,
+        IReadOnlyList<IdentificationMethodResult> Methods);
 
     public sealed record JobInfo(string Id, string Name, string Description, string? ActiveExecutionId);
 }
