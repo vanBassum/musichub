@@ -3,6 +3,7 @@ import { useMemo, useSyncExternalStore, type ReactNode } from "react"
 
 import { ArtistPage } from "@/components/artist-page"
 import { BuildInfoSheet } from "@/components/build-info-sheet"
+import { CompactPlayer } from "@/components/compact-player"
 import { FilesView } from "@/components/files-view"
 import { GlobalSearch } from "@/components/global-search"
 import { JobsView } from "@/components/jobs-view"
@@ -82,6 +83,7 @@ function Page({
 
 // Below `lg` the phone has three destinations: Search, Player (Now Playing and
 // Queue) and More (Library, Files, Jobs, Artists). The location is the URL hash.
+// Outside the Player page a compact player sits above the navigation.
 export function MobileShell({
   total,
   filters,
@@ -206,6 +208,9 @@ export function MobileShell({
           {id === "artists" && <ArtistPage className="flex-1" />}
         </Page>
       ))}
+      {tab !== "player" && (
+        <CompactPlayer queue={queue} nowPlayingId={nowPlayingId} />
+      )}
       <MobileNav active={tab} onNavigate={navigate} />
     </div>
   )
