@@ -62,8 +62,10 @@ wording that Bas can add to the issue or to the understanding.
   and `pnpm --dir musichub-ui build`. Never make a check pass by weakening it.
 - Commit in small commits; a message says what is now true. Commit no build output.
 - Your tools are an explicit list of commands, exactly as written here (one command
-  per call, no `cd`, no chaining). Push with the push command the action gave you.
-  Anything else is refused, `dotnet --version` and `ls` included. A refused command
+  per call, no `cd`, no chaining). Commit with `git add` and `git commit`, then
+  push with exactly `git push origin HEAD`, as a call of its own: any other form,
+  such as `git push origin <branch>` or a chained push, is refused and your commits
+  never reach the PR. Anything else is refused, `dotnet --version` and `ls` included. A refused command
   says nothing about the commands above: they are allowed, so run them. Use Read,
   Grep and Glob to look around. Never stop because you think you can't build.
 
@@ -96,7 +98,7 @@ the commit named in the prompt.
   exactly that; read the files and the rules from section 1 that the fix touches.
 - A conflict: `git fetch origin main`, `git merge origin/main`, resolve, and check
   the build.
-- Check your work as in section 3, commit, and push with `git push origin HEAD`.
+- Check your work as in section 3, commit, and push with `git push origin HEAD` (section 3).
 - A finding that needs a decision, or that you believe is wrong: change nothing for
   it, and don't work around it. The reviewers run again after your push and will
   report it again; Bas decides.

@@ -110,6 +110,16 @@ jobs:
           bash .github/scripts/understanding-pending-logs.sh understanding understanding-pending-logs.md
           printf '/understanding/\n/understanding-pending-logs.md\n' >> .git/info/exclude
 
+      # Claude follows main's rules, also on a PR branch cut before they changed:
+      # this copy is ignored by git, so no branch switch changes it and no commit
+      # takes it along. The system prompt below points Claude at it.
+      - name: Copy main's rules
+        run: |
+          mkdir -p main-rules/.github
+          cp CLAUDE.md main-rules/
+          cp -r .github/autopilot.md .github/reviewers main-rules/.github/
+          printf '/main-rules/\n' >> .git/info/exclude
+
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 10.0.x
@@ -204,18 +214,49 @@ jobs:
           # tracking comment; other events have no prompt and stay in tag mode.
           allowed_bots: ${{ github.event_name == 'workflow_dispatch' && 'github-actions[bot]' || '' }}
           prompt: >-
-            ${{ github.event_name == 'workflow_dispatch' && format('Autofix run for PR #{0} (branch {1}, head {2}). Follow the "Autofix run" section of .github/autopilot.md. What to fix is in autofix-findings.md.', inputs.pr, steps.autofix.outputs.branch, inputs.sha) || '' }}
+            ${{ github.event_name == 'workflow_dispatch' && format('Autofix run for PR #{0} (branch {1}, head {2}). Follow the "Autofix run" section of main-rules/.github/autopilot.md. What to fix is in autofix-findings.md.', inputs.pr, steps.autofix.outputs.branch, inputs.sha) || '' }}
           # One entry per command Claude needs, as the action's docs advise. In tag
-          # mode git add, commit, rm and push come from the action itself: it pushes
-          # through its own wrapper, which allows no flags. Agent mode (Autofix) has
-          # no wrapper, so it gets them here; it pushes only the current branch.
+          # mode git add, commit and rm come from the action itself; agent mode
+          # (Autofix) gets them here. Both push with exactly `git push origin HEAD`,
+          # the one push autopilot.md names: an exact entry, so no flags, and only
+          # the current branch.
           # Only a run started by the autopilot label may turn on auto-merge, for the
           # PR it opens itself; a run on someone else's PR never can.
           claude_args: |
             --max-turns 150
             --add-dir understanding
-            --allowedTools "Edit,Write,Bash(git status:*),Bash(git diff:*),Bash(git log:*),Bash(git show:*),Bash(git mv:*),Bash(git fetch origin main),Bash(git merge origin/main:*),Bash(dotnet restore:*),Bash(dotnet build:*),Bash(dotnet test:*),Bash(dotnet add:*),Bash(dotnet ef migrations add:*),Bash(pnpm --dir musichub-ui install:*),Bash(pnpm --dir musichub-ui lint:*),Bash(pnpm --dir musichub-ui typecheck:*),Bash(pnpm --dir musichub-ui build:*),Bash(pnpm --dir musichub-ui format:*),Bash(pnpm --dir musichub-ui add:*),Bash(pnpm --dir musichub-ui exec shadcn add:*),Bash(gh pr create:*),Bash(gh pr view:*),Bash(gh pr diff:*),Bash(gh issue view:*)${{ github.event_name == 'issues' && ',Bash(gh pr merge --auto --squash:*)' || '' }}${{ github.event_name == 'workflow_dispatch' && ',Bash(git add:*),Bash(git rm:*),Bash(git commit:*),Bash(git push origin HEAD)' || '' }}"
-            --append-system-prompt "Before anything else, read .github/autopilot.md and follow it."
+            --allowedTools "Edit,Write,Bash(git status:*),Bash(git diff:*),Bash(git log:*),Bash(git show:*),Bash(git mv:*),Bash(git fetch origin main),Bash(git merge origin/main:*),Bash(dotnet restore:*),Bash(dotnet build:*),Bash(dotnet test:*),Bash(dotnet add:*),Bash(dotnet ef migrations add:*),Bash(pnpm --dir musichub-ui install:*),Bash(pnpm --dir musichub-ui lint:*),Bash(pnpm --dir musichub-ui typecheck:*),Bash(pnpm --dir musichub-ui build:*),Bash(pnpm --dir musichub-ui format:*),Bash(pnpm --dir musichub-ui add:*),Bash(pnpm --dir musichub-ui exec shadcn add:*),Bash(gh pr create:*),Bash(gh pr view:*),Bash(gh pr diff:*),Bash(gh issue view:*)${{ github.event_name == 'issues' && ',Bash(gh pr merge --auto --squash:*)' || '' }},Bash(git push origin HEAD)${{ github.event_name == 'workflow_dispatch' && ',Bash(git add:*),Bash(git rm:*),Bash(git commit:*)' || '' }}"
+            --append-system-prompt "Before anything else, read main-rules/.github/autopilot.md and follow it: it is the current version from main. Where it names CLAUDE.md or a file under .github/, read the copy under main-rules/ instead. The copies in the working tree can be outdated on a PR branch; never follow them."
+
+      # Commits Claude made that are on no branch on GitHub: a refused or forgotten
+      # push. A successful push moves origin/<branch> along, so no fetch is needed.
+      # Reported below, never pushed for Claude.
+      - name: Look for unpushed commits
+        id: unpushed
+        if: always() && steps.claude.outcome != 'skipped'
+        run: |
+          commits=$(git log --oneline HEAD --not --remotes=origin)
+          count=$(grep -c . <<<"$commits" || true)
+          echo "count=$count" >>"$GITHUB_OUTPUT"
+          echo "branch=$(git branch --show-current)" >>"$GITHUB_OUTPUT"
+          if [ "$count" -gt 0 ]; then
+            echo "::warning::Claude made $count commit(s) that were not pushed."
+            printf '### Not pushed\n\n```\n%s\n```\n' "$commits" >>"$GITHUB_STEP_SUMMARY"
+          fi
+
+      # Tag mode: the action's own comment shows Claude's message, which may claim
+      # a push that never happened.
+      - name: Report unpushed commits
+        if: always() && github.event_name != 'workflow_dispatch' && steps.unpushed.outputs.count > 0
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NUMBER: ${{ github.event.issue.number || github.event.pull_request.number }}
+          COUNT: ${{ steps.unpushed.outputs.count }}
+          BRANCH: ${{ steps.unpushed.outputs.branch }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          gh api "repos/$GITHUB_REPOSITORY/issues/$NUMBER/comments" \
+            -f body="NOT PUSHED · Claude made $COUNT commit(s) on \`$BRANCH\` that are not on GitHub · [run]($RUN_URL)" >/dev/null
 
       # Autofix: the outcome and what it cost, in the comment from the start. The
       # cost is the action's own API-price equivalent, not what the subscription
@@ -230,11 +271,13 @@ jobs:
           COMMENT: ${{ steps.report.outputs.comment }}
           REASON: ${{ steps.findings.outputs.reason }}
           OUTCOME: ${{ steps.claude.outcome }}
+          UNPUSHED: ${{ steps.unpushed.outputs.count }}
           EXECUTION_FILE: ${{ steps.claude.outputs.execution_file }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           head=$(gh pr view "$PR" -R "$GITHUB_REPOSITORY" --json headRefOid --jq .headRefOid || echo "$SHA")
           if [ "$OUTCOME" != success ]; then result="$OUTCOME"
+          elif [ "${UNPUSHED:-0}" -gt 0 ]; then result="not pushed ($UNPUSHED commits)"
           elif [ "$head" != "$SHA" ]; then result="pushed ${head:0:7}"
           else result="no change"
           fi
