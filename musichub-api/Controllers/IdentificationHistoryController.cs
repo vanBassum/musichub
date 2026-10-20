@@ -15,16 +15,6 @@ public class IdentificationHistoryController(MusicHubDbContext db) : ControllerB
 {
     private const int MaxPageSize = 100;
 
-    /// <summary>The decisions that leave a file unlinked and need a person's eye; the default of <see cref="List"/>.</summary>
-    private static readonly IdentificationDecision[] NeedsReview =
-    [
-        IdentificationDecision.NoMatch,
-        IdentificationDecision.InsufficientEvidence,
-        IdentificationDecision.NoMethodRan,
-        IdentificationDecision.MethodFailed,
-        IdentificationDecision.Error,
-    ];
-
     /// <summary>
     /// A page of recorded outcomes. Without <paramref name="decision"/> only the unresolved ones; with it, that decision
     /// (Identified included, so linked files can be inspected too). Nothing here changes any identity.
@@ -42,7 +32,7 @@ public class IdentificationHistoryController(MusicHubDbContext db) : ControllerB
         var all = db.IdentificationOutcomes.AsNoTracking();
         var query = decision is { } chosen
             ? all.Where(o => o.Decision == chosen)
-            : all.Where(o => NeedsReview.Contains(o.Decision));
+            : all.Where(o => IdentificationDecisions.Unresolved.Contains(o.Decision));
         var total = await query.CountAsync(cancellationToken);
         var rows = await query
             .OrderByDescending(o => o.Id)

@@ -36,16 +36,6 @@ public static class ProblemProjection
 {
     public const int MaxPerSource = 100;
 
-    // The decisions that leave a file unlinked without an identity: Identified linked the file, Skipped never touched it.
-    private static readonly IdentificationDecision[] Unresolved =
-    [
-        IdentificationDecision.NoMatch,
-        IdentificationDecision.InsufficientEvidence,
-        IdentificationDecision.NoMethodRan,
-        IdentificationDecision.MethodFailed,
-        IdentificationDecision.Error,
-    ];
-
     /// <summary>
     /// Stored files that still have no track, whose latest recorded identification attempt ended unresolved. A file
     /// that was linked since (or deleted) is no longer a problem, and an older attempt never shows twice. Outcomes
@@ -56,7 +46,7 @@ public static class ProblemProjection
     {
         var rows = await db.IdentificationOutcomes.AsNoTracking()
             .Where(o => !db.IdentificationOutcomes.Any(newer => newer.FileId == o.FileId && newer.Id > o.Id))
-            .Where(o => Unresolved.Contains(o.Decision))
+            .Where(o => IdentificationDecisions.Unresolved.Contains(o.Decision))
             .Where(o => o.File!.Status == FileStatus.Stored && o.File.TrackId == null)
             .OrderByDescending(o => o.Id)
             .Take(MaxPerSource)
