@@ -1,11 +1,13 @@
-import { EllipsisVertical, ExternalLink, ListPlus, Play } from "lucide-react"
+import { EllipsisVertical, ExternalLink, Play } from "lucide-react"
 
 import { AvailabilityBadge } from "@/components/availability-badge"
 import { CoverArt } from "@/components/cover-art"
 import { SectionBody } from "@/components/section-body"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
+import { WishlistButton } from "@/components/wishlist-button"
 import type { ArtistInfo, ArtistTracks, SectionState } from "@/lib/artist"
+import { wantCatalogTrack, wantExternalTrack } from "@/lib/catalog-api"
 
 interface ArtistTracksProps {
   artist: SectionState<ArtistInfo>
@@ -94,15 +96,14 @@ export function ArtistTracksSection({
                     >
                       <Play />
                     </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      disabled
-                      title={unavailableHint}
-                      aria-label={`Add ${track.title} to wishlist`}
-                    >
-                      <ListPlus />
-                    </Button>
+                    <WishlistButton
+                      wanted={track.want.kind === "catalog" && track.want.wanted}
+                      onWant={() =>
+                        track.want.kind === "catalog"
+                          ? wantCatalogTrack(track.want.id)
+                          : wantExternalTrack(track.want.track)
+                      }
+                    />
                     <Button
                       variant="ghost"
                       size="icon"
