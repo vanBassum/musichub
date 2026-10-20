@@ -47,7 +47,7 @@ export function CompactPlayer({ queue, nowPlayingId }: CompactPlayerProps) {
           <span className="flex min-w-0 flex-col text-left">
             <span className="truncate text-sm font-medium">{source.title}</span>
             <span className="truncate text-xs text-muted-foreground">
-              Stored file
+              {source.subtitle ?? "Stored file"}
             </span>
           </span>
         </SheetTrigger>

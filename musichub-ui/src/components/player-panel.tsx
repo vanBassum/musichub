@@ -80,7 +80,9 @@ export function NowPlaying({ large = false }: NowPlayingProps) {
         >
           {source.title}
         </h2>
-        <p className="w-full truncate text-muted-foreground">Stored file</p>
+        <p className="w-full truncate text-muted-foreground">
+          {source.subtitle ?? "Stored file"}
+        </p>
         <p
           role="status"
           className="w-full truncate text-xs text-muted-foreground"

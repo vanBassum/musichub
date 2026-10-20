@@ -8,6 +8,12 @@ import {
   type ReactNode,
 } from "react"
 
+import {
+  artistNames,
+  trackTitle,
+  type CatalogTrack,
+} from "@/lib/catalog-api"
+
 // "loading" is the time between asking for the audio and hearing it (or failing).
 export type PlaybackStatus =
   | "idle"
@@ -17,12 +23,22 @@ export type PlaybackStatus =
   | "ended"
   | "error"
 
-// What is loaded in the player. Only Stored files for now; a catalog track would be
-// another kind. A file has no catalog metadata, so its original filename is the title.
+// What is loaded in the player: always one Stored file, played either directly from Files
+// (no catalog metadata, so its original filename is the title) or as the audio of a catalog
+// track. `id` is the Stored file's id in both cases, so one file is one loaded source.
 export interface PlayerSource {
-  kind: "file"
+  kind: "file" | "track"
   id: string
   title: string
+  // The artists of a catalog track; null for a file.
+  subtitle: string | null
+}
+
+// A catalog track that can be played: its linked Stored file is known.
+export type PlayableTrack = CatalogTrack & { audioFileId: number }
+
+export function isPlayable(track: CatalogTrack): track is PlayableTrack {
+  return track.audioFileId !== null
 }
 
 export interface PlayerState {
@@ -32,6 +48,7 @@ export interface PlayerState {
   duration: number
   error: string | null
   playFile: (file: { id: string; originalFilename: string }) => void
+  playTrack: (track: PlayableTrack) => void
   toggle: () => void
   seek: (seconds: number) => void
 }
@@ -106,22 +123,45 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     })
   }, [])
 
-  const playFile = useCallback(
-    (file: { id: string; originalFilename: string }) => {
-      if (source?.id === file.id && status !== "error") {
+  // The one place a Stored file is loaded, whoever asks: Files or a catalog track.
+  const play = useCallback(
+    (next: PlayerSource) => {
+      if (source?.id === next.id && status !== "error") {
         if (status === "ended") audio.currentTime = 0
         start()
         return
       }
-      setSource({ kind: "file", id: file.id, title: file.originalFilename })
+      setSource(next)
       setStatus("loading")
       setError(null)
       setCurrentTime(0)
       setDuration(0)
-      audio.src = `/api/files/${encodeURIComponent(file.id)}/audio`
+      audio.src = `/api/files/${encodeURIComponent(next.id)}/audio`
       start()
     },
     [source, status, start]
+  )
+
+  const playFile = useCallback(
+    (file: { id: string; originalFilename: string }) =>
+      play({
+        kind: "file",
+        id: file.id,
+        title: file.originalFilename,
+        subtitle: null,
+      }),
+    [play]
+  )
+
+  const playTrack = useCallback(
+    (track: PlayableTrack) =>
+      play({
+        kind: "track",
+        id: String(track.audioFileId),
+        title: trackTitle(track),
+        subtitle: artistNames(track) || null,
+      }),
+    [play]
   )
 
   const toggle = useCallback(() => {
@@ -151,10 +191,21 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       duration,
       error,
       playFile,
+      playTrack,
       toggle,
       seek,
     }),
-    [source, status, currentTime, duration, error, playFile, toggle, seek]
+    [
+      source,
+      status,
+      currentTime,
+      duration,
+      error,
+      playFile,
+      playTrack,
+      toggle,
+      seek,
+    ]
   )
 
   return <PlayerContext.Provider value={value}>{children}</PlayerContext.Provider>

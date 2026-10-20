@@ -1,4 +1,5 @@
 import { AudioBadge } from "@/components/audio-badge"
+import { TrackPlayControl } from "@/components/track-play-control"
 import {
   Sheet,
   SheetContent,
@@ -52,7 +53,10 @@ export function TrackDetailsSheet({
               <div className="flex flex-col gap-0.5">
                 <dt className="text-muted-foreground">Stored audio</dt>
                 <dd>
-                  <AudioBadge hasAudio={track.data.hasAudio} />
+                  <span className="flex items-center gap-2">
+                    <AudioBadge hasAudio={track.data.hasAudio} />
+                    <TrackPlayControl track={track.data} />
+                  </span>
                 </dd>
               </div>
               <div className="flex flex-col gap-0.5">

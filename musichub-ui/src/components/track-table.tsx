@@ -1,4 +1,5 @@
 import { AudioBadge } from "@/components/audio-badge"
+import { TrackPlayControl } from "@/components/track-play-control"
 import { Button } from "@/components/ui/button"
 import {
   Table,
@@ -84,8 +85,11 @@ export function TrackTable({
             <TableRow className="hover:bg-transparent">
               <TableHead className="pl-4">Title</TableHead>
               <TableHead className="hidden sm:table-cell">Artist</TableHead>
-              <TableHead className="w-24 pr-4 sm:w-auto sm:pr-2">Audio</TableHead>
-              <TableHead className="hidden pr-4 sm:table-cell">Added</TableHead>
+              <TableHead className="w-24 sm:w-auto sm:pr-2">Audio</TableHead>
+              <TableHead className="hidden sm:table-cell">Added</TableHead>
+              <TableHead className="w-12 pr-4">
+                <span className="sr-only">Play</span>
+              </TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -128,11 +132,14 @@ export function TrackTable({
                       <span className="text-muted-foreground">No artist</span>
                     )}
                   </TableCell>
-                  <TableCell className="pr-4 sm:pr-2">
+                  <TableCell className="sm:pr-2">
                     <AudioBadge hasAudio={track.hasAudio} />
                   </TableCell>
-                  <TableCell className="hidden pr-4 sm:table-cell">
+                  <TableCell className="hidden sm:table-cell">
                     {formatDate(track.createdAt)}
+                  </TableCell>
+                  <TableCell className="pr-4">
+                    <TrackPlayControl track={track} />
                   </TableCell>
                 </TableRow>
               )
