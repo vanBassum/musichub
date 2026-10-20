@@ -2,7 +2,7 @@ namespace MusicHub.Api.Catalog;
 
 /// <summary>
 /// Proof that an external provider's recording is this catalog track: the provider's own stable identifier. It is the
-/// only evidence the wishlist treats as reliable, so a provider recording maps to at most one track.
+/// only evidence adding to the library treats as reliable, so a provider recording maps to at most one track.
 /// </summary>
 public class TrackExternalId
 {

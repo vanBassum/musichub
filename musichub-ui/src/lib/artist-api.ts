@@ -123,7 +123,7 @@ function localTrack(track: CatalogTrack): ArtistTrack {
     detail: [track.version, artistNames(track)].filter(Boolean).join(" · "),
     availability: track.hasAudio ? "available" : "missing",
     provenance: null,
-    want: { kind: "catalog", id: track.id, wanted: track.wanted },
+    addable: null,
   }
 }
 
@@ -143,10 +143,8 @@ function externalTrack({
     detail: track.artists.map((a) => a.name).join(", "),
     availability: !inCatalog ? "external" : hasAudio ? "available" : "missing",
     provenance: inCatalog ? null : { label: providerLabel(track.provider), url: track.url },
-    // In the catalog already: want that record, so no second one is made.
-    want: inCatalog
-      ? { kind: "catalog", id: catalogTrackId, wanted: false }
-      : { kind: "external", track },
+    // In the catalog already: it is in the library, so no second record is made.
+    addable: inCatalog ? null : track,
   }
 }
 

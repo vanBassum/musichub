@@ -8,11 +8,11 @@ using Xunit;
 
 namespace MusicHub.Api.Tests.Catalog;
 
-public sealed class WishlistTests : IDisposable
+public sealed class LibraryTracksTests : IDisposable
 {
     private readonly SqliteConnection _connection = new("DataSource=:memory:");
 
-    public WishlistTests()
+    public LibraryTracksTests()
     {
         _connection.Open();
         using var db = CreateDb();
@@ -24,27 +24,18 @@ public sealed class WishlistTests : IDisposable
     private MusicHubDbContext CreateDb() => new(
         new DbContextOptionsBuilder<MusicHubDbContext>().UseSqlite(_connection).Options);
 
-    private static ExternalTrackWishlistRequest External(
+    private static ExternalTrackRequest External(
         string externalId = "mb-1", string title = "Song", string? disambiguation = null, params string[] artists) =>
         new("musicbrainz", externalId, title, disambiguation,
             (artists.Length == 0 ? ["Band"] : artists).Select(a => new ExternalArtistCreditRequest(a)).ToList());
 
-    private async Task<(int Status, WishlistResponse Body)> WantExternal(ExternalTrackWishlistRequest request)
+    private async Task<(int Status, AddToLibraryResponse Body)> AddExternal(ExternalTrackRequest request)
     {
         using var db = CreateDb();
-        var result = await new TracksController(db, new Wishlist(db, TimeProvider.System))
-            .WantExternal(request, default);
+        var result = await new TracksController(db, new LibraryTracks(db, TimeProvider.System))
+            .AddExternal(request, default);
         var objectResult = Assert.IsAssignableFrom<ObjectResult>(result);
-        return (objectResult.StatusCode ?? 200, Assert.IsType<WishlistResponse>(objectResult.Value));
-    }
-
-    private async Task<(int Status, WishlistResponse Body)> WantCatalog(int id)
-    {
-        using var db = CreateDb();
-        var result = await new TracksController(db, new Wishlist(db, TimeProvider.System)).Want(id, default);
-        if (result is NotFoundResult) return (404, null!);
-        var ok = Assert.IsType<OkObjectResult>(result);
-        return (200, Assert.IsType<WishlistResponse>(ok.Value));
+        return (objectResult.StatusCode ?? 200, Assert.IsType<AddToLibraryResponse>(objectResult.Value));
     }
 
     private async Task<int> Seed(string title, string? version, params string[] artists)
@@ -63,36 +54,17 @@ public sealed class WishlistTests : IDisposable
     }
 
     [Fact]
-    public async Task Catalog_track_is_wanted_once_and_repeating_changes_nothing()
+    public async Task New_external_track_is_created_as_missing_music_and_repeating_reuses_it()
     {
-        var id = await Seed("Song", null, "Band");
-
-        var first = await WantCatalog(id);
-        var wantedAt = await WantedAt(id);
-        var second = await WantCatalog(id);
-
-        Assert.Equal(WishlistStatus.Added, first.Body.Status);
-        Assert.True(first.Body.Track!.Wanted);
-        Assert.False(first.Body.Track.HasAudio);
-        Assert.Equal(WishlistStatus.AlreadyWanted, second.Body.Status);
-        Assert.Equal(wantedAt, await WantedAt(id));
-    }
-
-    [Fact]
-    public async Task Unknown_catalog_track_is_not_found() => Assert.Equal(404, (await WantCatalog(99)).Status);
-
-    [Fact]
-    public async Task New_external_track_is_created_wanted_and_repeating_reuses_it()
-    {
-        var first = await WantExternal(External());
-        var second = await WantExternal(External());
+        var first = await AddExternal(External());
+        var second = await AddExternal(External());
 
         Assert.Equal(201, first.Status);
-        Assert.Equal(WishlistStatus.Added, first.Body.Status);
-        Assert.True(first.Body.Track!.Wanted);
+        Assert.True(first.Body.Created);
+        Assert.False(first.Body.Track.HasAudio);
         Assert.Equal(200, second.Status);
-        Assert.Equal(WishlistStatus.AlreadyWanted, second.Body.Status);
-        Assert.Equal(first.Body.Track.Id, second.Body.Track!.Id);
+        Assert.False(second.Body.Created);
+        Assert.Equal(first.Body.Track.Id, second.Body.Track.Id);
         using var db = CreateDb();
         Assert.Equal(1, await db.Tracks.CountAsync());
         Assert.Equal(1, await db.TrackExternalIds.CountAsync());
@@ -101,27 +73,25 @@ public sealed class WishlistTests : IDisposable
     [Fact]
     public async Task Known_provider_identifier_reuses_the_catalog_track_even_if_the_text_differs()
     {
-        var first = await WantExternal(External(title: "Song"));
-        var again = await WantExternal(External(title: "Song (2011 remaster)", artists: "Someone Else"));
+        var first = await AddExternal(External(title: "Song"));
+        var again = await AddExternal(External(title: "Song (2011 remaster)", artists: "Someone Else"));
 
-        Assert.Equal(first.Body.Track!.Id, again.Body.Track!.Id);
+        Assert.Equal(first.Body.Track.Id, again.Body.Track.Id);
         using var db = CreateDb();
         Assert.Equal(1, await db.Tracks.CountAsync());
     }
 
     [Fact]
-    public async Task Resembling_catalog_track_is_not_merged_nor_wanted_and_a_new_track_is_created()
+    public async Task Resembling_catalog_track_is_not_merged_and_a_new_track_is_created()
     {
         var existing = await Seed("song", null, "BAND");
 
-        var result = await WantExternal(External());
+        var result = await AddExternal(External());
 
         Assert.Equal(201, result.Status);
-        Assert.Equal(WishlistStatus.Added, result.Body.Status);
         Assert.NotEqual(existing, result.Body.Track.Id);
         using var db = CreateDb();
         Assert.Equal(2, await db.Tracks.CountAsync());
-        Assert.Null(await WantedAt(existing));
         Assert.Equal(1, await db.TrackExternalIds.CountAsync());
     }
 
@@ -130,11 +100,11 @@ public sealed class WishlistTests : IDisposable
     {
         await Seed("Song", "Live", "Band");
 
-        var first = await WantExternal(External(disambiguation: "studio"));
-        var second = await WantExternal(External(disambiguation: "studio"));
+        var first = await AddExternal(External(disambiguation: "studio"));
+        var second = await AddExternal(External(disambiguation: "studio"));
 
         Assert.Equal(first.Body.Track.Id, second.Body.Track.Id);
-        Assert.Equal(WishlistStatus.AlreadyWanted, second.Body.Status);
+        Assert.False(second.Body.Created);
         using var db = CreateDb();
         Assert.Equal(2, await db.Tracks.CountAsync());
     }
@@ -143,8 +113,8 @@ public sealed class WishlistTests : IDisposable
     public async Task Incomplete_external_track_is_rejected()
     {
         using var db = CreateDb();
-        var result = await new TracksController(db, new Wishlist(db, TimeProvider.System))
-            .WantExternal(new ExternalTrackWishlistRequest("musicbrainz", " ", "", null, []), default);
+        var result = await new TracksController(db, new LibraryTracks(db, TimeProvider.System))
+            .AddExternal(new ExternalTrackRequest("musicbrainz", " ", "", null, []), default);
 
         var bad = Assert.IsType<BadRequestObjectResult>(result);
         var problem = Assert.IsType<ValidationProblemDetails>(bad.Value);
@@ -155,10 +125,10 @@ public sealed class WishlistTests : IDisposable
     public async Task Too_long_fields_are_rejected_as_bad_request()
     {
         using var db = CreateDb();
-        var controller = new TracksController(db, new Wishlist(db, TimeProvider.System));
+        var controller = new TracksController(db, new LibraryTracks(db, TimeProvider.System));
         var artists = new List<ExternalArtistCreditRequest> { new(new string('a', 501)) };
 
-        var result = await controller.WantExternal(new ExternalTrackWishlistRequest(
+        var result = await controller.AddExternal(new ExternalTrackRequest(
             new string('p', 101), new string('e', 201), new string('t', 501), new string('d', 501), artists), default);
 
         var problem = Assert.IsType<ValidationProblemDetails>(Assert.IsType<BadRequestObjectResult>(result).Value);
@@ -168,7 +138,7 @@ public sealed class WishlistTests : IDisposable
     [Fact]
     public async Task Fields_at_the_limit_are_accepted()
     {
-        var (status, _) = await WantExternal(new ExternalTrackWishlistRequest(
+        var (status, _) = await AddExternal(new ExternalTrackRequest(
             new string('p', 100), new string('e', 200), new string('t', 500), new string('d', 500),
             [new(new string('a', 500))]));
 
@@ -179,8 +149,8 @@ public sealed class WishlistTests : IDisposable
     public async Task Null_artist_entry_is_rejected_as_bad_request()
     {
         using var db = CreateDb();
-        var result = await new TracksController(db, new Wishlist(db, TimeProvider.System)).WantExternal(
-            new ExternalTrackWishlistRequest("musicbrainz", "mb-1", "Song", null, [null!, new("Band")]), default);
+        var result = await new TracksController(db, new LibraryTracks(db, TimeProvider.System)).AddExternal(
+            new ExternalTrackRequest("musicbrainz", "mb-1", "Song", null, [null!, new("Band")]), default);
 
         var problem = Assert.IsType<ValidationProblemDetails>(Assert.IsType<BadRequestObjectResult>(result).Value);
         Assert.Equal(["artists"], problem.Errors.Keys);
@@ -191,15 +161,9 @@ public sealed class WishlistTests : IDisposable
     {
         await Seed("Other", null, "Band");
 
-        await WantExternal(External(artists: "  BAND "));
+        await AddExternal(External(artists: "  BAND "));
 
         using var db = CreateDb();
         Assert.Equal(1, await db.Artists.CountAsync());
-    }
-
-    private async Task<DateTimeOffset?> WantedAt(int id)
-    {
-        using var db = CreateDb();
-        return (await db.Tracks.AsNoTracking().SingleAsync(t => t.Id == id)).WantedAt;
     }
 }

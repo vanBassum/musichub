@@ -17,13 +17,10 @@ import {
 } from "@/components/ui/popover"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { WishlistButton } from "@/components/wishlist-button"
+import { AddToLibraryButton } from "@/components/add-to-library-button"
+import { AvailabilityBadge } from "@/components/availability-badge"
 import { providerLabel, type ArtistRef } from "@/lib/artist"
-import {
-  artistNames,
-  wantCatalogTrack,
-  wantExternalTrack,
-} from "@/lib/catalog-api"
+import { addExternalTrackToLibrary, artistNames } from "@/lib/catalog-api"
 import type { SearchStatus } from "@/lib/use-debounced-search"
 import { useExternalSearch } from "@/lib/use-external-search"
 import { useGlobalSearch } from "@/lib/use-global-search"
@@ -221,10 +218,7 @@ function LocalTrackRow({
       <span className="max-w-[40%] truncate text-muted-foreground">
         {artistNames(track)}
       </span>
-      <WishlistButton
-        wanted={track.wanted}
-        onWant={() => wantCatalogTrack(track.id)}
-      />
+      <AvailabilityBadge availability={track.hasAudio ? "available" : "missing"} />
     </li>
   )
 }
@@ -246,14 +240,14 @@ function ExternalTrackRow({
         {track.artists.map((a) => a.name).join(", ")}
       </span>
       <ProviderLink provider={track.provider} url={track.url} />
-      <WishlistButton onWant={() => wantExternalTrack(track)} />
+      <AddToLibraryButton onAdd={() => addExternalTrackToLibrary(track)} />
     </li>
   )
 }
 
 // Searches the local catalog and the external provider; one page for desktop and
 // phone. Which fields it looks in is a per-browser preference. Viewing a result
-// stores nothing: only "Add to wishlist" does.
+// stores nothing: only "Add to library" does.
 export function SearchPage({
   query,
   onQueryChange,
