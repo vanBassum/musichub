@@ -6,12 +6,13 @@ using MusicHub.Api.Data;
 namespace MusicHub.Api.Controllers;
 
 /// <summary>
-/// The catalog of known tracks, independent of audio files. It lists, searches and shows tracks and lets the
-/// user mark them wanted (the wishlist); other changes to the catalog are not part of this API.
+/// The library: the catalog of known tracks, independent of audio files. It lists, searches and shows tracks (with
+/// hasAudio=false for missing music) and adds external tracks to it; other changes to the catalog are not part of
+/// this API.
 /// </summary>
 [ApiController]
 [Route("api/tracks")]
-public class TracksController(MusicHubDbContext db, Wishlist wishlist) : ControllerBase
+public class TracksController(MusicHubDbContext db, LibraryTracks library) : ControllerBase
 {
     public const int MaxPageSize = 100;
     private const int DefaultPageSize = 25;
@@ -19,7 +20,7 @@ public class TracksController(MusicHubDbContext db, Wishlist wishlist) : Control
     /// <summary>Lists tracks by title, a page at a time.</summary>
     /// <param name="search">Case-insensitive text matched against title, version and artist name.</param>
     /// <param name="fields">Comma-separated fields the search looks in: title (title and version), artist. Default: both.</param>
-    /// <param name="hasAudio">Only tracks that do (true) or do not (false) have stored audio linked.</param>
+    /// <param name="hasAudio">Only tracks that do (true: available music) or do not (false: missing music) have stored audio linked.</param>
     [HttpGet]
     public async Task<IActionResult> List(
         [FromQuery] string? search,
@@ -52,22 +53,14 @@ public class TracksController(MusicHubDbContext db, Wishlist wishlist) : Control
         return track is null ? NotFound() : Ok(track);
     }
 
-    /// <summary>Marks an existing catalog track wanted. Idempotent: 200 with status added or alreadyWanted.</summary>
-    [HttpPut("{id:int}/wanted")]
-    public async Task<IActionResult> Want(int id, CancellationToken cancellationToken)
-    {
-        var result = await wishlist.AddCatalogTrackAsync(id, cancellationToken);
-        return result is null ? NotFound() : Ok(result);
-    }
-
     /// <summary>
-    /// Wants a track the user chose from external search results. Idempotent. Answers 201 when the catalog track was
-    /// created (no catalog track is mapped to the provider identifier), and 200 when the mapped track was reused
-    /// (status added or alreadyWanted).
+    /// Adds a track the user chose from external search results to the library. Idempotent. Answers 201 when the
+    /// catalog track was created (no catalog track is mapped to the provider identifier), and 200 when the mapped
+    /// track was reused. Nothing is downloaded.
     /// </summary>
-    [HttpPost("wishlist/external")]
-    public async Task<IActionResult> WantExternal(
-        [FromBody] ExternalTrackWishlistRequest request, CancellationToken cancellationToken)
+    [HttpPost("external")]
+    public async Task<IActionResult> AddExternal(
+        [FromBody] ExternalTrackRequest request, CancellationToken cancellationToken)
     {
         var errors = new Dictionary<string, string[]>();
         if (string.IsNullOrWhiteSpace(request.Provider)) errors["provider"] = ["Provider is required."];
@@ -86,7 +79,7 @@ public class TracksController(MusicHubDbContext db, Wishlist wishlist) : Control
         if (errors.Count > 0)
             return BadRequest(new ValidationProblemDetails(errors));
 
-        var result = await wishlist.AddExternalTrackAsync(request, cancellationToken);
+        var result = await library.AddExternalTrackAsync(request, cancellationToken);
         return result.Created ? StatusCode(StatusCodes.Status201Created, result) : Ok(result);
     }
 

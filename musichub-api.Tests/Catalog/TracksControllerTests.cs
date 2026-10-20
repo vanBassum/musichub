@@ -71,13 +71,13 @@ public sealed class TracksControllerTests : IDisposable
     {
         using var db = CreateDb();
         return Body<PagedResponse<TrackResponse>>(
-            await new TracksController(db, new Wishlist(db, TimeProvider.System)).List(search, hasAudio, fields, page, pageSize, default));
+            await new TracksController(db, new LibraryTracks(db, TimeProvider.System)).List(search, hasAudio, fields, page, pageSize, default));
     }
 
     private async Task<IActionResult> GetDetail(int id)
     {
         using var db = CreateDb();
-        return await new TracksController(db, new Wishlist(db, TimeProvider.System)).Get(id, default);
+        return await new TracksController(db, new LibraryTracks(db, TimeProvider.System)).Get(id, default);
     }
 
     [Fact]
@@ -135,7 +135,7 @@ public sealed class TracksControllerTests : IDisposable
     public async Task List_WithInvalidPaging_IsRejected(int page, int pageSize)
     {
         using var db = CreateDb();
-        Invalid(await new TracksController(db, new Wishlist(db, TimeProvider.System)).List(null, null, null, page, pageSize, default));
+        Invalid(await new TracksController(db, new LibraryTracks(db, TimeProvider.System)).List(null, null, null, page, pageSize, default));
     }
 
     [Fact]
@@ -173,6 +173,23 @@ public sealed class TracksControllerTests : IDisposable
     }
 
     [Fact]
+    public async Task Track_is_missing_music_until_a_stored_file_is_linked_and_again_after_the_last_is_removed()
+    {
+        var id = await Seed("Song");
+        Assert.Equal(["Song"], (await List(hasAudio: false)).Items.Select(t => t.Title));
+
+        await AddFile(id);
+        Assert.Empty((await List(hasAudio: false)).Items);
+
+        using (var db = CreateDb())
+        {
+            db.Files.RemoveRange(db.Files.Where(f => f.TrackId == id));
+            await db.SaveChangesAsync();
+        }
+        Assert.Equal(["Song"], (await List(hasAudio: false)).Items.Select(t => t.Title));
+    }
+
+    [Fact]
     public async Task List_OnEmptyCatalog_ReturnsEmptyPage()
     {
         var page = await List();
@@ -199,7 +216,7 @@ public sealed class TracksControllerTests : IDisposable
     public async Task List_WithUnknownOrEmptyFields_ReturnsBadRequest(string fields)
     {
         using var db = CreateDb();
-        var result = await new TracksController(db, new Wishlist(db, TimeProvider.System)).List("a", null, fields, 1, 25, default);
+        var result = await new TracksController(db, new LibraryTracks(db, TimeProvider.System)).List("a", null, fields, 1, 25, default);
         Assert.Contains("fields", Invalid(result).Errors.Keys);
     }
 

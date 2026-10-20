@@ -16,8 +16,8 @@ interface FilterSidebarProps {
 
 const audioOptions: { value: AudioFilter; label: string }[] = [
   { value: "all", label: "All tracks" },
-  { value: "with", label: "With audio" },
-  { value: "without", label: "Without audio" },
+  { value: "with", label: "Available Music" },
+  { value: "without", label: "Missing Music" },
 ]
 
 export function FilterSidebar({
@@ -67,7 +67,7 @@ export function FilterSidebar({
         />
       </div>
       <fieldset className="flex flex-col gap-2">
-        <legend className="mb-1 text-sm font-medium">Stored audio</legend>
+        <legend className="mb-1 text-sm font-medium">Library view</legend>
         {audioOptions.map((option) => (
           <Button
             key={option.value}

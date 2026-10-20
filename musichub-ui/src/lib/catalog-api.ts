@@ -1,3 +1,5 @@
+import type { Availability } from "@/lib/artist"
+
 export interface CatalogArtist {
   artistId: number
   name: string
@@ -10,9 +12,13 @@ export interface CatalogTrack {
   version: string | null
   createdAt: string
   artists: CatalogArtist[]
+  // False for Missing Music: no available (Stored) file is linked.
   hasAudio: boolean
-  // The user explicitly wants the track; independent of hasAudio.
-  wanted: boolean
+}
+
+// The one place a catalog track's audio becomes an availability.
+export function catalogAvailability(hasAudio: boolean): Availability {
+  return hasAudio ? "available" : "missing"
 }
 
 export interface PagedTracks {
@@ -159,40 +165,27 @@ export function fetchExternalTracks(
   )
 }
 
-export interface WishlistResult {
-  status: "added" | "alreadyWanted"
+export interface AddToLibraryResult {
   track: CatalogTrack
   created: boolean
 }
 
-async function sendWish(url: string, init: RequestInit) {
-  const response = await fetch(url, init)
-  if (!response.ok) {
-    throw new Error(`The server answered ${response.status}.`)
-  }
-  // Only a 200 or 201 that says the track is wanted counts: anything else is an error,
-  // so the UI never shows Wanted for a track that is not.
-  const result = (await response.json()) as Partial<WishlistResult>
-  if (
-    (response.status !== 200 && response.status !== 201) ||
-    (result.status !== "added" && result.status !== "alreadyWanted") ||
-    result.track?.wanted !== true
-  ) {
-    throw new Error("The server did not confirm the track as wanted.")
-  }
-  return result as WishlistResult
-}
-
-export function wantCatalogTrack(id: number) {
-  return sendWish(`/api/tracks/${id}/wanted`, { method: "PUT" })
-}
-
-export function wantExternalTrack(track: ExternalTrack) {
-  return sendWish("/api/tracks/wishlist/external", {
+export async function addExternalTrackToLibrary(track: ExternalTrack) {
+  const response = await fetch("/api/tracks/external", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(track),
   })
+  // Only a 200 or 201 that returns the catalog track counts: anything else is an error,
+  // so the UI never shows In library for a track that is not.
+  if (response.status !== 200 && response.status !== 201) {
+    throw new Error(`The server answered ${response.status}.`)
+  }
+  const result = (await response.json()) as Partial<AddToLibraryResult>
+  if (typeof result.track?.id !== "number") {
+    throw new Error("The server did not confirm the track in the library.")
+  }
+  return result as AddToLibraryResult
 }
 
 export function fetchExternalArtists(
