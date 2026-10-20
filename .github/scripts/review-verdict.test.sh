@@ -45,8 +45,7 @@ expect() {
 }
 
 new_case pass
-comment "### Claude review — api
-No findings.
+comment "### PASS — api
 $(marker api 0)"
 expect "blocking=0 for the head commit passes" pass "api: no blocking findings"
 

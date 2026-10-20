@@ -113,9 +113,7 @@ This is where you filter. For every candidate, re-read the code and the code aro
 
 Report it only if 1, 2, 4 and 5 are yes and 3 is no. Otherwise drop it. Don't park a dropped
 candidate as a "minor" or "optional" finding: it either should be fixed, and blocks, or it isn't
-reported at all. If you want to mention something you deliberately left alone (because it might
-look like an oversight), put it in the summary under "Left alone", without a tag; it doesn't
-block and needs no action.
+reported at all. Don't mention dropped candidates anywhere, not even as "left alone".
 
 ## Tags and verdict
 
@@ -140,7 +138,5 @@ every `[risk]` and every `[smell]`. It is `0` only when you report no findings.
 
 ## Summary
 
-Start with a one-line verdict: **PASS** (no findings, `blocking=0`) or **FAIL** (N findings that
-should be fixed before merging). Then list the findings, `[risk]` first, each with its fix in
-one line. If there is more than one, end with the one you would fix first. If useful, add a short
-"Left alone" list as described above; it is not part of the verdict.
+Use the format in `_common.md`: `PASS` with no findings, otherwise `FIX` (a smell never needs a
+decision from Bas). List `[risk]` findings first.
