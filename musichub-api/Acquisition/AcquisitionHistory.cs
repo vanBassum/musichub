@@ -12,11 +12,12 @@ public class AcquisitionHistory(MusicHubDbContext db, TimeProvider time)
     public async Task<AcquisitionDownload> BeginAsync(
         AcquisitionCandidate candidate, int? intendedTrackId, CancellationToken ct)
     {
+        var (provider, source, remotePath) = StoredIdentity(candidate);
         var download = new AcquisitionDownload
         {
-            Provider = Truncate(candidate.Provider, AcquisitionDownload.ProviderMaxLength),
-            Source = Truncate(candidate.Source, AcquisitionDownload.SourceMaxLength),
-            RemotePath = Truncate(candidate.Path, AcquisitionDownload.RemotePathMaxLength),
+            Provider = provider,
+            Source = source,
+            RemotePath = remotePath,
             IntendedTrackId = intendedTrackId,
             StartedAt = time.GetUtcNow(),
             State = AcquisitionDownloadState.Started,
@@ -57,12 +58,15 @@ public class AcquisitionHistory(MusicHubDbContext db, TimeProvider time)
     /// Whether this source was rejected before: the same provider, source and path. Checked before downloading, so a
     /// rejected candidate is not fetched again. It says nothing about files that merely look alike.
     /// </summary>
-    public Task<bool> WasRejectedAsync(AcquisitionCandidate candidate, CancellationToken ct) =>
-        db.AcquisitionDownloads.AnyAsync(d =>
+    public Task<bool> WasRejectedAsync(AcquisitionCandidate candidate, CancellationToken ct)
+    {
+        var (provider, source, remotePath) = StoredIdentity(candidate);
+        return db.AcquisitionDownloads.AnyAsync(d =>
             d.Outcome == AcquisitionOutcome.Rejected
-            && d.Provider == candidate.Provider
-            && d.Source == candidate.Source
-            && d.RemotePath == candidate.Path, ct);
+            && d.Provider == provider
+            && d.Source == source
+            && d.RemotePath == remotePath, ct);
+    }
 
     /// <summary>
     /// Whether byte-identical content was rejected before, for a file that is already downloaded (a hash is only
@@ -79,6 +83,12 @@ public class AcquisitionHistory(MusicHubDbContext db, TimeProvider time)
         download.DecidedAt = time.GetUtcNow();
         return db.SaveChangesAsync(ct);
     }
+
+    /// <summary>A candidate's identity as stored (cut to the column lengths), for both writing and matching.</summary>
+    private static (string Provider, string Source, string RemotePath) StoredIdentity(AcquisitionCandidate candidate) => (
+        Truncate(candidate.Provider, AcquisitionDownload.ProviderMaxLength),
+        Truncate(candidate.Source, AcquisitionDownload.SourceMaxLength),
+        Truncate(candidate.Path, AcquisitionDownload.RemotePathMaxLength));
 
     private static string Truncate(string value, int max) => value.Length <= max ? value : value[..max];
 }
