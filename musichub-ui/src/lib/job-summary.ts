@@ -10,21 +10,17 @@ const plural = (count: number, one: string, many: string) =>
 // The one place that knows what each task's summary says: the headline of a run, and whether it only did
 // part of its work.
 export function summaryHeadline(summary: TaskSummary) {
+  const failures = summaryFailures(summary)
+  const failedPart = failures > 0 ? `, ${failures} failed` : ""
   if (isMissingMusicSummary(summary)) {
     return {
       main: `${plural(summary.examined, "track", "tracks")} searched`,
-      sub: `${summary.imported} imported, ${summary.nothingFound + summary.noAcceptableCandidate} not found${
-        summary.failed + summary.providerUnavailable > 0
-          ? `, ${summary.failed + summary.providerUnavailable} failed`
-          : ""
-      }`,
+      sub: `${summary.imported} imported, ${summary.nothingFound + summary.noAcceptableCandidate} not found${failedPart}`,
     }
   }
   return {
     main: `${plural(summary.examined, "file", "files")} examined`,
-    sub: `${summary.linked} linked, ${summary.unresolved} unresolved${
-      summary.failed > 0 ? `, ${summary.failed} failed` : ""
-    }`,
+    sub: `${summary.linked} linked, ${summary.unresolved} unresolved${failedPart}`,
   }
 }
 
