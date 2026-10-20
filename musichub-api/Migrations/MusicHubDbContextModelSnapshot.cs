@@ -22,6 +22,42 @@ namespace MusicHub.Api.Migrations
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
+            modelBuilder.Entity("MusicHub.Api.Catalog.AppliedIdentification", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTimeOffset>("AppliedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int?>("AttemptId")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("FileId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Source")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
+                    b.Property<int?>("TrackId")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AttemptId");
+
+                    b.HasIndex("TrackId");
+
+                    b.HasIndex("FileId", "AppliedAt");
+
+                    b.ToTable("AppliedIdentifications");
+                });
+
             modelBuilder.Entity("MusicHub.Api.Catalog.Artist", b =>
                 {
                     b.Property<int>("Id")
@@ -293,6 +329,31 @@ namespace MusicHub.Api.Migrations
                     b.HasIndex("TrackId");
 
                     b.ToTable("Files");
+                });
+
+            modelBuilder.Entity("MusicHub.Api.Catalog.AppliedIdentification", b =>
+                {
+                    b.HasOne("MusicHub.Api.Catalog.IdentificationOutcome", "Attempt")
+                        .WithMany()
+                        .HasForeignKey("AttemptId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("MusicHub.Api.Ingestion.FileRecord", "File")
+                        .WithMany()
+                        .HasForeignKey("FileId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("MusicHub.Api.Catalog.Track", "Track")
+                        .WithMany()
+                        .HasForeignKey("TrackId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.Navigation("Attempt");
+
+                    b.Navigation("File");
+
+                    b.Navigation("Track");
                 });
 
             modelBuilder.Entity("MusicHub.Api.Catalog.ArtistExternalLink", b =>
