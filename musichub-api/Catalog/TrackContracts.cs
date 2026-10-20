@@ -9,13 +9,18 @@ public record TrackArtistResponse(int ArtistId, string Name, string? Role);
 /// Derived: at least one linked file whose upload is <see cref="FileStatus.Stored"/>. A track without one is missing
 /// music.
 /// </param>
+/// <param name="AudioFileId">
+/// The Stored file linked to this very track that plays it (the lowest id when several are linked); null exactly when
+/// <paramref name="HasAudio"/> is false. Never a file of another track.
+/// </param>
 public record TrackResponse(
     int Id,
     string Title,
     string? Version,
     DateTimeOffset CreatedAt,
     List<TrackArtistResponse> Artists,
-    bool HasAudio)
+    bool HasAudio,
+    int? AudioFileId)
 {
     /// <summary>The one rule for "a file counts as audio"; the hasAudio filter and the field both use it.</summary>
     public static readonly Expression<Func<FileRecord, bool>> IsStoredAudio = f => f.Status == FileStatus.Stored;
@@ -28,7 +33,8 @@ public record TrackResponse(
         t.Artists.OrderBy(a => a.Id)
             .Select(a => new TrackArtistResponse(a.ArtistId, a.Artist.Name, a.Role))
             .ToList(),
-        t.Files.AsQueryable().Any(IsStoredAudio));
+        t.Files.AsQueryable().Any(IsStoredAudio),
+        t.Files.AsQueryable().Where(IsStoredAudio).OrderBy(f => f.Id).Select(f => (int?)f.Id).FirstOrDefault());
 }
 
 public record PagedResponse<T>(List<T> Items, int Total, int Page, int PageSize);

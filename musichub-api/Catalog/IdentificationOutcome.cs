@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using MusicHub.Api.Acquisition;
 using MusicHub.Api.Identification;
 using MusicHub.Api.Ingestion;
 
@@ -27,6 +28,9 @@ public enum IdentificationDecision
     /// <summary>The file was no longer eligible when its turn came; it was not touched.</summary>
     Skipped,
 
+    /// <summary>A downloaded candidate was identified, as a different recording than the one wanted; it stays outside the library.</summary>
+    Mismatch,
+
     /// <summary>Processing the file failed (storage, identification or database); it stays unlinked.</summary>
     Error,
 }
@@ -41,7 +45,23 @@ public static class IdentificationDecisions
         IdentificationDecision.NoMethodRan,
         IdentificationDecision.MethodFailed,
         IdentificationDecision.Error,
+        IdentificationDecision.Mismatch,
     ];
+
+    /// <summary>
+    /// Why a result that proposes no identity stays unresolved, said by what the tools did, never by guessing. A failed
+    /// tool may have hidden a match.
+    /// </summary>
+    public static IdentificationDecision Classify(IReadOnlyList<IdentificationMethodResult> methods)
+    {
+        if (methods.Any(m => m.Candidates.Count > 0))
+            return IdentificationDecision.InsufficientEvidence;
+        if (methods.Any(m => m.Status == IdentificationMethodStatus.Failed))
+            return IdentificationDecision.MethodFailed;
+        return methods.Any(m => m.Status == IdentificationMethodStatus.NothingFound)
+            ? IdentificationDecision.NoMatch
+            : IdentificationDecision.NoMethodRan;
+    }
 }
 
 /// <summary>
@@ -67,8 +87,19 @@ public class IdentificationOutcome
     /// <summary>The Hangfire job id of the execution that made the attempt; empty when it did not run as a job.</summary>
     public string JobExecutionId { get; set; } = "";
 
-    public int FileId { get; set; }
+    /// <summary>The stored file the attempt was for; null for a downloaded candidate, whose attempts hang off <see cref="DownloadId"/>.</summary>
+    public int? FileId { get; set; }
     public FileRecord? File { get; set; }
+
+    /// <summary>The download whose bytes were identified; null for an attempt on a stored file.</summary>
+    public int? DownloadId { get; set; }
+    public AcquisitionDownload? Download { get; set; }
+
+    /// <summary>
+    /// The MusicHub build whose identification methods made the attempt (its commit, or its version): what to compare
+    /// when the methods change and an earlier attempt is considered again. Null for attempts recorded before it existed.
+    /// </summary>
+    public string? PipelineVersion { get; set; }
 
     /// <summary>The file's name when it was examined.</summary>
     public string FileName { get; set; } = "";

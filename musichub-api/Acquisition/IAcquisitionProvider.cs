@@ -54,6 +54,9 @@ public enum AcquisitionFailure
 
     /// <summary>The provider reports it finished, but MusicHub cannot read the file.</summary>
     FileNotAccessible,
+
+    /// <summary>The file arrived, but MusicHub failed while processing it (hashing, identifying, importing).</summary>
+    ProcessingFailed,
 }
 
 /// <summary>A downloaded file, readable by MusicHub. The provider keeps ownership of the underlying storage.</summary>
@@ -61,7 +64,7 @@ public interface IAcquiredFile
 {
     string FileName { get; }
 
-    /// <summary>Opens the bytes for reading; the caller disposes the stream.</summary>
+    /// <summary>Opens the bytes for reading, as a seekable stream (hashing and identification read it more than once); the caller disposes it.</summary>
     Stream OpenRead();
 }
 

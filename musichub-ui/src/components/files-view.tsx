@@ -31,7 +31,7 @@ import type {
   FilesState,
   Upload as UploadItem,
 } from "@/lib/use-files"
-import { usePlayer } from "@/lib/use-player"
+import { isAudible, isLoaded, usePlayer } from "@/lib/use-player"
 import { cn } from "@/lib/utils"
 
 const statusClassNames: Record<FileStatus, string> = {
@@ -302,8 +302,8 @@ export function FilesView({
 // Plays a Stored audio file in the shared player; the row of the loaded file toggles pause.
 function PlayControl({ file }: { file: FileRegistration }) {
   const { source, status, playFile, toggle } = usePlayer()
-  const current = source?.id === file.id && status !== "error"
-  const playing = current && (status === "playing" || status === "loading")
+  const current = isLoaded(source, status, file.id)
+  const playing = current && isAudible(status)
   return (
     <Button
       variant="ghost"

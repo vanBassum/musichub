@@ -4,7 +4,7 @@ import {
   getExecution,
   listExecutions,
   listJobs,
-  startCatalogReconciliation,
+  startJob,
   type JobExecution,
   type JobExecutionDetails,
   type JobTask,
@@ -35,11 +35,14 @@ export interface JobsState {
   select: (id: string) => void
   closeDetails: () => void
   details: JobExecutionDetails | null
+  // Counts the loads of the details, so what hangs off a running execution can load again with it.
+  detailsRevision: number
   detailsError: string | null
-  starting: boolean
+  // The task whose start is in flight.
+  starting: string | null
   startError: string | null
   refresh: () => Promise<void>
-  start: () => void
+  start: (taskId: string) => void
 }
 
 // Owns the task list, the executions and the selected execution. Call it above the views (in `App`), so the
@@ -56,8 +59,9 @@ export function useJobs(): JobsState {
   const [tab, setTab] = useState<JobsTab>("tasks")
   const [picked, setPicked] = useState<string | null>(null)
   const [loaded, setLoaded] = useState<JobExecutionDetails | null>(null)
+  const [detailsRevision, setDetailsRevision] = useState(0)
   const [failedLoad, setFailedLoad] = useState<{ id: string; message: string } | null>(null)
-  const [starting, setStarting] = useState(false)
+  const [starting, setStarting] = useState<string | null>(null)
   const [startError, setStartError] = useState<string | null>(null)
   const starts = useRef(false)
 
@@ -83,6 +87,7 @@ export function useJobs(): JobsState {
       (result) => {
         if (controller.signal.aborted) return
         setLoaded(result)
+        setDetailsRevision((revision) => revision + 1)
         setFailedLoad(null)
       },
       (error: unknown) => {
@@ -97,22 +102,25 @@ export function useJobs(): JobsState {
   }, [selectedId, executions])
 
   // One start at a time: a double click is ignored. The new run is selected once the list has it.
-  const start = useCallback(() => {
-    if (starts.current) return
-    starts.current = true
-    setStarting(true)
-    setStartError(null)
-    startCatalogReconciliation()
-      .then(
-        (id) => setPicked(id),
-        (error: Error) => setStartError(error.message)
-      )
-      .finally(() => {
-        starts.current = false
-        setStarting(false)
-        void refresh()
-      })
-  }, [refresh])
+  const start = useCallback(
+    (taskId: string) => {
+      if (starts.current) return
+      starts.current = true
+      setStarting(taskId)
+      setStartError(null)
+      startJob(taskId)
+        .then(
+          (id) => setPicked(id),
+          (error: Error) => setStartError(error.message)
+        )
+        .finally(() => {
+          starts.current = false
+          setStarting(null)
+          void refresh()
+        })
+    },
+    [refresh]
+  )
 
   // Picking a run, also from another page, shows it in History.
   const select = useCallback((id: string) => {
@@ -133,6 +141,7 @@ export function useJobs(): JobsState {
     select,
     closeDetails,
     details,
+    detailsRevision,
     detailsError,
     starting,
     startError,

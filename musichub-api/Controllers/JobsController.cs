@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using MusicHub.Api.Acquisition;
 using MusicHub.Api.Catalog;
 using MusicHub.Api.Data;
 using MusicHub.Api.Identification;
@@ -8,61 +9,57 @@ using MusicHub.Api.Jobs;
 namespace MusicHub.Api.Controllers;
 
 /// <summary>
-/// Lists the background tasks, shows their Hangfire executions and starts catalog reconciliation by hand. Like the
-/// Files endpoints it has no authentication of its own (owner decision on issue #109): it is internal-only and
-/// deployment/network configuration must keep it from being publicly reachable. There is no Hangfire dashboard.
+/// Lists the background tasks, shows their Hangfire executions and starts them by hand. Like the Files endpoints it
+/// has no authentication of its own (owner decision on issue #109): it is internal-only and deployment/network
+/// configuration must keep it from being publicly reachable. There is no Hangfire dashboard.
 /// </summary>
 [ApiController]
 [Route("api/jobs")]
-public class JobsController(CatalogReconciliationJobService catalogReconciliation, MusicHubDbContext db) : ControllerBase
+public class JobsController(JobService jobs, MusicHubDbContext db, IServiceProvider services) : ControllerBase
 {
-    private const string CatalogReconciliationId = "catalog-reconciliation";
     private const int RecentExecutions = 25;
 
-    /// <summary>The available background tasks. Only catalog reconciliation exists; <c>activeExecutionId</c> is its run in progress, if any.</summary>
+    /// <summary>The available background tasks; <c>activeExecutionId</c> is the task's run in progress, if any.</summary>
     [HttpGet]
     public async Task<IActionResult> List(CancellationToken cancellationToken)
     {
-        if (!catalogReconciliation.IsReady)
+        if (!jobs.IsReady)
             return JobsUnavailable();
 
-        return Ok(new[]
-        {
-            new JobInfo(
-                CatalogReconciliationId,
-                "Synchronize catalog",
-                "Looks for stored files that are not linked to the catalog and tries to link them.",
-                await catalogReconciliation.ActiveExecutionIdAsync(cancellationToken)),
-        });
+        var tasks = new List<JobInfo>();
+        foreach (var kind in JobKinds.All)
+            tasks.Add(new JobInfo(kind.Id, kind.Name, kind.Description, await jobs.ActiveExecutionIdAsync(kind, cancellationToken)));
+        return Ok(tasks.ToArray());
     }
 
     /// <summary>The most recent executions of all tasks, newest first.</summary>
     [HttpGet("executions")]
     public async Task<IActionResult> Executions(CancellationToken cancellationToken) =>
-        catalogReconciliation.IsReady
-            ? Ok(await catalogReconciliation.ListAsync(RecentExecutions, cancellationToken))
+        jobs.IsReady
+            ? Ok(await jobs.ListAsync(RecentExecutions, cancellationToken))
             : JobsUnavailable();
 
     /// <summary>One execution with its Hangfire state history. 404 when it is unknown or has expired.</summary>
     [HttpGet("executions/{id}")]
     public async Task<IActionResult> Execution(string id, CancellationToken cancellationToken)
     {
-        if (!catalogReconciliation.IsReady)
+        if (!jobs.IsReady)
             return JobsUnavailable();
 
-        return await catalogReconciliation.GetAsync(id, cancellationToken) is { } details ? Ok(details) : NotFound();
+        return await jobs.GetAsync(id, cancellationToken) is { } details ? Ok(details) : NotFound();
     }
 
     /// <summary>
-    /// What happened to each file the execution examined, in the order it went through them: one outcome per file with
-    /// its decision, reason and what each identification method did. 404 when the execution is unknown or has expired.
+    /// What happened to each file (or downloaded candidate) the execution identified, in the order it went through
+    /// them: one outcome per attempt with its decision, reason and what each identification method did. 404 when the
+    /// execution is unknown or has expired.
     /// </summary>
     [HttpGet("executions/{id}/outcomes")]
     public async Task<IActionResult> Outcomes(string id, CancellationToken cancellationToken)
     {
-        if (!catalogReconciliation.IsReady)
+        if (!jobs.IsReady)
             return JobsUnavailable();
-        if (await catalogReconciliation.GetAsync(id, cancellationToken) is null)
+        if (await jobs.GetAsync(id, cancellationToken) is null)
             return NotFound();
 
         var rows = await db.IdentificationOutcomes.AsNoTracking()
@@ -72,16 +69,53 @@ public class JobsController(CatalogReconciliationJobService catalogReconciliatio
         return Ok(rows.Select(FileOutcome.From));
     }
 
+    /// <summary>
+    /// The candidates a Search for Missing Music execution downloaded, in order, as they are recorded (so also while it
+    /// runs). The download history is permanent: it stays when Hangfire drops the execution. 404 when the execution is
+    /// unknown or has expired.
+    /// </summary>
+    [HttpGet("executions/{id}/downloads")]
+    public async Task<IActionResult> Downloads(string id, CancellationToken cancellationToken)
+    {
+        if (!jobs.IsReady)
+            return JobsUnavailable();
+        if (await jobs.GetAsync(id, cancellationToken) is null)
+            return NotFound();
+
+        var rows = await db.AcquisitionDownloads.AsNoTracking()
+            .Include(d => d.IntendedTrack)
+            .Where(d => d.JobExecutionId == id)
+            .OrderBy(d => d.Id)
+            .ToListAsync(cancellationToken);
+        return Ok(rows.Select(DownloadItem.From));
+    }
+
     /// <summary>Enqueues a catalog reconciliation run: 202 with the new execution. 409 while a run is already active.</summary>
     [HttpPost("catalog-reconciliation/start")]
-    public async Task<IActionResult> StartCatalogReconciliation(CancellationToken cancellationToken)
+    public Task<IActionResult> StartCatalogReconciliation(CancellationToken cancellationToken) =>
+        StartAsync(JobKinds.CatalogReconciliation, cancellationToken);
+
+    /// <summary>
+    /// Enqueues a Search for Missing Music run: 202 with the new execution. 409 while a run is already active, and
+    /// while no acquisition provider is configured.
+    /// </summary>
+    [HttpPost("missing-music-acquisition/start")]
+    public Task<IActionResult> StartMissingMusicAcquisition(CancellationToken cancellationToken) =>
+        MissingMusicAcquisition.AcquisitionProviderConfigured(services)
+            ? StartAsync(JobKinds.MissingMusicAcquisition, cancellationToken)
+            : Task.FromResult<IActionResult>(Problem(
+                title: "No acquisition provider is configured",
+                detail: MissingMusicAcquisition.NoProviderMessage,
+                statusCode: StatusCodes.Status409Conflict));
+
+    private async Task<IActionResult> StartAsync(JobKind kind, CancellationToken cancellationToken)
     {
-        if (!catalogReconciliation.IsReady)
+        if (!jobs.IsReady)
             return JobsUnavailable();
 
-        if (await catalogReconciliation.TryStartAsync(cancellationToken) is not { } id)
+        if (await jobs.TryStartAsync(kind, cancellationToken) is not { } id)
             return Problem(
-                title: "Catalog synchronization is already running",
+                title: $"\"{kind.Name}\" is already running",
                 detail: "A run is waiting or in progress. Wait for it to finish, then start it again.",
                 statusCode: StatusCodes.Status409Conflict);
 
@@ -94,13 +128,28 @@ public class JobsController(CatalogReconciliationJobService catalogReconciliatio
             detail: "The job engine has not started yet or is disabled. Try again shortly.",
             statusCode: StatusCodes.Status503ServiceUnavailable);
 
-    /// <summary>One recorded outcome. <c>JobExecutionId</c> is the execution that recorded it; that execution may have expired.</summary>
+    /// <summary>
+    /// One recorded attempt. <c>JobExecutionId</c> is the execution that recorded it; that execution may have expired.
+    /// <c>FileId</c> is set for a stored file, <c>DownloadId</c> for a downloaded candidate.
+    /// </summary>
     public sealed record FileOutcome(
-        string JobExecutionId, int FileId, string FileName, IdentificationDecision Decision, string Reason, int? TrackId,
-        DateTimeOffset RecordedAt, IReadOnlyList<IdentificationMethodResult> Methods)
+        string JobExecutionId, int? FileId, int? DownloadId, string FileName, IdentificationDecision Decision, string Reason,
+        int? TrackId, DateTimeOffset RecordedAt, IReadOnlyList<IdentificationMethodResult> Methods, string? PipelineVersion)
     {
         public static FileOutcome From(IdentificationOutcome o) => new(
-            o.JobExecutionId, o.FileId, o.FileName, o.Decision, o.Reason, o.TrackId, o.RecordedAt, o.ReadMethods());
+            o.JobExecutionId, o.FileId, o.DownloadId, o.FileName, o.Decision, o.Reason, o.TrackId, o.RecordedAt,
+            o.ReadMethods(), o.PipelineVersion);
+    }
+
+    public sealed record DownloadItem(
+        int Id, int? TrackId, string? TrackTitle, string Provider, string Source, string SourcePath, long SizeBytes,
+        int? BitrateKbps, DownloadStatus Status, string Reason, string? FileSha256, string? AudioHash,
+        AudioHashStatus? AudioHashStatus, int? FileId, DateTimeOffset StartedAt, DateTimeOffset? FinishedAt)
+    {
+        public static DownloadItem From(AcquisitionDownload d) => new(
+            d.Id, d.IntendedTrackId, d.IntendedTrack?.Title, d.Provider, d.Source, d.RemotePath, d.SizeBytes ?? 0,
+            d.BitrateKbps, d.Status, d.Reason ?? "", d.ContentHash, d.AudioHash, d.AudioHashStatus, d.FileId,
+            d.StartedAt, d.FinishedAt);
     }
 
     public sealed record JobInfo(string Id, string Name, string Description, string? ActiveExecutionId);

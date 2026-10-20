@@ -123,6 +123,7 @@ public sealed class CatalogReconciliation(
             Reason = IdentificationOutcome.Truncate(attempt.Reason, IdentificationOutcome.ReasonMaxLength),
             TrackId = attempt.TrackId,
             RecordedAt = time.GetUtcNow(),
+            PipelineVersion = BuildVersion.Current,
         };
         outcome.SetMethods(attempt.Methods);
         return outcome;
@@ -146,18 +147,6 @@ public sealed class CatalogReconciliation(
         }
     }
 
-    // Unresolved: said by what the tools did, never by guessing. A failed tool may have hidden a match.
-    private static IdentificationDecision Classify(IReadOnlyList<IdentificationMethodResult> methods)
-    {
-        if (methods.Any(m => m.Candidates.Count > 0))
-            return IdentificationDecision.InsufficientEvidence;
-        if (methods.Any(m => m.Status == IdentificationMethodStatus.Failed))
-            return IdentificationDecision.MethodFailed;
-        return methods.Any(m => m.Status == IdentificationMethodStatus.NothingFound)
-            ? IdentificationDecision.NoMatch
-            : IdentificationDecision.NoMethodRan;
-    }
-
     private async Task<Outcome> ReconcileAsync(int fileId, string executionId, Attempt attempt, CancellationToken cancellationToken)
     {
         var file = await db.Files.AsNoTracking().FirstOrDefaultAsync(f => f.Id == fileId, cancellationToken);
@@ -177,7 +166,7 @@ public sealed class CatalogReconciliation(
                 fileId, file.OriginalFilename, reason, evidence);
             attempt.Decision = result.Status == IdentificationStatus.Identified
                 ? IdentificationDecision.InsufficientEvidence
-                : Classify(attempt.Methods);
+                : IdentificationDecisions.Classify(attempt.Methods);
             attempt.Reason = reason;
             return Outcome.Unresolved;
         }

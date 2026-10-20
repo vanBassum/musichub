@@ -16,6 +16,44 @@ export interface JobSummary {
   failed: number
 }
 
+export type TrackAcquisitionOutcome =
+  | "Imported"
+  | "NothingFound"
+  | "NoAcceptableCandidate"
+  | "ProviderUnavailable"
+  | "Skipped"
+  | "Failed"
+
+// What a Search for Missing Music run did for one track.
+export interface TrackAcquisitionResult {
+  trackId: number
+  title: string
+  artists: string
+  outcome: TrackAcquisitionOutcome
+  detail: string
+  downloadId: number | null
+}
+
+// What a Search for Missing Music run did; `tracks` is each track's result (the counts cover all tracks).
+export interface MissingMusicSummary {
+  examined: number
+  imported: number
+  nothingFound: number
+  noAcceptableCandidate: number
+  providerUnavailable: number
+  skipped: number
+  failed: number
+  tracks: TrackAcquisitionResult[]
+}
+
+export type TaskSummary = JobSummary | MissingMusicSummary
+
+export function isMissingMusicSummary(
+  summary: TaskSummary
+): summary is MissingMusicSummary {
+  return "imported" in summary
+}
+
 // Hangfire's own state names.
 export type JobState =
   | "Enqueued"
@@ -31,8 +69,12 @@ export interface JobExecution {
   createdAt: string
   startedAt: string | null
   finishedAt: string | null
-  summary: JobSummary | null
+  summary: TaskSummary | null
   error: string | null
+  // The task this is a run of (a JobTask id).
+  kind: string
+  // How many items the run set out to go through, when its job says so while it runs.
+  total: number | null
 }
 
 export interface JobStateEntry {
@@ -56,6 +98,7 @@ export type IdentificationDecision =
   | "MethodFailed"
   | "Skipped"
   | "Error"
+  | "Mismatch"
 
 export type IdentificationMethodStatus =
   | "Found"
@@ -73,15 +116,52 @@ export interface IdentificationMethodResult {
 }
 
 // `jobExecutionId` is the execution that recorded the outcome; Hangfire may have dropped that execution since.
+// `fileId` is set for a stored file, `downloadId` for a downloaded candidate that is not in the library.
+// `pipelineVersion` is the MusicHub build whose identification methods made the attempt.
 export interface FileOutcome {
   jobExecutionId: string
-  fileId: number
+  fileId: number | null
+  downloadId: number | null
   fileName: string
   decision: IdentificationDecision
   reason: string
   trackId: number | null
   recordedAt: string
   methods: IdentificationMethodResult[]
+  pipelineVersion: string | null
+}
+
+// What an outcome is about: the stored file, or the downloaded candidate.
+export const outcomeSubject = (outcome: FileOutcome) =>
+  outcome.fileId !== null
+    ? `file ${outcome.fileId}`
+    : `download ${outcome.downloadId}`
+
+export type DownloadStatus =
+  | "Downloading"
+  | "Failed"
+  | "Cancelled"
+  | "Rejected"
+  | "Imported"
+
+// One candidate a run downloaded, from the permanent download history. `fileId` is the library file of an import.
+export interface DownloadItem {
+  id: number
+  trackId: number | null
+  trackTitle: string | null
+  provider: string
+  source: string
+  sourcePath: string
+  sizeBytes: number
+  bitrateKbps: number | null
+  status: DownloadStatus
+  reason: string
+  fileSha256: string | null
+  audioHash: string | null
+  audioHashStatus: "Computed" | "Unsupported" | "Malformed" | null
+  fileId: number | null
+  startedAt: string
+  finishedAt: string | null
 }
 
 async function problemDetail(response: Response) {
@@ -124,34 +204,18 @@ export const getOutcomes = (id: string, signal?: AbortSignal) =>
     signal
   )
 
-export interface OutcomePage {
-  items: FileOutcome[]
-  total: number
-  page: number
-  pageSize: number
-}
-
-// GET /api/identification-history: recorded outcomes across executions, newest first. Without a decision only the
-// unresolved ones; with one, that decision.
-export const getIdentificationHistory = (
-  query: { decision: IdentificationDecision | null; page: number; pageSize: number },
-  signal?: AbortSignal
-) => {
-  const params = new URLSearchParams({
-    page: String(query.page),
-    pageSize: String(query.pageSize),
-  })
-  if (query.decision) params.set("decision", query.decision)
-  return getJson<OutcomePage>(
-    `/api/identification-history?${params}`,
-    "The identification history",
+// GET /api/jobs/executions/{id}/downloads: the candidates a Search for Missing Music run downloaded, in order.
+export const getDownloads = (id: string, signal?: AbortSignal) =>
+  getJson<DownloadItem[]>(
+    `/api/jobs/executions/${encodeURIComponent(id)}/downloads`,
+    "The downloads",
     signal
   )
-}
 
-// POST /api/jobs/catalog-reconciliation/start: 202 with the new execution; 409 while a run is already active.
-export async function startCatalogReconciliation() {
-  const response = await fetch("/api/jobs/catalog-reconciliation/start", {
+// POST /api/jobs/{taskId}/start: 202 with the new execution; 409 while a run is already active (or, for a search
+// for missing music, while no acquisition provider is configured).
+export async function startJob(taskId: string) {
+  const response = await fetch(`/api/jobs/${encodeURIComponent(taskId)}/start`, {
     method: "POST",
   })
   if (!response.ok) {

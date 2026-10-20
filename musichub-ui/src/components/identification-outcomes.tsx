@@ -1,16 +1,11 @@
-import { ChevronRight } from "lucide-react"
-
+import { ResultRow } from "@/components/result-row"
 import { Badge } from "@/components/ui/badge"
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from "@/components/ui/collapsible"
 import { Skeleton } from "@/components/ui/skeleton"
-import type {
-  FileOutcome,
-  IdentificationDecision,
-  IdentificationMethodStatus,
+import {
+  outcomeSubject,
+  type FileOutcome,
+  type IdentificationDecision,
+  type IdentificationMethodStatus,
 } from "@/lib/jobs-api"
 import { useOutcomes } from "@/lib/use-outcomes"
 
@@ -22,6 +17,7 @@ export const decisionLabels: Record<IdentificationDecision, string> = {
   MethodFailed: "A method failed",
   Skipped: "Skipped",
   Error: "Error",
+  Mismatch: "Another recording",
 }
 
 export const decisionClassNames: Record<IdentificationDecision, string> = {
@@ -32,6 +28,7 @@ export const decisionClassNames: Record<IdentificationDecision, string> = {
   MethodFailed: "bg-destructive text-white",
   Skipped: "bg-muted text-muted-foreground",
   Error: "bg-destructive text-white",
+  Mismatch: "bg-warning text-warning-foreground",
 }
 
 const methodLabels: Record<IdentificationMethodStatus, string> = {
@@ -67,71 +64,44 @@ function Counts({ outcomes }: { outcomes: FileOutcome[] }) {
   )
 }
 
-// Where a recorded outcome comes from. The execution is only a label: Hangfire may have dropped it long ago.
-function Provenance({ outcome }: { outcome: FileOutcome }) {
+export function FileOutcomeItem({ outcome }: { outcome: FileOutcome }) {
   return (
-    <p className="mb-2 text-xs text-muted-foreground">
-      Recorded {new Date(outcome.recordedAt).toLocaleString()} · execution{" "}
-      {outcome.jobExecutionId || "not recorded"} · file {outcome.fileId} ·{" "}
-      {outcome.trackId === null ? "no track linked" : `track ${outcome.trackId}`}
-    </p>
-  )
-}
-
-export function FileOutcomeItem({
-  outcome,
-  showProvenance = false,
-}: {
-  outcome: FileOutcome
-  showProvenance?: boolean
-}) {
-  return (
-    <li>
-      <Collapsible className="group rounded-lg border bg-muted/40">
-        <CollapsibleTrigger className="flex w-full items-start gap-2 p-2 text-left text-sm">
-          <ChevronRight
-            aria-hidden="true"
-            className="mt-0.5 size-4 shrink-0 transition-transform group-data-[open]:rotate-90"
-          />
-          <span className="min-w-0 flex-1">
-            <span className="block break-words font-medium">{outcome.fileName || `File ${outcome.fileId}`}</span>
-            <span className="block break-words text-muted-foreground">{outcome.reason}</span>
-          </span>
-          <Badge className={decisionClassNames[outcome.decision]}>
-            {decisionLabels[outcome.decision]}
-          </Badge>
-        </CollapsibleTrigger>
-        <CollapsibleContent className="border-t p-2">
-          {showProvenance && <Provenance outcome={outcome} />}
-          {outcome.methods.length === 0 ? (
-            <p className="text-sm text-muted-foreground">
-              No identification method produced a result for this file.
-            </p>
-          ) : (
-            <ul aria-label={`Methods for ${outcome.fileName}`} className="flex flex-col gap-3 text-sm">
-              {outcome.methods.map((method) => (
-                <li key={method.source}>
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="font-medium">{method.source}</span>
-                    <Badge className={methodClassNames[method.status]}>
-                      {methodLabels[method.status]}
-                    </Badge>
-                  </div>
-                  <p className="break-words text-muted-foreground">{method.note}</p>
-                  {method.candidates.length > 0 && (
-                    <ul className="mt-1 list-disc pl-5 break-words">
-                      {method.candidates.map((candidate, index) => (
-                        <li key={index}>{candidate}</li>
-                      ))}
-                    </ul>
-                  )}
-                </li>
-              ))}
-            </ul>
-          )}
-        </CollapsibleContent>
-      </Collapsible>
-    </li>
+    <ResultRow
+      title={outcome.fileName || outcomeSubject(outcome)}
+      summary={outcome.reason}
+      badge={
+        <Badge className={decisionClassNames[outcome.decision]}>
+          {decisionLabels[outcome.decision]}
+        </Badge>
+      }
+    >
+      {outcome.methods.length === 0 ? (
+        <p className="text-sm text-muted-foreground">
+          No identification method produced a result for this attempt.
+        </p>
+      ) : (
+        <ul aria-label={`Methods for ${outcome.fileName}`} className="flex flex-col gap-3 text-sm">
+          {outcome.methods.map((method) => (
+            <li key={method.source}>
+              <div className="flex items-center justify-between gap-2">
+                <span className="font-medium">{method.source}</span>
+                <Badge className={methodClassNames[method.status]}>
+                  {methodLabels[method.status]}
+                </Badge>
+              </div>
+              <p className="break-words text-muted-foreground">{method.note}</p>
+              {method.candidates.length > 0 && (
+                <ul className="mt-1 list-disc pl-5 break-words">
+                  {method.candidates.map((candidate, index) => (
+                    <li key={index}>{candidate}</li>
+                  ))}
+                </ul>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+    </ResultRow>
   )
 }
 
@@ -148,7 +118,7 @@ export function IdentificationOutcomes({
 
   return (
     <div>
-      <h3 className="mb-2 text-sm font-semibold">Files</h3>
+      <h3 className="mb-2 text-sm font-semibold">Identification</h3>
       {error && (
         <p role="alert" className="text-sm text-destructive">
           {error}
@@ -158,14 +128,14 @@ export function IdentificationOutcomes({
         !error && <Skeleton className="h-16 w-full" />
       ) : outcomes.length === 0 ? (
         <p className="text-sm text-muted-foreground">
-          No file outcomes are recorded for this execution.
+          No identification attempts are recorded for this execution.
         </p>
       ) : (
         <div className="flex flex-col gap-3">
           <Counts outcomes={outcomes} />
           <ul aria-label="File outcomes" className="flex flex-col gap-2">
             {outcomes.map((outcome) => (
-              <FileOutcomeItem key={outcome.fileId} outcome={outcome} />
+              <FileOutcomeItem key={outcomeSubject(outcome)} outcome={outcome} />
             ))}
           </ul>
         </div>

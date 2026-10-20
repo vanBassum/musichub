@@ -4,12 +4,14 @@ namespace MusicHub.Api.Acquisition;
 
 /// <summary>
 /// Gives a downloaded file to the existing ingestion: it is stored and registered like any received file, nothing
-/// more. Identification runs on it later, through the existing identification workflow; the provider's file name
-/// and metadata never decide what the file is.
+/// more. Identification runs on it through the existing identification workflow; the provider's file name and
+/// metadata never decide what the file is.
 /// </summary>
 public sealed class AcquisitionHandoff(FileIngestionService ingestion)
 {
-    public async Task<FileRecord> IngestAsync(AcquisitionDownloadOutcome outcome, CancellationToken ct)
+    /// <param name="expected">The length and SHA-256 the bytes must have; ingestion refuses the file when they differ.</param>
+    public async Task<FileRecord> IngestAsync(
+        AcquisitionDownloadOutcome outcome, CancellationToken ct, UploadExpectation? expected = null)
     {
         if (outcome.File is not { } file)
         {
@@ -17,6 +19,6 @@ public sealed class AcquisitionHandoff(FileIngestionService ingestion)
         }
 
         await using var content = file.OpenRead();
-        return await ingestion.IngestAsync(content, file.FileName, null, null, ct, source: $"acquisition:{outcome.Provider}");
+        return await ingestion.IngestAsync(content, file.FileName, null, expected, ct, source: $"acquisition:{outcome.Provider}");
     }
 }
