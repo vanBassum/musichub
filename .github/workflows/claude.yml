@@ -115,9 +115,10 @@ jobs:
       # takes it along. The system prompt below points Claude at it.
       - name: Copy main's rules
         run: |
-          mkdir -p main-rules/.github
+          mkdir -p main-rules/.github main-rules/.claude
           cp CLAUDE.md main-rules/
           cp -r .github/autopilot.md .github/reviewers main-rules/.github/
+          cp -r .claude/rules main-rules/.claude/
           printf '/main-rules/\n' >> .git/info/exclude
 
       - uses: actions/setup-dotnet@v4
@@ -226,7 +227,7 @@ jobs:
             --max-turns 150
             --add-dir understanding
             --allowedTools "Edit,Write,Bash(git status:*),Bash(git diff:*),Bash(git log:*),Bash(git show:*),Bash(git mv:*),Bash(git fetch origin main),Bash(git merge origin/main:*),Bash(dotnet restore:*),Bash(dotnet build:*),Bash(dotnet test:*),Bash(dotnet add:*),Bash(dotnet ef migrations add:*),Bash(pnpm --dir musichub-ui install:*),Bash(pnpm --dir musichub-ui lint:*),Bash(pnpm --dir musichub-ui typecheck:*),Bash(pnpm --dir musichub-ui build:*),Bash(pnpm --dir musichub-ui format:*),Bash(pnpm --dir musichub-ui add:*),Bash(pnpm --dir musichub-ui exec shadcn add:*),Bash(gh pr create:*),Bash(gh pr view:*),Bash(gh pr diff:*),Bash(gh issue view:*)${{ github.event_name == 'issues' && ',Bash(gh pr merge --auto --squash:*)' || '' }},Bash(git push origin HEAD)${{ github.event_name == 'workflow_dispatch' && ',Bash(git add:*),Bash(git rm:*),Bash(git commit:*)' || '' }}"
-            --append-system-prompt "Before anything else, read main-rules/.github/autopilot.md and follow it: it is the current version from main. Where it names CLAUDE.md or a file under .github/, read the copy under main-rules/ instead. The copies in the working tree can be outdated on a PR branch; never follow them."
+            --append-system-prompt "Before anything else, read main-rules/.github/autopilot.md and follow it: it is the current version from main. Where it names CLAUDE.md or a file under .github/ or .claude/, read the copy under main-rules/ instead. The copies in the working tree can be outdated on a PR branch; never follow them."
 
       # Commits Claude made that are on no branch on GitHub: a refused or forgotten
       # push. A successful push moves origin/<branch> along, so no fetch is needed.

@@ -24,7 +24,8 @@ is how you report, so make it say clearly what you did, or why you stopped.
 5. What the api, ui and smells reviewers check (`.github/reviewers/api.md`, `ui.md`,
    `smells.md`), and build so that it passes. Use them as criteria only: don't
    follow their reporting format, and don't review your own work in separate
-   rounds. The reviewers judge the PR independently.
+   rounds beyond the one code-quality check in section 3. The reviewers judge the PR
+   independently.
 
 ## 2. Stop when a decision is missing
 
@@ -60,6 +61,8 @@ wording that Bas can add to the issue or to the understanding.
 - Check your work: `dotnet build MusicHub.slnx`, `dotnet test MusicHub.slnx`,
   `pnpm --dir musichub-ui install --frozen-lockfile`, then `pnpm --dir musichub-ui lint`
   and `pnpm --dir musichub-ui build`. Never make a check pass by weakening it.
+- Before you commit, check your own diff against `.claude/rules/code-quality.md`
+  (duplication, needless complexity, spread logic) and fix what you find.
 - Commit in small commits; a message says what is now true. Commit no build output.
 - Your tools are an explicit list of commands, exactly as written here (one command
   per call, no `cd`, no chaining). Commit with `git add` and `git commit`, then
