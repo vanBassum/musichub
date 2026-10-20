@@ -126,18 +126,22 @@ function localTrack(track: CatalogTrack): ArtistTrack {
   }
 }
 
-function externalTrack({ track, catalogTrackId }: ExternalArtistTrackItem): ArtistTrack {
+// A recording that is in the catalog (but not on this list) shows the catalog's
+// availability; one that isn't is external, with the provider as provenance.
+function externalTrack({
+  track,
+  catalogTrackId,
+  hasAudio,
+}: ExternalArtistTrackItem): ArtistTrack {
+  const inCatalog = catalogTrackId !== null
   return {
     key: `${track.provider}:${track.externalId}`,
     title: track.disambiguation
       ? `${track.title} (${track.disambiguation})`
       : track.title,
     detail: track.artists.map((a) => a.name).join(", "),
-    availability: "external",
-    provenance:
-      catalogTrackId === null
-        ? { label: providerLabel(track.provider), url: track.url }
-        : null,
+    availability: !inCatalog ? "external" : hasAudio ? "available" : "missing",
+    provenance: inCatalog ? null : { label: providerLabel(track.provider), url: track.url },
   }
 }
 
@@ -173,13 +177,8 @@ export async function loadArtistTracks(
   if (provided.status === "fulfilled" && provided.value) {
     for (const item of provided.value.items) {
       // A recording the catalog already has is that catalog track: listed once.
-      if (item.catalogTrackId === null || !known.has(item.catalogTrackId)) {
-        tracks.push(
-          item.catalogTrackId === null
-            ? externalTrack(item)
-            : { ...externalTrack(item), availability: item.hasAudio ? "available" : "missing" }
-        )
-      }
+      if (item.catalogTrackId !== null && known.has(item.catalogTrackId)) continue
+      tracks.push(externalTrack(item))
     }
   }
 
