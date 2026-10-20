@@ -19,14 +19,21 @@ function fetchLists(signal: AbortSignal) {
   )
 }
 
+export type JobsTab = "tasks" | "history"
+
 export interface JobsState {
+  tab: JobsTab
+  setTab: (tab: JobsTab) => void
   tasks: JobTask[] | null
   executions: JobExecution[] | null
   loadError: string | null
   refreshing: boolean
   // The execution whose details show: the user's pick, else the newest.
   selectedId: string | null
+  // Whether the user opened a run: the stacked mobile History then shows its details instead of the list.
+  detailOpen: boolean
   select: (id: string) => void
+  closeDetails: () => void
   details: JobExecutionDetails | null
   detailsError: string | null
   starting: boolean
@@ -46,6 +53,7 @@ export function useJobs(): JobsState {
     refresh,
     reload,
   } = useLoader(fetchLists)
+  const [tab, setTab] = useState<JobsTab>("tasks")
   const [picked, setPicked] = useState<string | null>(null)
   const [loaded, setLoaded] = useState<JobExecutionDetails | null>(null)
   const [failedLoad, setFailedLoad] = useState<{ id: string; message: string } | null>(null)
@@ -106,13 +114,24 @@ export function useJobs(): JobsState {
       })
   }, [refresh])
 
+  // Picking a run, also from another page, shows it in History.
+  const select = useCallback((id: string) => {
+    setPicked(id)
+    setTab("history")
+  }, [])
+  const closeDetails = useCallback(() => setPicked(null), [])
+
   return {
+    tab,
+    setTab,
     tasks,
     executions,
     loadError,
     refreshing,
     selectedId,
-    select: setPicked,
+    detailOpen: picked !== null,
+    select,
+    closeDetails,
     details,
     detailsError,
     starting,
