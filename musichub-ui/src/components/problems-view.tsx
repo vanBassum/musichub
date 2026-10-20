@@ -75,7 +75,7 @@ function ProblemsBody({
   return (
     <>
       {problems.unavailable.length > 0 && (
-        <p role="status" className="shrink-0 text-sm text-warning-foreground">
+        <p role="status" className="shrink-0 rounded-xl bg-warning px-4 py-3 text-sm text-warning-foreground">
           Not available right now:{" "}
           {problems.unavailable.map((source) => sourceLabels[source]).join(", ")}.
           Problems from there are missing from this list.
