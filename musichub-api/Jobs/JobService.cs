@@ -1,23 +1,25 @@
 using System.Text.Json;
-using Hangfire;
 using Hangfire.Common;
 using Hangfire.Storage;
 using Hangfire.Storage.Monitoring;
-using MusicHub.Api.Catalog;
 
 namespace MusicHub.Api.Jobs;
 
-/// <summary>One run of the catalog reconciliation job, read from Hangfire. <paramref name="State"/> is Hangfire's own state name.</summary>
-/// <param name="Summary">What the run did; set once it Succeeded.</param>
+/// <summary>One run of a task, read from Hangfire. <paramref name="State"/> is Hangfire's own state name.</summary>
+/// <param name="Summary">What the run did, as its kind's summary type; set once it Succeeded.</param>
 /// <param name="Error">The message of the last failure (a failed run, or the attempt that is being retried).</param>
+/// <param name="Kind">The <see cref="JobKind.Id"/> of the task this is a run of.</param>
+/// <param name="Total">How many items the run set out to go through, when its job reports it while running.</param>
 public sealed record JobExecution(
     string Id,
     string State,
     DateTime CreatedAt,
     DateTime? StartedAt,
     DateTime? FinishedAt,
-    CatalogReconciliationSummary? Summary,
-    string? Error);
+    object? Summary,
+    string? Error,
+    string Kind = "",
+    int? Total = null);
 
 /// <summary>One step of an execution's Hangfire state history, oldest first.</summary>
 public sealed record JobStateEntry(string State, DateTime At, string? Reason);
@@ -25,11 +27,11 @@ public sealed record JobStateEntry(string State, DateTime At, string? Reason);
 public sealed record JobExecutionDetails(JobExecution Execution, IReadOnlyList<JobStateEntry> History, string? ErrorType);
 
 /// <summary>
-/// Starts catalog reconciliation and reads its executions from Hangfire (state history, the summary the job returned,
-/// the failure message). It is the only way the API reaches the job; there is no Hangfire dashboard. A run is refused
-/// while another one is enqueued, scheduled for a retry, or processing.
+/// Starts the tasks of <see cref="JobKinds"/> and reads their executions from Hangfire (state history, the summary the
+/// job returned, the failure message). It is the only way the API reaches the jobs; there is no Hangfire dashboard. A
+/// run of a task is refused while another run of it is enqueued, scheduled for a retry, or processing.
 /// </summary>
-public sealed class CatalogReconciliationJobService(JobEngine engine)
+public sealed class JobService(JobEngine engine)
 {
     private const string Queue = "default";
     private const int PerState = 50;
@@ -38,21 +40,15 @@ public sealed class CatalogReconciliationJobService(JobEngine engine)
 
     public bool IsReady => engine.IsReady;
 
-    public async Task<string> EnqueueAsync(CancellationToken cancellationToken)
-    {
-        var client = await engine.ClientAsync(cancellationToken);
-        return client.Enqueue<CatalogReconciliationJob>(job => job.Run(null, CancellationToken.None));
-    }
-
-    /// <summary>Enqueues a run unless one is active. Returns the new execution id, or null when a run is already active.</summary>
-    public async Task<string?> TryStartAsync(CancellationToken cancellationToken)
+    /// <summary>Enqueues a run of <paramref name="kind"/> unless one is active. Returns the new execution id, or null when a run is already active.</summary>
+    public async Task<string?> TryStartAsync(JobKind kind, CancellationToken cancellationToken)
     {
         await StartLock.WaitAsync(cancellationToken);
         try
         {
-            if (await ActiveExecutionIdAsync(cancellationToken) is not null)
+            if (await ActiveExecutionIdAsync(kind, cancellationToken) is not null)
                 return null;
-            return await EnqueueAsync(cancellationToken);
+            return kind.Enqueue(await engine.ClientAsync(cancellationToken));
         }
         finally
         {
@@ -60,20 +56,20 @@ public sealed class CatalogReconciliationJobService(JobEngine engine)
         }
     }
 
-    /// <summary>The id of the run that is enqueued, waiting for a retry or processing, or null when none is.</summary>
-    public async Task<string?> ActiveExecutionIdAsync(CancellationToken cancellationToken)
+    /// <summary>The id of the run of <paramref name="kind"/> that is enqueued, waiting for a retry or processing, or null when none is.</summary>
+    public async Task<string?> ActiveExecutionIdAsync(JobKind kind, CancellationToken cancellationToken)
     {
         var monitor = (await engine.StorageAsync(cancellationToken)).GetMonitoringApi();
-        return ActiveIds(monitor).OrderByDescending(IdOrder).FirstOrDefault();
+        return ActiveIds(monitor, kind).OrderByDescending(IdOrder).FirstOrDefault();
     }
 
-    // An active run is enqueued, scheduled for a retry, or processing.
-    private static IEnumerable<string> ActiveIds(IMonitoringApi monitor) =>
-        Ids(monitor.EnqueuedJobs(Queue, 0, PerState), j => j.Job)
-            .Concat(Ids(monitor.ProcessingJobs(0, PerState), j => j.Job))
-            .Concat(Ids(monitor.ScheduledJobs(0, PerState), j => j.Job));
+    // An active run is enqueued, scheduled for a retry, or processing. Without a kind: of any task.
+    private static IEnumerable<string> ActiveIds(IMonitoringApi monitor, JobKind? kind = null) =>
+        Ids(monitor.EnqueuedJobs(Queue, 0, PerState), j => j.Job, kind)
+            .Concat(Ids(monitor.ProcessingJobs(0, PerState), j => j.Job, kind))
+            .Concat(Ids(monitor.ScheduledJobs(0, PerState), j => j.Job, kind));
 
-    /// <summary>The newest executions, newest first.</summary>
+    /// <summary>The newest executions of every task, newest first.</summary>
     public async Task<IReadOnlyList<JobExecution>> ListAsync(int count, CancellationToken cancellationToken)
     {
         var monitor = (await engine.StorageAsync(cancellationToken)).GetMonitoringApi();
@@ -84,7 +80,7 @@ public sealed class CatalogReconciliationJobService(JobEngine engine)
         return NewestDetails(monitor, ids, count).Select(details => details.Execution).ToList();
     }
 
-    /// <summary>The newest executions that ended Failed, newest first.</summary>
+    /// <summary>The newest executions of every task that ended Failed, newest first.</summary>
     public async Task<IReadOnlyList<JobExecutionDetails>> FailedAsync(int count, CancellationToken cancellationToken)
     {
         var monitor = (await engine.StorageAsync(cancellationToken)).GetMonitoringApi();
@@ -94,23 +90,27 @@ public sealed class CatalogReconciliationJobService(JobEngine engine)
     public async Task<JobExecutionDetails?> GetAsync(string id, CancellationToken cancellationToken)
     {
         var details = (await engine.StorageAsync(cancellationToken)).GetMonitoringApi().JobDetails(id);
-        return details?.Job?.Type == typeof(CatalogReconciliationJob) ? ToDetails(id, details) : null;
+        return JobKinds.Of(details?.Job?.Type) is { } kind ? ToDetails(id, details!, kind) : null;
     }
 
-    private static IEnumerable<string> Ids<T>(IEnumerable<KeyValuePair<string, T>> jobs, Func<T, Job?> job) =>
-        jobs.Where(pair => job(pair.Value)?.Type == typeof(CatalogReconciliationJob)).Select(pair => pair.Key);
+    // The jobs of one kind, or of any kind when none is given.
+    private static IEnumerable<string> Ids<T>(IEnumerable<KeyValuePair<string, T>> jobs, Func<T, Job?> job, JobKind? kind = null) =>
+        jobs.Where(pair => kind is null
+                ? JobKinds.Of(job(pair.Value)?.Type) is not null
+                : job(pair.Value)?.Type == kind.JobType)
+            .Select(pair => pair.Key);
 
     private static IEnumerable<JobExecutionDetails> NewestDetails(IMonitoringApi monitor, IEnumerable<string> ids, int count) =>
         ids.OrderByDescending(IdOrder)
             .Take(count)
             .Select(id => (Id: id, Details: monitor.JobDetails(id)))
-            .Where(job => job.Details is not null)
-            .Select(job => ToDetails(job.Id, job.Details!));
+            .Where(job => job.Details is not null && JobKinds.Of(job.Details.Job?.Type) is not null)
+            .Select(job => ToDetails(job.Id, job.Details!, JobKinds.Of(job.Details!.Job?.Type)!));
 
     // Hangfire job ids are increasing numbers, so the biggest is the newest.
     private static long IdOrder(string id) => long.TryParse(id, out var n) ? n : 0;
 
-    private static JobExecutionDetails ToDetails(string id, JobDetailsDto details)
+    private static JobExecutionDetails ToDetails(string id, JobDetailsDto details, JobKind kind)
     {
         var history = details.History
             .OrderBy(h => h.CreatedAt)
@@ -131,18 +131,22 @@ public sealed class CatalogReconciliationJobService(JobEngine engine)
             CreatedAt: details.CreatedAt ?? history[0].At,
             StartedAt: processing?.CreatedAt,
             FinishedAt: finished ? last.CreatedAt : null,
-            Summary: succeeded is null ? null : ReadSummary(succeeded),
-            Error: failed?.Data["ExceptionMessage"]);
+            Summary: succeeded is null ? null : ReadSummary(succeeded, kind),
+            Error: failed?.Data["ExceptionMessage"],
+            Kind: kind.Id,
+            Total: details.Properties.TryGetValue(JobProgress.TotalParameter, out var total) && int.TryParse(total, out var count)
+                ? count
+                : null);
         return new JobExecutionDetails(execution, history, failed is not null && failed.Data.TryGetValue("ExceptionType", out var type) ? type : null);
     }
 
-    private static CatalogReconciliationSummary? ReadSummary(StateHistoryDto succeeded)
+    private static object? ReadSummary(StateHistoryDto succeeded, JobKind kind)
     {
         if (!succeeded.Data.TryGetValue("Result", out var json) || string.IsNullOrWhiteSpace(json))
             return null;
         try
         {
-            return JsonSerializer.Deserialize<CatalogReconciliationSummary>(json, JsonSerializerOptions.Web);
+            return JsonSerializer.Deserialize(json, kind.SummaryType, JsonSerializerOptions.Web);
         }
         catch (JsonException)
         {

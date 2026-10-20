@@ -175,6 +175,46 @@ read-only into the API container and points `Slskd__DownloadsPath` at it; withou
 finished download is reported as not accessible. A missing `Slskd__ApiKey` or an invalid
 setting fails with an error naming the key.
 
+## Search for Missing Music
+
+A manual task in Jobs (`POST /api/jobs/missing-music-acquisition/start`; refused with 409
+while a run is active or no provider is configured). It never runs by itself. Its scope is
+the library's Missing Music: every track without a Stored file, not `WantedAt`. Per track
+(`TrackAcquisition`):
+
+1. Search through `IAcquisitionProvider` (the results are transient: no search table).
+2. Rank (`CandidateRanking`): only MP3s whose name claims the title and an artist, with no
+   marker of another version (live, remix, ...) the track doesn't carry. The right
+   recording comes before bitrate; among those, the higher bitrate, then a free slot. A
+   lower bitrate is only tried later, never excluded.
+3. Skip candidates (same provider, source and path) already rejected
+   (`AcquisitionHistory`); a failed or cancelled transfer judged nothing and is retried.
+4. Download to the provider's download area (temporary disk, not MinIO), hash the bytes
+   (full-file SHA-256 and `mp3-payload-sha256-v1`, the SHA-256 of the audio without ID3v2/
+   ID3v1/APEv2 tags; the rules are in `AudioHashing`). Equal bytes already rejected for the
+   track are rejected again without identifying.
+5. Identify with the existing `IRecordingIdentifier`. Only an identification of the same
+   title and artists (`RecordingMatch`) imports the file: through `AcquisitionHandoff`
+   into the existing ingestion (the bytes must match the hashes), then linked to the
+   track in one transaction with its `AppliedIdentification`. A track with a version is
+   never confirmed (an identification names no version). Anything else stays outside
+   MinIO, recorded as rejected with its reason; the file stays in the download area
+   (cleanup, retention and automatic re-evaluation are not built).
+
+Every attempted download is an `AcquisitionDownload` row, written through
+`AcquisitionHistory` (kept for imports too: provider, source, source path, state and
+outcome, reason, hashes, algorithm, intended track, file, job execution, timestamps). Every
+identification of a download is a permanent `IdentificationOutcome` with `DownloadId`,
+its methods and `PipelineVersion` (the build's commit, which versions the methods).
+Jobs shows the run's progress, per-track results, downloads and identification attempts.
+The job isn't retried by Hangfire; stopping it marks the transfer cancelled, and a new run
+starts over with what is still missing. Existing files and links are never changed.
+
+| Key | Default |
+| --- | --- |
+| `MissingMusic__MaxConcurrentTracks` | `2` (tracks searched and downloaded at the same time) |
+| `MissingMusic__MaxDownloadsPerTrack` | `3` (candidates downloaded per track per run, best first) |
+
 ## Understanding
 
 Product understanding lives in the separate repo

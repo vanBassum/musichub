@@ -11,7 +11,7 @@ import {
   decisionLabels,
   FileOutcomeItem,
 } from "@/components/identification-outcomes"
-import type { IdentificationDecision } from "@/lib/jobs-api"
+import { outcomeSubject, type IdentificationDecision } from "@/lib/jobs-api"
 import {
   historyPageSize,
   useIdentificationHistory,
@@ -26,6 +26,7 @@ const filterDecisions: IdentificationDecision[] = [
   "NoMethodRan",
   "MethodFailed",
   "Error",
+  "Mismatch",
   "Identified",
 ]
 
@@ -86,7 +87,7 @@ export function IdentificationHistory() {
           <ul aria-label="Recorded outcomes" className="flex flex-col gap-2">
             {history.items.map((outcome) => (
               <FileOutcomeItem
-                key={`${outcome.jobExecutionId}:${outcome.fileId}`}
+                key={`${outcome.jobExecutionId}:${outcomeSubject(outcome)}`}
                 outcome={outcome}
                 showProvenance
               />

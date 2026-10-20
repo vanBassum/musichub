@@ -41,6 +41,9 @@ namespace MusicHub.Api.Migrations
                     b.Property<int?>("AudioHashVersion")
                         .HasColumnType("integer");
 
+                    b.Property<int?>("BitrateKbps")
+                        .HasColumnType("integer");
+
                     b.Property<string>("ContentHash")
                         .HasMaxLength(64)
                         .HasColumnType("character varying(64)");
@@ -61,6 +64,10 @@ namespace MusicHub.Api.Migrations
                     b.Property<int?>("IntendedTrackId")
                         .HasColumnType("integer");
 
+                    b.Property<string>("JobExecutionId")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
                     b.Property<string>("Outcome")
                         .IsRequired()
                         .HasMaxLength(20)
@@ -79,6 +86,9 @@ namespace MusicHub.Api.Migrations
                         .IsRequired()
                         .HasMaxLength(1000)
                         .HasColumnType("character varying(1000)");
+
+                    b.Property<long?>("SizeBytes")
+                        .HasColumnType("bigint");
 
                     b.Property<string>("Source")
                         .IsRequired()
@@ -102,6 +112,8 @@ namespace MusicHub.Api.Migrations
                     b.HasIndex("FileId");
 
                     b.HasIndex("IntendedTrackId");
+
+                    b.HasIndex("JobExecutionId");
 
                     b.HasIndex("StartedAt");
 
@@ -233,7 +245,10 @@ namespace MusicHub.Api.Migrations
                         .HasMaxLength(50)
                         .HasColumnType("character varying(50)");
 
-                    b.Property<int>("FileId")
+                    b.Property<int?>("DownloadId")
+                        .HasColumnType("integer");
+
+                    b.Property<int?>("FileId")
                         .HasColumnType("integer");
 
                     b.Property<string>("FileName")
@@ -250,6 +265,10 @@ namespace MusicHub.Api.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
+                    b.Property<string>("PipelineVersion")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
                     b.Property<string>("Reason")
                         .IsRequired()
                         .HasMaxLength(2000)
@@ -262,6 +281,8 @@ namespace MusicHub.Api.Migrations
                         .HasColumnType("integer");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("DownloadId");
 
                     b.HasIndex("FileId");
 
@@ -471,11 +492,17 @@ namespace MusicHub.Api.Migrations
 
             modelBuilder.Entity("MusicHub.Api.Catalog.IdentificationOutcome", b =>
                 {
+                    b.HasOne("MusicHub.Api.Acquisition.AcquisitionDownload", "Download")
+                        .WithMany()
+                        .HasForeignKey("DownloadId")
+                        .OnDelete(DeleteBehavior.Cascade);
+
                     b.HasOne("MusicHub.Api.Ingestion.FileRecord", "File")
                         .WithMany()
                         .HasForeignKey("FileId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
+                        .OnDelete(DeleteBehavior.Cascade);
+
+                    b.Navigation("Download");
 
                     b.Navigation("File");
                 });

@@ -31,6 +31,7 @@ public class MusicHubDbContext(DbContextOptions<MusicHubDbContext> options) : Db
             download.Property(d => d.ContentHash).HasMaxLength(64);
             download.Property(d => d.AudioHash).HasMaxLength(64);
             download.Property(d => d.AudioHashStatus).HasConversion<string>().HasMaxLength(20);
+            download.Property(d => d.JobExecutionId).HasMaxLength(AcquisitionDownload.JobExecutionIdMaxLength);
             download.Property(d => d.State).HasConversion<string>().HasMaxLength(20);
             download.Property(d => d.Failure).HasConversion<string>().HasMaxLength(30);
             download.Property(d => d.Outcome).HasConversion<string>().HasMaxLength(20);
@@ -43,6 +44,7 @@ public class MusicHubDbContext(DbContextOptions<MusicHubDbContext> options) : Db
             download.HasIndex(d => d.ContentHash);
             download.HasIndex(d => d.AudioHash);
             download.HasIndex(d => d.StartedAt);
+            download.HasIndex(d => d.JobExecutionId);
         });
 
         modelBuilder.Entity<AppliedIdentification>(applied =>
@@ -65,12 +67,17 @@ public class MusicHubDbContext(DbContextOptions<MusicHubDbContext> options) : Db
             outcome.Property(o => o.FileName).HasMaxLength(IdentificationOutcome.FileNameMaxLength);
             outcome.Property(o => o.Reason).HasMaxLength(IdentificationOutcome.ReasonMaxLength);
             outcome.Property(o => o.Decision).HasConversion<string>().HasMaxLength(50);
+            outcome.Property(o => o.PipelineVersion).HasMaxLength(100);
             // A deleted file takes its attempts with it.
             outcome.HasOne(o => o.File).WithMany()
                 .HasForeignKey(o => o.FileId).OnDelete(DeleteBehavior.Cascade);
+            // The attempts on a download are part of its history, which is never deleted.
+            outcome.HasOne(o => o.Download).WithMany()
+                .HasForeignKey(o => o.DownloadId).OnDelete(DeleteBehavior.Cascade);
             outcome.HasIndex(o => new { o.JobExecutionId, o.FileId });
             outcome.HasIndex(o => o.RecordedAt);
             outcome.HasIndex(o => o.FileId);
+            outcome.HasIndex(o => o.DownloadId);
         });
 
         modelBuilder.Entity<FileRecord>(file =>

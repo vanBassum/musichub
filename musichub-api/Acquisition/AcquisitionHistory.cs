@@ -10,7 +10,7 @@ namespace MusicHub.Api.Acquisition;
 public class AcquisitionHistory(MusicHubDbContext db, TimeProvider time)
 {
     public async Task<AcquisitionDownload> BeginAsync(
-        AcquisitionCandidate candidate, int? intendedTrackId, CancellationToken ct)
+        AcquisitionCandidate candidate, int? intendedTrackId, CancellationToken ct, string? jobExecutionId = null)
     {
         var (provider, source, remotePath) = StoredIdentity(candidate);
         var download = new AcquisitionDownload
@@ -18,6 +18,9 @@ public class AcquisitionHistory(MusicHubDbContext db, TimeProvider time)
             Provider = provider,
             Source = source,
             RemotePath = remotePath,
+            SizeBytes = candidate.SizeBytes,
+            BitrateKbps = candidate.BitrateKbps,
+            JobExecutionId = jobExecutionId,
             IntendedTrackId = intendedTrackId,
             StartedAt = time.GetUtcNow(),
             State = AcquisitionDownloadState.Started,
@@ -34,6 +37,15 @@ public class AcquisitionHistory(MusicHubDbContext db, TimeProvider time)
         download.AudioHash = hashes.Audio.Hash;
         download.AudioHashStatus = hashes.Audio.Status;
         download.AudioHashVersion = Mp3AudioPayload.Version;
+        download.FinishedAt = time.GetUtcNow();
+        return db.SaveChangesAsync(ct);
+    }
+
+    /// <summary>The run was cancelled during the transfer; nothing was judged, so the source may be tried again.</summary>
+    public Task CancelledAsync(AcquisitionDownload download, string reason, CancellationToken ct)
+    {
+        download.State = AcquisitionDownloadState.Cancelled;
+        download.Reason = Truncate(reason, AcquisitionDownload.ReasonMaxLength);
         download.FinishedAt = time.GetUtcNow();
         return db.SaveChangesAsync(ct);
     }
@@ -73,11 +85,14 @@ public class AcquisitionHistory(MusicHubDbContext db, TimeProvider time)
 
     /// <summary>
     /// Whether byte-identical content was rejected before, for a file that is already downloaded (a hash is only
-    /// known then). Identical bytes are not proof of the same recording, so this is a signal, not an identity.
+    /// known then). Identical bytes are not proof of the same recording, so this is a signal, not an identity. With
+    /// <paramref name="intendedTrackId"/> only a rejection for that track counts: equal bytes say nothing about any
+    /// other track.
     /// </summary>
-    public Task<bool> WasContentRejectedAsync(string contentHash, CancellationToken ct) =>
+    public Task<bool> WasContentRejectedAsync(string contentHash, CancellationToken ct, int? intendedTrackId = null) =>
         db.AcquisitionDownloads.AnyAsync(d =>
-            d.Outcome == AcquisitionOutcome.Rejected && d.ContentHash == contentHash, ct);
+            d.Outcome == AcquisitionOutcome.Rejected && d.ContentHash == contentHash
+            && (intendedTrackId == null || d.IntendedTrackId == intendedTrackId), ct);
 
     /// <summary>
     /// Whether the same encoded audio (tags aside) was rejected before. Only hashes of the same
