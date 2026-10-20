@@ -22,6 +22,89 @@ namespace MusicHub.Api.Migrations
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
+            modelBuilder.Entity("MusicHub.Api.Acquisition.DownloadHistory", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("AudioHashAlgorithm")
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
+                    b.Property<string>("AudioSha256")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<int?>("BitrateKbps")
+                        .HasColumnType("integer");
+
+                    b.Property<int?>("FileId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("FileSha256")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<DateTimeOffset?>("FinishedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("JobExecutionId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("Provider")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
+
+                    b.Property<long>("SizeBytes")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("Source")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("SourcePath")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.Property<DateTimeOffset>("StartedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<int?>("TrackId")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AudioSha256");
+
+                    b.HasIndex("FileId");
+
+                    b.HasIndex("FileSha256");
+
+                    b.HasIndex("JobExecutionId");
+
+                    b.HasIndex("TrackId", "Provider", "Source");
+
+                    b.ToTable("DownloadHistories");
+                });
+
             modelBuilder.Entity("MusicHub.Api.Catalog.AppliedIdentification", b =>
                 {
                     b.Property<int>("Id")
@@ -145,7 +228,10 @@ namespace MusicHub.Api.Migrations
                         .HasMaxLength(50)
                         .HasColumnType("character varying(50)");
 
-                    b.Property<int>("FileId")
+                    b.Property<int?>("DownloadId")
+                        .HasColumnType("integer");
+
+                    b.Property<int?>("FileId")
                         .HasColumnType("integer");
 
                     b.Property<string>("FileName")
@@ -162,6 +248,10 @@ namespace MusicHub.Api.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
+                    b.Property<string>("PipelineVersion")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
                     b.Property<string>("Reason")
                         .IsRequired()
                         .HasMaxLength(2000)
@@ -174,6 +264,8 @@ namespace MusicHub.Api.Migrations
                         .HasColumnType("integer");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("DownloadId");
 
                     b.HasIndex("FileId");
 
@@ -328,6 +420,23 @@ namespace MusicHub.Api.Migrations
                     b.ToTable("Files");
                 });
 
+            modelBuilder.Entity("MusicHub.Api.Acquisition.DownloadHistory", b =>
+                {
+                    b.HasOne("MusicHub.Api.Ingestion.FileRecord", "File")
+                        .WithMany()
+                        .HasForeignKey("FileId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("MusicHub.Api.Catalog.Track", "Track")
+                        .WithMany()
+                        .HasForeignKey("TrackId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.Navigation("File");
+
+                    b.Navigation("Track");
+                });
+
             modelBuilder.Entity("MusicHub.Api.Catalog.AppliedIdentification", b =>
                 {
                     b.HasOne("MusicHub.Api.Catalog.IdentificationOutcome", "Attempt")
@@ -366,11 +475,17 @@ namespace MusicHub.Api.Migrations
 
             modelBuilder.Entity("MusicHub.Api.Catalog.IdentificationOutcome", b =>
                 {
+                    b.HasOne("MusicHub.Api.Acquisition.DownloadHistory", "Download")
+                        .WithMany()
+                        .HasForeignKey("DownloadId")
+                        .OnDelete(DeleteBehavior.Cascade);
+
                     b.HasOne("MusicHub.Api.Ingestion.FileRecord", "File")
                         .WithMany()
                         .HasForeignKey("FileId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
+                        .OnDelete(DeleteBehavior.Cascade);
+
+                    b.Navigation("Download");
 
                     b.Navigation("File");
                 });

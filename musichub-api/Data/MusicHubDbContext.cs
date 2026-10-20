@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using MusicHub.Api.Acquisition;
 using MusicHub.Api.Catalog;
 using MusicHub.Api.Ingestion;
 
@@ -16,6 +17,8 @@ public class MusicHubDbContext(DbContextOptions<MusicHubDbContext> options) : Db
     public DbSet<IdentificationOutcome> IdentificationOutcomes => Set<IdentificationOutcome>();
 
     public DbSet<AppliedIdentification> AppliedIdentifications => Set<AppliedIdentification>();
+
+    public DbSet<DownloadHistory> DownloadHistories => Set<DownloadHistory>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -39,12 +42,39 @@ public class MusicHubDbContext(DbContextOptions<MusicHubDbContext> options) : Db
             outcome.Property(o => o.FileName).HasMaxLength(IdentificationOutcome.FileNameMaxLength);
             outcome.Property(o => o.Reason).HasMaxLength(IdentificationOutcome.ReasonMaxLength);
             outcome.Property(o => o.Decision).HasConversion<string>().HasMaxLength(50);
+            outcome.Property(o => o.PipelineVersion).HasMaxLength(100);
             // A deleted file takes its attempts with it.
             outcome.HasOne(o => o.File).WithMany()
                 .HasForeignKey(o => o.FileId).OnDelete(DeleteBehavior.Cascade);
+            // The attempts on a download are part of its history, which is never deleted.
+            outcome.HasOne(o => o.Download).WithMany()
+                .HasForeignKey(o => o.DownloadId).OnDelete(DeleteBehavior.Cascade);
             outcome.HasIndex(o => new { o.JobExecutionId, o.FileId });
             outcome.HasIndex(o => o.RecordedAt);
             outcome.HasIndex(o => o.FileId);
+            outcome.HasIndex(o => o.DownloadId);
+        });
+
+        modelBuilder.Entity<DownloadHistory>(download =>
+        {
+            download.Property(d => d.Provider).HasMaxLength(CatalogLimits.Provider);
+            download.Property(d => d.Source).HasMaxLength(DownloadHistory.SourceMaxLength);
+            download.Property(d => d.SourcePath).HasMaxLength(DownloadHistory.PathMaxLength);
+            download.Property(d => d.Reason).HasMaxLength(DownloadHistory.ReasonMaxLength);
+            download.Property(d => d.Status).HasConversion<string>().HasMaxLength(20);
+            download.Property(d => d.FileSha256).HasMaxLength(64);
+            download.Property(d => d.AudioSha256).HasMaxLength(64);
+            download.Property(d => d.AudioHashAlgorithm).HasMaxLength(DownloadHistory.HashAlgorithmMaxLength);
+            download.Property(d => d.JobExecutionId).HasMaxLength(100);
+            // Deleting a track or the imported file only empties the reference: the history stays.
+            download.HasOne(d => d.Track).WithMany()
+                .HasForeignKey(d => d.TrackId).OnDelete(DeleteBehavior.SetNull);
+            download.HasOne(d => d.File).WithMany()
+                .HasForeignKey(d => d.FileId).OnDelete(DeleteBehavior.SetNull);
+            download.HasIndex(d => new { d.TrackId, d.Provider, d.Source });
+            download.HasIndex(d => d.FileSha256);
+            download.HasIndex(d => d.AudioSha256);
+            download.HasIndex(d => d.JobExecutionId);
         });
 
         modelBuilder.Entity<FileRecord>(file =>

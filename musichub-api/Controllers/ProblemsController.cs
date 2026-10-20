@@ -11,7 +11,7 @@ namespace MusicHub.Api.Controllers;
 /// </summary>
 [ApiController]
 [Route("api/problems")]
-public class ProblemsController(CatalogReconciliationJobService jobs, MusicHubDbContext db) : ControllerBase
+public class ProblemsController(JobService jobs, MusicHubDbContext db) : ControllerBase
 {
     /// <summary>
     /// The problems of every source that could be read. <c>unavailable</c> names the sources that couldn't (the job

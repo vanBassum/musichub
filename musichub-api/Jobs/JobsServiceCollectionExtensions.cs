@@ -15,7 +15,8 @@ public static class JobsServiceCollectionExtensions
         services.AddScoped<CatalogReconciliation>();
         services.AddScoped<ManualIdentification>();
         services.AddScoped<CatalogReconciliationJob>();
-        services.AddScoped<CatalogReconciliationJobService>();
+        services.AddScoped<MissingMusicAcquisitionJob>();
+        services.AddScoped<JobService>();
         services.AddHostedService<HangfireServerService>();
         return services;
     }

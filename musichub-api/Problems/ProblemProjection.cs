@@ -74,7 +74,7 @@ public static class ProblemProjection
                 $"{ProblemSources.Job}:{d.Execution.Id}",
                 ProblemSources.Job,
                 d.Execution.State,
-                "Catalog synchronization",
+                JobKinds.All.FirstOrDefault(k => k.Id == d.Execution.Kind)?.Name ?? "Background task",
                 d.ErrorType is { } type
                     ? $"The run stopped after an error ({type[(type.LastIndexOf('.') + 1)..]})."
                     : "The run stopped after an error.",
