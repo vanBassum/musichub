@@ -32,6 +32,7 @@ interface NowPlayingProps {
 interface QueueListProps {
   queue: Track[]
   nowPlayingId: string
+  className?: string
 }
 
 const statusLabels: Record<PlaybackStatus, string> = {
@@ -68,7 +69,10 @@ export function NowPlaying({ large = false }: NowPlayingProps) {
         aria-label="No cover art"
         className={cn(
           "flex aspect-square w-full items-center justify-center rounded-md bg-muted text-muted-foreground",
-          large ? "max-w-72" : "max-w-56 lg:max-w-60"
+          // The docked desktop player gives the cover up first on short windows.
+          large
+            ? "max-w-72"
+            : "max-w-40 [@media(max-height:56rem)]:hidden"
         )}
       >
         <Music className="size-1/4" />
@@ -170,11 +174,11 @@ export function NowPlaying({ large = false }: NowPlayingProps) {
   )
 }
 
-export function QueueList({ queue, nowPlayingId }: QueueListProps) {
+export function QueueList({ queue, nowPlayingId, className }: QueueListProps) {
   return (
     <section
       aria-labelledby="queue-heading"
-      className="flex min-h-0 flex-1 flex-col border-t"
+      className={cn("flex min-h-0 flex-1 flex-col border-t", className)}
     >
       <div className="flex items-center gap-2 px-4 py-3">
         <h2 id="queue-heading" className="font-semibold">
@@ -248,10 +252,17 @@ export function PlayerPanel({ queue, nowPlayingId }: PlayerPanelProps) {
   return (
     <aside
       aria-label="Player"
-      className="flex min-h-0 flex-col rounded-xl border bg-card"
+      className="flex min-h-0 flex-col overflow-hidden rounded-xl border bg-card"
     >
-      <NowPlaying />
-      <QueueList queue={queue} nowPlayingId={nowPlayingId} />
+      <QueueList
+        queue={queue}
+        nowPlayingId={nowPlayingId}
+        className="border-t-0"
+      />
+      {/* Docked at the bottom: the queue scrolls above it, the controls never leave. */}
+      <div className="shrink-0 border-t">
+        <NowPlaying />
+      </div>
     </aside>
   )
 }
