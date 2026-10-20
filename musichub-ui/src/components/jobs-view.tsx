@@ -3,6 +3,7 @@ import type { ReactNode } from "react"
 
 import { IdentificationHistory } from "@/components/identification-history"
 import { IdentificationOutcomes } from "@/components/identification-outcomes"
+import { MissingMusicResults } from "@/components/missing-music-results"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -14,8 +15,14 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
-import type { JobExecution, JobSummary } from "@/lib/jobs-api"
+import type { JobExecution, JobTask } from "@/lib/jobs-api"
 import { formatElapsed } from "@/lib/format"
+import {
+  executionVersion,
+  summaryFacts,
+  summaryFailures,
+  summaryHeadline,
+} from "@/lib/job-summary"
 import type { JobsState } from "@/lib/use-jobs"
 import { cn } from "@/lib/utils"
 
@@ -51,7 +58,7 @@ function outcomeOf(execution: JobExecution): Outcome {
     case "Processing":
       return "running"
     case "Succeeded":
-      return (execution.summary?.failed ?? 0) > 0 ? "partial" : "completed"
+      return summaryFailures(execution.summary) > 0 ? "partial" : "completed"
     case "Failed":
       return "failed"
     default:
@@ -61,14 +68,7 @@ function outcomeOf(execution: JobExecution): Outcome {
 
 function describeResult(execution: JobExecution) {
   const { summary, error } = execution
-  if (summary) {
-    return {
-      main: `${summary.examined} ${summary.examined === 1 ? "file" : "files"} examined`,
-      sub: `${summary.linked} linked, ${summary.unresolved} unresolved${
-        summary.failed > 0 ? `, ${summary.failed} failed` : ""
-      }`,
-    }
-  }
+  if (summary) return summaryHeadline(summary)
   if (error) return { main: "Stopped after an error", sub: error }
   const state = outcomeLabels[outcomeOf(execution)]
   return { main: state, sub: null }
@@ -91,6 +91,47 @@ function StatusBadge({ execution }: { execution: JobExecution }) {
   )
 }
 
+// A task and its start button. One start is in flight at a time, and a task refuses a second run while one is active.
+function TaskCard({
+  task,
+  starting,
+  start,
+}: {
+  task: JobTask
+  starting: JobsState["starting"]
+  start: JobsState["start"]
+}) {
+  const running = starting === task.id || task.activeExecutionId !== null
+  return (
+    <li className="flex items-start gap-3 rounded-xl border border-primary bg-card p-4">
+      <span className="rounded-lg bg-primary/10 p-2 text-primary">
+        <Database aria-hidden="true" />
+      </span>
+      <div className="flex min-w-0 flex-1 flex-col gap-2">
+        <div>
+          <h2 className="font-semibold">{task.name}</h2>
+          <p className="text-sm text-muted-foreground">{task.description}</p>
+        </div>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <p className="flex items-center gap-2 text-sm">
+            <span
+              className={cn("size-2 rounded-full", running ? "bg-primary" : "bg-success")}
+            />
+            {running ? "Running" : "Available"}
+          </p>
+          <Button
+            onClick={() => start(task.id)}
+            disabled={running || starting !== null}
+          >
+            <Play data-icon="inline-start" />
+            {running ? "Running…" : "Start"}
+          </Button>
+        </div>
+      </div>
+    </li>
+  )
+}
+
 export function JobsView({
   state,
   className,
@@ -110,8 +151,6 @@ export function JobsView({
     refresh,
     start,
   } = state
-  const task = tasks?.[0]
-  const running = starting || task?.activeExecutionId != null
 
   return (
     <section
@@ -137,10 +176,6 @@ export function JobsView({
             <RefreshCw data-icon="inline-start" />
             Refresh
           </Button>
-          <Button size="lg" onClick={start} disabled={running || !task}>
-            <Play data-icon="inline-start" />
-            {running ? "Synchronizing…" : "Synchronize catalog"}
-          </Button>
         </div>
       </div>
 
@@ -161,27 +196,7 @@ export function JobsView({
         ) : (
           <ul aria-label="Tasks" className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
             {tasks.map((item) => (
-              <li
-                key={item.id}
-                className="flex items-start gap-3 rounded-xl border border-primary bg-card p-4"
-              >
-                <span className="rounded-lg bg-primary/10 p-2 text-primary">
-                  <Database aria-hidden="true" />
-                </span>
-                <div className="min-w-0">
-                  <h2 className="font-semibold">{item.name}</h2>
-                  <p className="text-sm text-muted-foreground">{item.description}</p>
-                  <p className="mt-2 flex items-center gap-2 text-sm">
-                    <span
-                      className={cn(
-                        "size-2 rounded-full",
-                        item.activeExecutionId ? "bg-primary" : "bg-success"
-                      )}
-                    />
-                    {item.activeExecutionId ? "Running" : "Available"}
-                  </p>
-                </div>
-              </li>
+              <TaskCard key={item.id} task={item} starting={starting} start={start} />
             ))}
           </ul>
         )}
@@ -269,19 +284,6 @@ function Fact({ label, children }: { label: string; children: ReactNode }) {
   )
 }
 
-function SummaryFacts({ summary }: { summary: JobSummary }) {
-  return (
-    <>
-      <Fact label="Examined">{summary.examined} files</Fact>
-      <Fact label="Linked">{summary.linked} files</Fact>
-      <Fact label="Tracks created">{summary.tracksCreated}</Fact>
-      <Fact label="Not identified">{summary.unresolved} files</Fact>
-      <Fact label="Skipped">{summary.skipped} files</Fact>
-      <Fact label="Errors">{summary.failed}</Fact>
-    </>
-  )
-}
-
 function DetailsPlaceholder({
   selectedId,
   detailsError,
@@ -302,7 +304,8 @@ function DetailsPlaceholder({
 }
 
 function ExecutionDetails({ state }: { state: JobsState }) {
-  const { details, detailsError, selectedId } = state
+  const { details, detailsRevision, detailsError, selectedId } = state
+  const version = details ? executionVersion(details.execution, detailsRevision) : ""
   return (
     <section
       aria-labelledby="details-heading"
@@ -322,9 +325,12 @@ function ExecutionDetails({ state }: { state: JobsState }) {
             <Fact label="Started">{when(details.execution.startedAt)}</Fact>
             <Fact label="Finished">{when(details.execution.finishedAt)}</Fact>
             <Fact label="Duration">{elapsed(details.execution)}</Fact>
-            {details.execution.summary && (
-              <SummaryFacts summary={details.execution.summary} />
-            )}
+            {details.execution.summary &&
+              summaryFacts(details.execution.summary).map(([label, value]) => (
+                <Fact key={label} label={label}>
+                  {value}
+                </Fact>
+              ))}
           </dl>
           {details.execution.error && (
             <p role="alert" className="text-sm break-words text-destructive">
@@ -332,10 +338,10 @@ function ExecutionDetails({ state }: { state: JobsState }) {
               {details.execution.error}
             </p>
           )}
-          <IdentificationOutcomes
-            executionId={details.execution.id}
-            version={`${details.execution.state}:${details.execution.summary?.examined ?? ""}`}
-          />
+          {details.execution.kind === "missing-music-acquisition" && (
+            <MissingMusicResults execution={details.execution} version={version} />
+          )}
+          <IdentificationOutcomes executionId={details.execution.id} version={version} />
           <div>
             <h3 className="mb-2 text-sm font-semibold">State history</h3>
             <ol className="flex flex-col gap-1 rounded-lg border bg-muted/40 p-3 font-mono text-xs">
