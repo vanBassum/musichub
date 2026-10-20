@@ -48,6 +48,10 @@ export function parseLocation(hash: string): MobileLocation {
   }
 }
 
+export function isSearchHash(hash: string): boolean {
+  return hash.startsWith("#/search")
+}
+
 // A search deep link is `#/search?q=<term>`, on desktop and phone alike.
 export function parseSearchQuery(hash: string): string {
   const { tab } = parseLocation(hash)

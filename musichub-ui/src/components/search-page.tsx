@@ -43,18 +43,20 @@ interface SearchPageProps {
 
 type Scope = "all" | "local" | "external"
 
-// What one source (My Music or the external provider) shows while it isn't ready.
-// Returns nothing for `ready`, so the caller renders the rows.
-function SourceState({
+// One source (My Music or the external provider) in a group: its loading or
+// error state while it isn't ready, then its rows.
+function SourceRows({
   source,
   status,
   error,
   onRetry,
+  children,
 }: {
   source: string
   status: SearchStatus
   error?: string | null
   onRetry: () => void
+  children: ReactNode
 }) {
   if (status === "loading") {
     return (
@@ -80,6 +82,7 @@ function SourceState({
       </div>
     )
   }
+  if (status === "ready") return <ul>{children}</ul>
   return null
 }
 
@@ -353,88 +356,68 @@ export function SearchPage({
           {fields.artist && (
             <Group label="Artists" empty={artistsEmpty}>
               {showLocal && (
-                <>
-                  <SourceState
-                    source="My Music"
-                    status={local.status}
-                    onRetry={local.retry}
-                  />
-                  {local.status === "ready" && (
-                    <ul>
-                      {local.artists.map((artist) => (
-                        <LocalArtistRow
-                          key={artist.id}
-                          artist={artist}
-                          onSelect={onSelectArtist}
-                        />
-                      ))}
-                    </ul>
-                  )}
-                </>
+                <SourceRows
+                  source="My Music"
+                  status={local.status}
+                  onRetry={local.retry}
+                >
+                  {local.artists.map((artist) => (
+                    <LocalArtistRow
+                      key={artist.id}
+                      artist={artist}
+                      onSelect={onSelectArtist}
+                    />
+                  ))}
+                </SourceRows>
               )}
               {showExternal && (
-                <>
-                  <SourceState
-                    source="external"
-                    status={external.status}
-                    error={external.error}
-                    onRetry={external.retry}
-                  />
-                  {external.status === "ready" && (
-                    <ul>
-                      {external.artists.map((artist) => (
-                        <ExternalArtistRow
-                          key={`${artist.provider}:${artist.externalId}`}
-                          artist={artist}
-                          onSelect={onSelectArtist}
-                        />
-                      ))}
-                    </ul>
-                  )}
-                </>
+                <SourceRows
+                  source="external"
+                  status={external.status}
+                  error={external.error}
+                  onRetry={external.retry}
+                >
+                  {external.artists.map((artist) => (
+                    <ExternalArtistRow
+                      key={`${artist.provider}:${artist.externalId}`}
+                      artist={artist}
+                      onSelect={onSelectArtist}
+                    />
+                  ))}
+                </SourceRows>
               )}
             </Group>
           )}
           <Group label="Tracks" empty={tracksEmpty}>
             {showLocal && (
-              <>
-                <SourceState
-                  source="My Music"
-                  status={local.status}
-                  onRetry={local.retry}
-                />
-                {local.status === "ready" && (
-                  <ul>
-                    {local.tracks.map((track) => (
-                      <LocalTrackRow
-                        key={track.id}
-                        track={track}
-                        onSelect={onSelectTrack}
-                      />
-                    ))}
-                  </ul>
-                )}
-              </>
+              <SourceRows
+                source="My Music"
+                status={local.status}
+                onRetry={local.retry}
+              >
+                {local.tracks.map((track) => (
+                  <LocalTrackRow
+                    key={track.id}
+                    track={track}
+                    onSelect={onSelectTrack}
+                  />
+                ))}
+              </SourceRows>
             )}
             {showExternal && (
-              <>
-                <SourceState
-                  source="external"
-                  status={external.status}
-                  error={external.error}
-                  onRetry={external.retry}
-                />
-                {external.status === "ready" && (
-                  <ul>
-                    {external.tracks.map((track) => (
-                      <ExternalTrackRow
-                        key={`${track.provider}:${track.externalId}`}
-                        track={track}
-                      />
-                    ))}
-                  </ul>
-                )}
-              </>
+              <SourceRows
+                source="external"
+                status={external.status}
+                error={external.error}
+                onRetry={external.retry}
+              >
+                {external.tracks.map((track) => (
+                  <ExternalTrackRow
+                    key={`${track.provider}:${track.externalId}`}
+                    track={track}
+                  />
+                ))}
+              </SourceRows>
             )}
           </Group>
         </div>

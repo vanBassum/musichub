@@ -8,7 +8,7 @@ import { JobsView } from "@/components/jobs-view"
 import { MobileShell } from "@/components/mobile-shell"
 import {
   formatSearchHash,
-  parseLocation,
+  isSearchHash,
   parseSearchQuery,
 } from "@/components/mobile-pages"
 import { PlayerPanel } from "@/components/player-panel"
@@ -28,7 +28,7 @@ const searchDelayMs = 300
 export function App() {
   const [selectedId, setSelectedId] = useState<number | null>(null)
   const [view, setView] = useState<AppView>(
-    window.location.hash.startsWith("#/search") ? "search" : "library"
+    isSearchHash(window.location.hash) ? "search" : "library"
   )
   // The global search page's term, shared by the desktop page and the phone's tab.
   const [searchQuery, setSearchQuery] = useState(() =>
@@ -62,10 +62,10 @@ export function App() {
     const timer = setTimeout(() => {
       const onSearch = isDesktop
         ? view === "search"
-        : parseLocation(window.location.hash).tab === "search"
+        : isSearchHash(window.location.hash)
       if (onSearch) {
         window.history.replaceState(null, "", formatSearchHash(searchQuery))
-      } else if (isDesktop && window.location.hash.startsWith("#/search")) {
+      } else if (isDesktop && isSearchHash(window.location.hash)) {
         window.history.replaceState(null, "", window.location.pathname)
       }
     }, searchDelayMs)
