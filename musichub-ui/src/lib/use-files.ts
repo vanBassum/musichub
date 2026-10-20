@@ -41,6 +41,12 @@ export interface Upload {
   cancel?: () => void
 }
 
+// The displayed order is the queue's start order: a new upload goes last, so the
+// first row of a batch is the first to start.
+export function appendUpload(all: Upload[], upload: Upload): Upload[] {
+  return [...all, upload]
+}
+
 // A delete requested in this session: pending until the API answers; an error stays until retried.
 export type DeleteState = { pending: true } | { pending: false; error: string }
 
@@ -174,17 +180,16 @@ export function useFiles(): FilesState {
     (file: File) => {
       const key = nextKey.current++
       waiting.set(key, file)
-      setUploads((all) => [
-        {
+      setUploads((all) =>
+        appendUpload(all, {
           key,
           name: file.name,
           size: file.size,
           loaded: 0,
           state: "queued",
           cancel: () => queue.current?.cancel(key),
-        },
-        ...all,
-      ])
+        })
+      )
       queue.current?.enqueue(key)
     },
     [waiting]
