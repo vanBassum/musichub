@@ -18,6 +18,7 @@ import {
   type PlayerView,
 } from "@/components/mobile-pages"
 import { NowPlaying, QueueList } from "@/components/player-panel"
+import { ProblemsView } from "@/components/problems-view"
 import { SearchPage } from "@/components/search-page"
 import { Button } from "@/components/ui/button"
 import {
@@ -31,6 +32,7 @@ import type { Track } from "@/data/mock-tracks"
 import type { ArtistRef } from "@/lib/artist"
 import type { FilesState } from "@/lib/use-files"
 import type { JobsState } from "@/lib/use-jobs"
+import type { ProblemsState } from "@/lib/use-problems"
 import { cn } from "@/lib/utils"
 
 interface MobileShellProps {
@@ -42,6 +44,7 @@ interface MobileShellProps {
   nowPlayingId: string
   filesState: FilesState
   jobsState: JobsState
+  problemsState: ProblemsState
   artistRef: ArtistRef | null
   searchQuery: string
   onSearchQueryChange: (query: string) => void
@@ -98,6 +101,7 @@ export function MobileShell({
   nowPlayingId,
   filesState,
   jobsState,
+  problemsState,
   artistRef,
   searchQuery,
   onSearchQueryChange,
@@ -114,7 +118,11 @@ export function MobileShell({
   }
   const openScreen = (id: MoreScreenId) =>
     go({ tab: "more", screen: id, playerView })
-  const showMore = (id: MoreScreenId) => tab === "more" && screen === id
+  const openExecution = (executionId: string) => {
+    jobsState.select(executionId)
+    openScreen("jobs")
+  }
+  const showMore =(id: MoreScreenId) => tab === "more" && screen === id
 
   return (
     <div className="flex h-dvh flex-col overflow-hidden">
@@ -221,6 +229,13 @@ export function MobileShell({
             <FilesView state={filesState} className="flex-1" />
           )}
           {id === "jobs" && <JobsView state={jobsState} className="flex-1" />}
+          {id === "problems" && (
+            <ProblemsView
+              state={problemsState}
+              onOpenExecution={openExecution}
+              className="flex-1"
+            />
+          )}
           {id === "artists" && <ArtistPage artistRef={artistRef} className="flex-1" />}
         </Page>
       ))}

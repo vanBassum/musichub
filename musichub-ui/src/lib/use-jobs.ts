@@ -9,8 +9,15 @@ import {
   type JobExecutionDetails,
   type JobTask,
 } from "@/lib/jobs-api"
+import { useLoader } from "@/lib/use-loader"
 
 const pollMs = 3000
+
+function fetchLists(signal: AbortSignal) {
+  return Promise.all([listJobs(signal), listExecutions(signal)]).then(
+    ([tasks, executions]) => ({ tasks, executions })
+  )
+}
 
 export interface JobsState {
   tasks: JobTask[] | null
@@ -32,69 +39,33 @@ export interface JobsState {
 // selection and a start in flight survive navigation and the desktop/mobile layout swap. While a run is waiting
 // or in progress the data is polled.
 export function useJobs(): JobsState {
-  const [tasks, setTasks] = useState<JobTask[] | null>(null)
-  const [executions, setExecutions] = useState<JobExecution[] | null>(null)
-  const [loadError, setLoadError] = useState<string | null>(null)
-  const [refreshing, setRefreshing] = useState(true)
+  const {
+    data: lists,
+    error: loadError,
+    refreshing,
+    refresh,
+    reload,
+  } = useLoader(fetchLists)
   const [picked, setPicked] = useState<string | null>(null)
   const [loaded, setLoaded] = useState<JobExecutionDetails | null>(null)
   const [failedLoad, setFailedLoad] = useState<{ id: string; message: string } | null>(null)
   const [starting, setStarting] = useState(false)
   const [startError, setStartError] = useState<string | null>(null)
-  const latest = useRef<AbortController | null>(null)
   const starts = useRef(false)
 
+  const tasks = lists?.tasks ?? null
+  const executions = lists?.executions ?? null
   const selectedId = picked ?? executions?.[0]?.id ?? null
   // Details of another execution are not shown while the new ones load.
   const details = loaded?.execution.id === selectedId ? loaded : null
   const detailsError = failedLoad?.id === selectedId ? failedLoad.message : null
 
-  // Only the newest request may write state: starting one aborts the previous.
-  const load = useCallback(() => {
-    latest.current?.abort()
-    const controller = new AbortController()
-    latest.current = controller
-    return Promise.all([
-      listJobs(controller.signal),
-      listExecutions(controller.signal),
-    ])
-      .then(
-        ([jobs, runs]) => {
-          if (controller.signal.aborted) return
-          setTasks(jobs)
-          setExecutions(runs)
-          setLoadError(null)
-        },
-        (error: unknown) => {
-          if (controller.signal.aborted) return
-          setLoadError(error instanceof Error ? error.message : "Loading failed.")
-        }
-      )
-      .finally(() => {
-        if (latest.current === controller) setRefreshing(false)
-      })
-  }, [])
-
-  const refresh = useCallback(() => {
-    setRefreshing(true)
-    return load()
-  }, [load])
-
-  // `refreshing` starts true, so the first load needs no state change up front.
-  useEffect(() => {
-    void load()
-    return () => {
-      latest.current?.abort()
-      latest.current = null
-    }
-  }, [load])
-
   const active = tasks?.some((task) => task.activeExecutionId !== null) ?? false
   useEffect(() => {
     if (!active) return
-    const timer = setInterval(() => void load(), pollMs)
+    const timer = setInterval(() => void reload(), pollMs)
     return () => clearInterval(timer)
-  }, [active, load])
+  }, [active, reload])
 
   // The details are fetched again whenever the list changes, so a running execution keeps up.
   useEffect(() => {

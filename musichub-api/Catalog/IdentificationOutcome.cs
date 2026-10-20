@@ -31,6 +31,19 @@ public enum IdentificationDecision
     Error,
 }
 
+public static class IdentificationDecisions
+{
+    /// <summary>The decisions that leave a file unlinked without an identity: Identified linked the file, Skipped never touched it.</summary>
+    public static readonly IdentificationDecision[] Unresolved =
+    [
+        IdentificationDecision.NoMatch,
+        IdentificationDecision.InsufficientEvidence,
+        IdentificationDecision.NoMethodRan,
+        IdentificationDecision.MethodFailed,
+        IdentificationDecision.Error,
+    ];
+}
+
 /// <summary>
 /// One attempt to identify one file: the result and its reason, and what each method did (<see cref="MethodsJson"/>, a
 /// serialized list of <see cref="Identification.IdentificationMethodResult"/>). An attempt is a diagnostic, not a

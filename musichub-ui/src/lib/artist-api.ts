@@ -142,7 +142,7 @@ function externalTrack({
       ? `${track.title} (${track.disambiguation})`
       : track.title,
     detail: track.artists.map((a) => a.name).join(", "),
-    availability: !inCatalog ? "external" : catalogAvailability(hasAudio),
+    availability: !inCatalog ? "external" : catalogAvailability(hasAudio === true),
     provenance: inCatalog ? null : { label: providerLabel(track.provider), url: track.url },
     // In the catalog already: it is in the library, so no second record is made.
     addable: inCatalog ? null : track,

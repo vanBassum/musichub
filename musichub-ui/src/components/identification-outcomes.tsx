@@ -24,7 +24,7 @@ export const decisionLabels: Record<IdentificationDecision, string> = {
   Error: "Error",
 }
 
-const decisionClassNames: Record<IdentificationDecision, string> = {
+export const decisionClassNames: Record<IdentificationDecision, string> = {
   Identified: "bg-success text-success-foreground",
   NoMatch: "bg-muted text-muted-foreground",
   InsufficientEvidence: "bg-warning text-warning-foreground",

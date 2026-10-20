@@ -6,13 +6,14 @@ import {
   Music,
   Search,
   Settings,
+  TriangleAlert,
   UserRound,
 } from "lucide-react"
 
 import { BuildInfoSheet } from "@/components/build-info-sheet"
 import { Button } from "@/components/ui/button"
 
-export type AppView = "search" | "library" | "files" | "artists" | "jobs"
+export type AppView = "search" | "library" | "files" | "artists" | "jobs" | "problems"
 
 interface AppHeaderProps {
   view: AppView
@@ -82,6 +83,16 @@ export function AppHeader({ view, onNavigate }: AppHeaderProps) {
         >
           <ListChecks data-icon="inline-start" />
           Jobs
+        </Button>
+        <Button
+          variant={view === "problems" ? "secondary" : "ghost"}
+          size="lg"
+          aria-current={view === "problems" ? "page" : undefined}
+          className={view === "problems" ? activeClassName : undefined}
+          onClick={() => onNavigate("problems")}
+        >
+          <TriangleAlert data-icon="inline-start" />
+          Problems
         </Button>
       </nav>
       <div className="ml-auto flex items-center gap-4">

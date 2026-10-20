@@ -5,6 +5,7 @@ import {
   ListChecks,
   Music,
   Search,
+  TriangleAlert,
   UserRound,
 } from "lucide-react"
 
@@ -22,6 +23,7 @@ export const moreScreens = [
   { id: "library", label: "Library", icon: Library },
   { id: "files", label: "Files", icon: FolderOpen },
   { id: "jobs", label: "Jobs", icon: ListChecks },
+  { id: "problems", label: "Problems", icon: TriangleAlert },
   { id: "artists", label: "Artists", icon: UserRound },
 ] as const
 
