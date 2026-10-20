@@ -39,27 +39,24 @@ reads.
   severity tag: `[bug]`, `[risk]` or `[convention]`, unless your focus file defines its
   own tags. Then what is wrong, the concrete scenario, and the fix, in one or two
   short sentences. No preamble, praise or hedging.
-- When you're done, post **one** summary comment with `gh pr comment <PR> --body "…"`.
-  Its first line is the title, one of:
-  - `### PASS — <your focus area>`: no blocking findings.
-  - `### FIX — <your focus area>`: blocking findings that a code change fixes.
-  - `### STOP — <your focus area>`: at least one blocking finding needs a decision
-    from Bas before code can fix it.
+- When you're done, return your **verdict** as your structured output. Don't post
+  a PR comment: the workflow collects the four verdicts into one report comment.
+  - `verdict`: `PASS` (no blocking findings), `FIX` (blocking findings that a code
+    change fixes) or `STOP` (at least one blocking finding needs a decision from
+    Bas before code can fix it).
+  - `blocking`: how many `[bug]` and `[risk]` findings you reported
+    (`[convention]` findings don't count; if your focus file defines which findings
+    block, follow that instead).
+  - `findings`: only the blocking findings, most severe first, one line each:
+    `[tag] path:line — problem. Fix: …`. For a finding that needs a decision, write
+    `Decision: <one concrete question>` instead of `Fix:`. Empty for PASS. Never add
+    a TL;DR, an introduction, a recap or non-blocking findings: those stay inline
+    only.
 
-  Below a FIX or STOP title comes only a list of the blocking findings, most
-  severe first, one line each: `- [tag] path:line — problem. Fix: …`. For a
-  finding that needs a decision, write `Decision: <one concrete question>` instead
-  of `Fix:`. Below a PASS title comes no text. Never add a TL;DR, a Details section,
-  an introduction, a recap or non-blocking findings to the summary: those stay
-  inline only.
-- End the summary comment with this marker on its own line, exactly as shown, where
-  `<SHA>` is the HEAD SHA from the prompt and `<N>` is how many `[bug]` and `[risk]`
-  findings you reported (`[convention]` findings don't count; if your focus file
-  defines which findings block, follow that instead):
-  `<!-- claude-review: <your focus area> sha=<SHA> blocking=<N> -->`.
-  The marker decides whether the PR may be merged, so don't leave out a `[bug]` or
+  `blocking` decides whether the PR may be merged, so don't leave out a `[bug]` or
   `[risk]` to get it through, and don't tag a finding `[risk]` unless it really
-  should stop the merge. The title must agree with it: PASS exactly when
-  `blocking=0`.
+  should stop the merge. `verdict` must agree with it: PASS exactly when
+  `blocking` is 0.
 - Write your comments in English.
-- Do not modify files, push commits, approve or request changes. You only comment.
+- Do not modify files, push commits, approve or request changes. You only comment
+  inline.

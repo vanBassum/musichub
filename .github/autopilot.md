@@ -81,8 +81,8 @@ wording that Bas can add to the issue or to the understanding.
   your assumptions. Then turn on auto-merge for that PR, and only that one:
   `gh pr merge --auto --squash <PR>`. GitHub merges it once the build and the four
   reviewers pass. Link the PR in your comment.
-- **PR**: push to its branch. When asked to fix the review, read the reviewers'
-  summary and inline comments for the PR's head commit (`gh pr view <PR> --comments`)
+- **PR**: push to its branch. When asked to fix the review, read the
+  review report and inline comments for the PR's head commit (`gh pr view <PR> --comments`)
   and the build check's log when it failed. Fix every `[bug]`, `[risk]` and `[smell]`
   finding that a code change can fix. A finding that needs a decision: don't work
   around it, say so. When the PR conflicts with main, `git fetch origin main` and

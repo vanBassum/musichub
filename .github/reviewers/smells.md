@@ -133,10 +133,10 @@ finding blocks; every tagged finding does.
   Don't use `[convention]`; for the other reviewers it means "doesn't block", and nothing you
   report is non-blocking.
 
-In the marker at the end of the summary, `blocking=<N>` is the number of findings you reported:
-every `[risk]` and every `[smell]`. It is `0` only when you report no findings.
+In your verdict, `blocking` is the number of findings you reported: every `[risk]` and every
+`[smell]`. It is `0` only when you report no findings.
 
-## Summary
+## Verdict
 
 Use the format in `_common.md`: `PASS` with no findings, otherwise `FIX` (a smell never needs a
 decision from Bas). List `[risk]` findings first.

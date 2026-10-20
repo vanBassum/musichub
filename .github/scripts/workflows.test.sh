@@ -66,9 +66,10 @@ expect "the reviewers run Claude in one step" 1 all "$WORKFLOWS/claude-review.ym
 expect "claude.yml runs Claude in one step" 1 all "$WORKFLOWS/claude.yml"
 expect "no claude-code-action step buffers inline comments" 0 buffered "$WORKFLOWS"/*.yml
 
-# The reviewers only read and comment: they never change files or run code.
+# The reviewers only read and comment inline: they never change files, run code or
+# post PR comments (their verdict is structured output; review-report.sh posts it).
 reviewer_tools=$(sed -nE 's/^[[:space:]]*--allowedTools "([^"]*)"[[:space:]]*\r?$/\1/p' "$WORKFLOWS/claude-review.yml")
-[ "$reviewer_tools" = 'Read,Grep,Glob,mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(git log:*),Bash(git show:*)' ] \
+[ "$reviewer_tools" = 'Read,Grep,Glob,mcp__github_inline_comment__create_inline_comment,Bash(gh pr diff:*),Bash(gh pr view:*),Bash(git log:*),Bash(git show:*)' ] \
   && ok "the reviewers only read and comment" || no "the reviewers only read and comment (found: $reviewer_tools)"
 
 # --- the check catches what it should ------------------------------------------
