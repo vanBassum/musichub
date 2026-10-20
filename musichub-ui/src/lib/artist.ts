@@ -1,3 +1,5 @@
+import type { ExternalTrack } from "@/lib/catalog-api"
+
 // What the artist detail page shows. The page only knows these shapes; lib/artist-api.ts
 // builds them from the catalog and the external provider.
 export type Availability = "available" | "missing" | "external"
@@ -33,6 +35,11 @@ export interface ArtistTrack {
   availability: Availability
   // Set for a track that comes from the provider only.
   provenance: { label: string; url: string } | null
+  // What to wish for: a catalog track by its id (with whether it is wanted already), or
+  // a provider-only track by its provider data. Wanted says nothing about availability.
+  want:
+    | { kind: "catalog"; id: number; wanted: boolean }
+    | { kind: "external"; track: ExternalTrack }
 }
 
 export interface ArtistTracks {
