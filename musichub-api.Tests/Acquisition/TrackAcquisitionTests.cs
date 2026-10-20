@@ -126,8 +126,8 @@ public sealed class TrackAcquisitionTests : IDisposable
         Assert.Equal(DownloadStatus.Imported, download.Status);
         Assert.Equal(file.Id, download.FileId);
         Assert.Equal(file.ContentHash, download.ContentHash);
-        Assert.Equal(AudioHashing.Mp3PayloadAlgorithm, download.AudioHashAlgorithm);
-        Assert.NotNull(download.AudioSha256);
+        Assert.Equal(Mp3AudioPayload.Version, download.AudioHashVersion);
+        Assert.NotNull(download.AudioHashStatus);
         Assert.Equal(("slskd", "peer", @"Oasis\Wonderwall.mp3"), (download.Provider, download.Source, download.RemotePath));
         Assert.Equal("7", download.JobExecutionId);
 

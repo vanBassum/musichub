@@ -1,4 +1,3 @@
-using System.Security.Cryptography;
 using MusicHub.Api.Acquisition;
 using MusicHub.Api.Identification;
 
@@ -85,75 +84,5 @@ public class AcquisitionMatchingTests
         Assert.Equal(MatchKind.Uncertain, RecordingMatch.Compare(Song, IdentificationResult.Unresolved("no match")).Kind);
         Assert.Equal(MatchKind.Uncertain,
             RecordingMatch.Compare(Song with { Version = "Live" }, Identified("Wonderwall", "Oasis")).Kind);
-    }
-
-    private static async Task<(long Start, long End)> RangeAsync(byte[] bytes) =>
-        await AudioHashing.PayloadRangeAsync(new MemoryStream(bytes), CancellationToken.None);
-
-    private static byte[] Id3v2(int size, bool footer = false)
-    {
-        var tag = new byte[10 + size + (footer ? 10 : 0)];
-        "ID3"u8.CopyTo(tag);
-        tag[3] = 4;
-        tag[5] = (byte)(footer ? 0x10 : 0);
-        tag[8] = (byte)(size >> 7 & 0x7f);
-        tag[9] = (byte)(size & 0x7f);
-        return tag;
-    }
-
-    private static byte[] Id3v1()
-    {
-        var tag = new byte[128];
-        "TAG"u8.CopyTo(tag);
-        return tag;
-    }
-
-    [Fact]
-    public async Task The_payload_excludes_id3v2_and_id3v1_tags()
-    {
-        var audio = Enumerable.Range(0, 1000).Select(i => (byte)(i % 251 + 1)).ToArray();
-        var file = Id3v2(300).Concat(audio).Concat(Id3v1()).ToArray();
-
-        Assert.Equal((310L, 1310L), await RangeAsync(file));
-    }
-
-    [Fact]
-    public async Task The_payload_excludes_an_id3v2_footer_and_an_ape_tag()
-    {
-        var audio = Enumerable.Repeat((byte)0xFF, 500).ToArray();
-        var ape = new byte[32 + 40];
-        "APETAGEX"u8.CopyTo(ape.AsSpan(40));
-        BitConverter.GetBytes(72u - 32u).CopyTo(ape, 40 + 12); // size of the items and the footer
-        BitConverter.GetBytes(0x80000000u).CopyTo(ape, 40 + 20); // flags: a header precedes
-        var file = Id3v2(20, footer: true).Concat(audio).Concat(ape).ToArray();
-
-        Assert.Equal((40L, 540L), await RangeAsync(file));
-    }
-
-    [Fact]
-    public async Task Changed_tags_change_the_file_hash_but_not_the_audio_hash()
-    {
-        var audio = Enumerable.Range(0, 2000).Select(i => (byte)(i * 7 % 255)).ToArray();
-        var tagged = Id3v2(100).Concat(audio).Concat(Id3v1()).ToArray();
-        var retagged = Id3v2(400).Concat(audio).ToArray();
-
-        var a = await AudioHashing.ComputeAsync(new MemoryStream(tagged), CancellationToken.None);
-        var b = await AudioHashing.ComputeAsync(new MemoryStream(retagged), CancellationToken.None);
-
-        Assert.NotEqual(a.FileSha256, b.FileSha256);
-        Assert.Equal(a.AudioSha256, b.AudioSha256);
-        Assert.Equal(Convert.ToHexStringLower(SHA256.HashData(audio)), a.AudioSha256);
-        Assert.Equal(Convert.ToHexStringLower(SHA256.HashData(tagged)), a.FileSha256);
-        Assert.Equal(AudioHashing.Mp3PayloadAlgorithm, a.AudioHashAlgorithm);
-        Assert.Equal(tagged.Length, a.SizeBytes);
-    }
-
-    [Fact]
-    public async Task A_file_that_is_all_tag_has_no_audio_hash()
-    {
-        var hashes = await AudioHashing.ComputeAsync(new MemoryStream(Id3v2(50)), CancellationToken.None);
-
-        Assert.Null(hashes.AudioSha256);
-        Assert.NotEmpty(hashes.FileSha256);
     }
 }

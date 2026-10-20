@@ -102,7 +102,7 @@ public sealed class TrackAcquisition(
     }
 
     private Task<bool> HasStoredAudioAsync(int trackId, CancellationToken cancellationToken) =>
-        db.Files.AnyAsync(f => f.TrackId == trackId && f.Status == FileStatus.Stored, cancellationToken);
+        db.Files.Where(f => f.TrackId == trackId).AnyAsync(TrackResponse.IsStoredAudio, cancellationToken);
 
     private async Task<AcquisitionDownload> TryAsync(
         Track track, WantedRecording wanted, AcquisitionCandidate candidate, string executionId, CancellationToken cancellationToken)
@@ -138,11 +138,10 @@ public sealed class TrackAcquisition(
         Track track, WantedRecording wanted, AcquisitionDownload download, AcquisitionDownloadOutcome outcome, CancellationToken cancellationToken)
     {
         var file = outcome.File!;
-        FileHashes hashes;
+        DownloadHashes hashes;
         try
         {
-            await using var content = file.OpenRead();
-            hashes = await AudioHashing.ComputeAsync(content, cancellationToken);
+            hashes = await DownloadHashes.ComputeAsync(file, cancellationToken);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or NotSupportedException)
         {
@@ -154,7 +153,7 @@ public sealed class TrackAcquisition(
         await history.DownloadedAsync(download, hashes, cancellationToken);
 
         // The same bytes were rejected for this track before: nothing new to find out.
-        if (await history.WasContentRejectedAsync(hashes.FileSha256, cancellationToken, track.Id))
+        if (await history.WasContentRejectedAsync(hashes.ContentHash, cancellationToken, track.Id))
         {
             await history.RejectedAsync(download, "The same bytes were already rejected.", cancellationToken);
             return;
@@ -189,13 +188,14 @@ public sealed class TrackAcquisition(
     }
 
     private async Task ImportAsync(
-        Track track, AcquisitionDownload download, AcquisitionDownloadOutcome outcome, FileHashes hashes,
+        Track track, AcquisitionDownload download, AcquisitionDownloadOutcome outcome, DownloadHashes hashes,
         IReadOnlyList<IdentificationMethodResult> methods, string reason, CancellationToken cancellationToken)
     {
         FileRecord stored;
         try
         {
-            stored = await handoff.IngestAsync(outcome, cancellationToken, new UploadExpectation(hashes.SizeBytes, hashes.FileSha256));
+            await using var content = outcome.File!.OpenRead();
+            stored = await handoff.IngestAsync(outcome, cancellationToken, new UploadExpectation(content.Length, hashes.ContentHash));
         }
         catch (Exception ex) when (ex is UploadIntegrityException or FileIngestionException)
         {

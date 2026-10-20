@@ -79,8 +79,7 @@ function DownloadRow({ download }: { download: DownloadItem }) {
         </Detail>
         <Detail label="File SHA-256">{download.fileSha256 ?? "not available"}</Detail>
         <Detail label="Audio SHA-256">
-          {download.audioSha256 ?? "not available"}
-          {download.audioHashAlgorithm && ` (${download.audioHashAlgorithm})`}
+          {download.audioHash ?? download.audioHashStatus?.toLowerCase() ?? "not available"}
         </Detail>
         {download.fileId !== null && <Detail label="Library file">{download.fileId}</Detail>}
         <Detail label="Started">{new Date(download.startedAt).toLocaleString()}</Detail>

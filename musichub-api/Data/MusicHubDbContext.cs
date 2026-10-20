@@ -29,8 +29,8 @@ public class MusicHubDbContext(DbContextOptions<MusicHubDbContext> options) : Db
             download.Property(d => d.RemotePath).HasMaxLength(AcquisitionDownload.RemotePathMaxLength);
             download.Property(d => d.Reason).HasMaxLength(AcquisitionDownload.ReasonMaxLength);
             download.Property(d => d.ContentHash).HasMaxLength(64);
-            download.Property(d => d.AudioSha256).HasMaxLength(64);
-            download.Property(d => d.AudioHashAlgorithm).HasMaxLength(AcquisitionDownload.HashAlgorithmMaxLength);
+            download.Property(d => d.AudioHash).HasMaxLength(64);
+            download.Property(d => d.AudioHashStatus).HasConversion<string>().HasMaxLength(20);
             download.Property(d => d.JobExecutionId).HasMaxLength(AcquisitionDownload.JobExecutionIdMaxLength);
             download.Property(d => d.State).HasConversion<string>().HasMaxLength(20);
             download.Property(d => d.Failure).HasConversion<string>().HasMaxLength(30);
@@ -42,6 +42,7 @@ public class MusicHubDbContext(DbContextOptions<MusicHubDbContext> options) : Db
                 .HasForeignKey(d => d.FileId).OnDelete(DeleteBehavior.SetNull);
             download.HasIndex(d => new { d.Provider, d.Source, d.RemotePath });
             download.HasIndex(d => d.ContentHash);
+            download.HasIndex(d => d.AudioHash);
             download.HasIndex(d => d.StartedAt);
             download.HasIndex(d => d.JobExecutionId);
         });

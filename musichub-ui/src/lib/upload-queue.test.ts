@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest"
 
+import { appendUpload, type Upload } from "./use-files"
 import {
   clampConcurrency,
   createUploadQueue,
@@ -79,6 +80,25 @@ describe("clampConcurrency", () => {
     expect(clampConcurrency(11)).toBe(10)
     expect(clampConcurrency(3.9)).toBe(3)
     expect(clampConcurrency(Number.NaN)).toBe(5)
+  })
+})
+
+describe("upload list order", () => {
+  it("shows a batch in the order the queue starts it", () => {
+    const h = harness()
+    let shown: Upload[] = []
+    for (let key = 0; key < 10; key++) {
+      shown = appendUpload(shown, {
+        key,
+        name: `file-${key}`,
+        size: 1,
+        loaded: 0,
+        state: "queued",
+      })
+      h.queue.enqueue(key)
+    }
+
+    expect(shown.map((u) => u.key).slice(0, 5)).toEqual(h.started)
   })
 })
 

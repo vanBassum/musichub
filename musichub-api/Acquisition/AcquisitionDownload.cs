@@ -68,7 +68,6 @@ public class AcquisitionDownload
     public const int SourceMaxLength = 200;
     public const int RemotePathMaxLength = 1000;
     public const int ReasonMaxLength = 1000;
-    public const int HashAlgorithmMaxLength = 50;
     public const int JobExecutionIdMaxLength = 100;
 
     public int Id { get; set; }
@@ -119,11 +118,17 @@ public class AcquisitionDownload
     /// <summary>SHA-256 of the downloaded bytes, lowercase hex; kept when the temporary file is deleted.</summary>
     public string? ContentHash { get; set; }
 
-    /// <summary>SHA-256 of the MP3 audio payload, independent of tags; null when the file had no audio payload to hash.</summary>
-    public string? AudioSha256 { get; set; }
+    /// <summary>
+    /// SHA-256 of the MP3 audio payload without ID3 or other metadata, lowercase hex; null unless
+    /// <see cref="AudioHashStatus"/> is Computed. See <see cref="Mp3AudioPayload"/>.
+    /// </summary>
+    public string? AudioHash { get; set; }
 
-    /// <summary>How <see cref="AudioSha256"/> was extracted (<see cref="AudioHashing.Mp3PayloadAlgorithm"/>), so it stays reproducible.</summary>
-    public string? AudioHashAlgorithm { get; set; }
+    /// <summary>How the audio hash came out; null until the bytes arrived. Unsupported and Malformed leave no hash.</summary>
+    public AudioHashStatus? AudioHashStatus { get; set; }
+
+    /// <summary>The <see cref="Mp3AudioPayload.Version"/> that produced <see cref="AudioHashStatus"/> and the hash.</summary>
+    public int? AudioHashVersion { get; set; }
 
     /// <summary>The canonical file record of an accepted download; null otherwise or once that file was deleted.</summary>
     public int? FileId { get; set; }

@@ -30,20 +30,15 @@ public class AcquisitionHistory(MusicHubDbContext db, TimeProvider time)
         return download;
     }
 
-    public Task DownloadedAsync(AcquisitionDownload download, string contentHash, CancellationToken ct)
+    public Task DownloadedAsync(AcquisitionDownload download, DownloadHashes hashes, CancellationToken ct)
     {
         download.State = AcquisitionDownloadState.Downloaded;
-        download.ContentHash = contentHash;
+        download.ContentHash = hashes.ContentHash;
+        download.AudioHash = hashes.Audio.Hash;
+        download.AudioHashStatus = hashes.Audio.Status;
+        download.AudioHashVersion = Mp3AudioPayload.Version;
         download.FinishedAt = time.GetUtcNow();
         return db.SaveChangesAsync(ct);
-    }
-
-    /// <summary>The bytes arrived: both hashes are kept, whatever is decided about the file.</summary>
-    public Task DownloadedAsync(AcquisitionDownload download, FileHashes hashes, CancellationToken ct)
-    {
-        download.AudioSha256 = hashes.AudioSha256;
-        download.AudioHashAlgorithm = hashes.AudioHashAlgorithm;
-        return DownloadedAsync(download, hashes.FileSha256, ct);
     }
 
     /// <summary>The run was cancelled during the transfer; nothing was judged, so the source may be tried again.</summary>
@@ -98,6 +93,16 @@ public class AcquisitionHistory(MusicHubDbContext db, TimeProvider time)
         db.AcquisitionDownloads.AnyAsync(d =>
             d.Outcome == AcquisitionOutcome.Rejected && d.ContentHash == contentHash
             && (intendedTrackId == null || d.IntendedTrackId == intendedTrackId), ct);
+
+    /// <summary>
+    /// Whether the same encoded audio (tags aside) was rejected before. Only hashes of the same
+    /// <see cref="Mp3AudioPayload.Version"/> are comparable. A signal, not a recording identity.
+    /// </summary>
+    public Task<bool> WasAudioRejectedAsync(string audioHash, CancellationToken ct) =>
+        db.AcquisitionDownloads.AnyAsync(d =>
+            d.Outcome == AcquisitionOutcome.Rejected
+            && d.AudioHash == audioHash
+            && d.AudioHashVersion == Mp3AudioPayload.Version, ct);
 
     private Task DecideAsync(AcquisitionDownload download, AcquisitionOutcome outcome, string reason, CancellationToken ct)
     {

@@ -30,13 +30,16 @@ namespace MusicHub.Api.Migrations
 
                     NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
 
-                    b.Property<string>("AudioHashAlgorithm")
-                        .HasMaxLength(50)
-                        .HasColumnType("character varying(50)");
-
-                    b.Property<string>("AudioSha256")
+                    b.Property<string>("AudioHash")
                         .HasMaxLength(64)
                         .HasColumnType("character varying(64)");
+
+                    b.Property<string>("AudioHashStatus")
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<int?>("AudioHashVersion")
+                        .HasColumnType("integer");
 
                     b.Property<int?>("BitrateKbps")
                         .HasColumnType("integer");
@@ -101,6 +104,8 @@ namespace MusicHub.Api.Migrations
                         .HasColumnType("character varying(20)");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("AudioHash");
 
                     b.HasIndex("ContentHash");
 

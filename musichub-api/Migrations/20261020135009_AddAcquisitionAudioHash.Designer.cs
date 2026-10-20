@@ -12,8 +12,8 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace MusicHub.Api.Migrations
 {
     [DbContext(typeof(MusicHubDbContext))]
-    [Migration("20261020135803_AcquisitionDownloadsForMissingMusic")]
-    partial class AcquisitionDownloadsForMissingMusic
+    [Migration("20261020135009_AddAcquisitionAudioHash")]
+    partial class AddAcquisitionAudioHash
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -33,15 +33,15 @@ namespace MusicHub.Api.Migrations
 
                     NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
 
-                    b.Property<string>("AudioHashAlgorithm")
-                        .HasMaxLength(50)
-                        .HasColumnType("character varying(50)");
-
-                    b.Property<string>("AudioSha256")
+                    b.Property<string>("AudioHash")
                         .HasMaxLength(64)
                         .HasColumnType("character varying(64)");
 
-                    b.Property<int?>("BitrateKbps")
+                    b.Property<string>("AudioHashStatus")
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<int?>("AudioHashVersion")
                         .HasColumnType("integer");
 
                     b.Property<string>("ContentHash")
@@ -64,10 +64,6 @@ namespace MusicHub.Api.Migrations
                     b.Property<int?>("IntendedTrackId")
                         .HasColumnType("integer");
 
-                    b.Property<string>("JobExecutionId")
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)");
-
                     b.Property<string>("Outcome")
                         .IsRequired()
                         .HasMaxLength(20)
@@ -87,9 +83,6 @@ namespace MusicHub.Api.Migrations
                         .HasMaxLength(1000)
                         .HasColumnType("character varying(1000)");
 
-                    b.Property<long?>("SizeBytes")
-                        .HasColumnType("bigint");
-
                     b.Property<string>("Source")
                         .IsRequired()
                         .HasMaxLength(200)
@@ -105,13 +98,13 @@ namespace MusicHub.Api.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("AudioHash");
+
                     b.HasIndex("ContentHash");
 
                     b.HasIndex("FileId");
 
                     b.HasIndex("IntendedTrackId");
-
-                    b.HasIndex("JobExecutionId");
 
                     b.HasIndex("StartedAt");
 
@@ -243,10 +236,7 @@ namespace MusicHub.Api.Migrations
                         .HasMaxLength(50)
                         .HasColumnType("character varying(50)");
 
-                    b.Property<int?>("DownloadId")
-                        .HasColumnType("integer");
-
-                    b.Property<int?>("FileId")
+                    b.Property<int>("FileId")
                         .HasColumnType("integer");
 
                     b.Property<string>("FileName")
@@ -263,10 +253,6 @@ namespace MusicHub.Api.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
-                    b.Property<string>("PipelineVersion")
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)");
-
                     b.Property<string>("Reason")
                         .IsRequired()
                         .HasMaxLength(2000)
@@ -279,8 +265,6 @@ namespace MusicHub.Api.Migrations
                         .HasColumnType("integer");
 
                     b.HasKey("Id");
-
-                    b.HasIndex("DownloadId");
 
                     b.HasIndex("FileId");
 
@@ -490,17 +474,11 @@ namespace MusicHub.Api.Migrations
 
             modelBuilder.Entity("MusicHub.Api.Catalog.IdentificationOutcome", b =>
                 {
-                    b.HasOne("MusicHub.Api.Acquisition.AcquisitionDownload", "Download")
-                        .WithMany()
-                        .HasForeignKey("DownloadId")
-                        .OnDelete(DeleteBehavior.Cascade);
-
                     b.HasOne("MusicHub.Api.Ingestion.FileRecord", "File")
                         .WithMany()
                         .HasForeignKey("FileId")
-                        .OnDelete(DeleteBehavior.Cascade);
-
-                    b.Navigation("Download");
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
 
                     b.Navigation("File");
                 });

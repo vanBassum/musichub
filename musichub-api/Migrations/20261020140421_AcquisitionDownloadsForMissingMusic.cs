@@ -31,20 +31,6 @@ namespace MusicHub.Api.Migrations
                 maxLength: 100,
                 nullable: true);
 
-            migrationBuilder.AddColumn<string>(
-                name: "AudioHashAlgorithm",
-                table: "AcquisitionDownloads",
-                type: "character varying(50)",
-                maxLength: 50,
-                nullable: true);
-
-            migrationBuilder.AddColumn<string>(
-                name: "AudioSha256",
-                table: "AcquisitionDownloads",
-                type: "character varying(64)",
-                maxLength: 64,
-                nullable: true);
-
             migrationBuilder.AddColumn<int>(
                 name: "BitrateKbps",
                 table: "AcquisitionDownloads",
@@ -105,14 +91,6 @@ namespace MusicHub.Api.Migrations
             migrationBuilder.DropColumn(
                 name: "PipelineVersion",
                 table: "IdentificationOutcomes");
-
-            migrationBuilder.DropColumn(
-                name: "AudioHashAlgorithm",
-                table: "AcquisitionDownloads");
-
-            migrationBuilder.DropColumn(
-                name: "AudioSha256",
-                table: "AcquisitionDownloads");
 
             migrationBuilder.DropColumn(
                 name: "BitrateKbps",

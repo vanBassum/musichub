@@ -157,8 +157,8 @@ export interface DownloadItem {
   status: DownloadStatus
   reason: string
   fileSha256: string | null
-  audioSha256: string | null
-  audioHashAlgorithm: string | null
+  audioHash: string | null
+  audioHashStatus: "Computed" | "Unsupported" | "Malformed" | null
   fileId: number | null
   startedAt: string
   finishedAt: string | null

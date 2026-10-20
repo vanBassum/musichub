@@ -143,12 +143,12 @@ public class JobsController(JobService jobs, MusicHubDbContext db, IServiceProvi
 
     public sealed record DownloadItem(
         int Id, int? TrackId, string? TrackTitle, string Provider, string Source, string SourcePath, long SizeBytes,
-        int? BitrateKbps, DownloadStatus Status, string Reason, string? FileSha256, string? AudioSha256,
-        string? AudioHashAlgorithm, int? FileId, DateTimeOffset StartedAt, DateTimeOffset? FinishedAt)
+        int? BitrateKbps, DownloadStatus Status, string Reason, string? FileSha256, string? AudioHash,
+        AudioHashStatus? AudioHashStatus, int? FileId, DateTimeOffset StartedAt, DateTimeOffset? FinishedAt)
     {
         public static DownloadItem From(AcquisitionDownload d) => new(
             d.Id, d.IntendedTrackId, d.IntendedTrack?.Title, d.Provider, d.Source, d.RemotePath, d.SizeBytes ?? 0,
-            d.BitrateKbps, d.Status, d.Reason ?? "", d.ContentHash, d.AudioSha256, d.AudioHashAlgorithm, d.FileId,
+            d.BitrateKbps, d.Status, d.Reason ?? "", d.ContentHash, d.AudioHash, d.AudioHashStatus, d.FileId,
             d.StartedAt, d.FinishedAt);
     }
 
