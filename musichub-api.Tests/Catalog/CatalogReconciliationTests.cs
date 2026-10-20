@@ -409,7 +409,7 @@ public sealed class CatalogReconciliationTests : IDisposable
     }
 
     [Fact]
-    public async Task Outcomes_older_than_the_retention_are_pruned_and_a_deleted_file_takes_its_outcomes_along()
+    public async Task Only_old_skipped_outcomes_are_pruned_and_a_deleted_file_takes_its_outcomes_along()
     {
         _identities["old.mp3"] = () => Unresolved("nothing");
         _identities["new.mp3"] = () => Unresolved("nothing");
@@ -418,6 +418,12 @@ public sealed class CatalogReconciliationTests : IDisposable
         using (var db = CreateDb())
         {
             await db.IdentificationOutcomes.ExecuteUpdateAsync(s => s.SetProperty(o => o.RecordedAt, DateTimeOffset.UtcNow.AddDays(-30)));
+            db.IdentificationOutcomes.Add(new IdentificationOutcome
+            {
+                JobExecutionId = "1", FileId = old, FileName = "old.mp3", Decision = IdentificationDecision.Skipped,
+                Reason = "skipped", RecordedAt = DateTimeOffset.UtcNow.AddDays(-30),
+            });
+            await db.SaveChangesAsync();
         }
         await AddFileAsync("new.mp3");
         await RunAsync(executionId: "2");
@@ -427,7 +433,8 @@ public sealed class CatalogReconciliationTests : IDisposable
             var service = new CatalogReconciliation(db, _storage, new ByNameIdentifier(_identities), TimeProvider.System, _log);
             Assert.Equal(1, await service.PruneOutcomesAsync(TimeSpan.FromDays(7), CancellationToken.None));
         }
-        Assert.Empty(await OutcomesAsync("1"));
+        var kept = Assert.Single(await OutcomesAsync("1"));
+        Assert.Equal(IdentificationDecision.NoMethodRan, kept.Decision);
         Assert.Equal(2, (await OutcomesAsync("2")).Count);
 
         using var cleanup = CreateDb();

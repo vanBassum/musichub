@@ -34,7 +34,8 @@ public enum IdentificationDecision
 /// <summary>
 /// The one consolidated diagnostic of one file's identification in one Hangfire execution: the decision and its reason,
 /// and what each method did (<see cref="MethodsJson"/>, a serialized list of <see cref="Identification.IdentificationMethodResult"/>).
-/// It records what happened; it never decides anything. Rows are kept as long as Hangfire keeps the execution.
+/// It records what happened; it never decides anything. Rows outlive the Hangfire execution that recorded them
+/// (<see cref="JobExecutionId"/> is provenance, not a lifetime); only Skipped rows are pruned.
 /// </summary>
 public class IdentificationOutcome
 {

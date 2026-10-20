@@ -37,12 +37,18 @@ public sealed class CatalogReconciliation(
 
     private readonly ArtistExternalLinks links = new(db, time);
 
-    /// <summary>Deletes identification outcomes recorded before <paramref name="retention"/> ago (Hangfire keeps its executions that long too).</summary>
+    /// <summary>
+    /// Deletes the Skipped outcomes recorded before <paramref name="retention"/> ago (Hangfire keeps its executions that
+    /// long too). A skipped file was not examined, so its outcome has nothing to review; every other outcome is permanent
+    /// identification history and is never pruned because an execution expired.
+    /// </summary>
     public async Task<int> PruneOutcomesAsync(TimeSpan retention, CancellationToken cancellationToken)
     {
         var cutoff = time.GetUtcNow() - retention;
         // Compared in memory: not every provider translates DateTimeOffset comparisons.
-        var expired = (await db.IdentificationOutcomes.Select(o => new { o.Id, o.RecordedAt }).ToListAsync(cancellationToken))
+        var expired = (await db.IdentificationOutcomes
+                .Where(o => o.Decision == IdentificationDecision.Skipped)
+                .Select(o => new { o.Id, o.RecordedAt }).ToListAsync(cancellationToken))
             .Where(o => o.RecordedAt < cutoff).Select(o => o.Id).ToList();
         var deleted = 0;
         foreach (var batch in expired.Chunk(1000))
