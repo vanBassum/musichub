@@ -6,8 +6,6 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet"
-import { WishlistButton } from "@/components/wishlist-button"
-import { wantCatalogTrack } from "@/lib/catalog-api"
 import { formatDate } from "@/lib/format"
 import { useTrack } from "@/lib/use-catalog"
 
@@ -55,16 +53,6 @@ export function TrackDetailsSheet({
                 <dt className="text-muted-foreground">Stored audio</dt>
                 <dd>
                   <AudioBadge hasAudio={track.data.hasAudio} />
-                </dd>
-              </div>
-              <div className="flex flex-col gap-0.5">
-                <dt className="text-muted-foreground">Wishlist</dt>
-                <dd>
-                  <WishlistButton
-                    key={track.data.id}
-                    wanted={track.data.wanted}
-                    onWant={() => wantCatalogTrack(track.data!.id)}
-                  />
                 </dd>
               </div>
               <div className="flex flex-col gap-0.5">

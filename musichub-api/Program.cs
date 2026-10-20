@@ -1,3 +1,4 @@
+using MusicHub.Api.Acquisition;
 using MusicHub.Api.Catalog;
 using MusicHub.Api.Identification;
 using MusicHub.Api.Jobs;
@@ -21,7 +22,7 @@ builder.Services.Configure<FileIngestionOptions>(
 builder.Services.AddSingleton<ActiveUploadTracker>();
 builder.Services.AddScoped<FileIngestionService>();
 builder.Services.AddScoped<FileDeletionService>();
-builder.Services.AddScoped<Wishlist>();
+builder.Services.AddScoped<LibraryTracks>();
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddScoped<StaleUploadCleanup>();
 builder.Services.AddHostedService<StaleUploadCleanupService>();
@@ -33,6 +34,7 @@ builder.Services.AddDbContext<MusicHubDbContext>((sp, options) =>
 
 builder.Services.AddAudioMetadata();
 builder.Services.AddIdentification(builder.Configuration);
+builder.Services.AddAcquisition(builder.Configuration);
 
 // Pending migrations are applied after startup by a hosted service; `--migrate` runs the same migration and exits.
 builder.Services.AddSingleton<MigrationState>();

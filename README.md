@@ -146,6 +146,35 @@ unreadable audio, on a timeout or a rate limit the tool reports itself unavailab
 evidence and yields no candidate. AcoustID scores appear on the evidence as provenance;
 they are not MusicHub's identification confidence.
 
+## Acquisition provider (slskd)
+
+Music is found and downloaded through `IAcquisitionProvider` (`musichub-api/Acquisition/`):
+`SearchAsync` returns structured candidates (source, path, size, format, bitrate, slots)
+and `DownloadAsync` returns an outcome: the downloaded file, or a failure kind with a
+detail that says what to check. The interface knows nothing about the catalog, ranking or
+identification. `AcquisitionHandoff` gives a downloaded file to the existing ingestion
+(source `acquisition:<provider>`); identification then treats it like any stored file, and
+a file name or a peer's tags never decide what a file is. Nothing here runs by itself.
+
+slskd, the Docker-hosted Soulseek client, is the first provider. It is registered only
+when `Slskd__BaseUrl` is set (the `Slskd` configuration section):
+
+| Key | Default |
+| --- | --- |
+| `Slskd__BaseUrl` | none; the slskd API, for example `http://slskd:5030` |
+| `Slskd__ApiKey` | none; an slskd API key (secret, sent as `X-API-Key`, never logged) |
+| `Slskd__DownloadsPath` | none; slskd's downloads folder as MusicHub sees it |
+| `Slskd__SearchTimeoutSeconds` | `15` |
+| `Slskd__MaxCandidates` | `50` |
+| `Slskd__RequestTimeoutSeconds` | `30` (each request to slskd) |
+| `Slskd__DownloadTimeoutSeconds` | `600` (queued until finished; then cancelled in slskd) |
+| `Slskd__PollIntervalMs` | `1000` |
+
+slskd's API doesn't serve downloaded files, so the stack mounts slskd's downloads folder
+read-only into the API container and points `Slskd__DownloadsPath` at it; without it a
+finished download is reported as not accessible. A missing `Slskd__ApiKey` or an invalid
+setting fails with an error naming the key.
+
 ## Understanding
 
 Product understanding lives in the separate repo

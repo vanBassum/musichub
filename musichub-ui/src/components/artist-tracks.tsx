@@ -5,9 +5,9 @@ import { CoverArt } from "@/components/cover-art"
 import { SectionBody } from "@/components/section-body"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
-import { WishlistButton } from "@/components/wishlist-button"
+import { AddToLibraryButton } from "@/components/add-to-library-button"
 import type { ArtistInfo, ArtistTracks, SectionState } from "@/lib/artist"
-import { wantCatalogTrack, wantExternalTrack } from "@/lib/catalog-api"
+import { addExternalTrackToLibrary } from "@/lib/catalog-api"
 
 interface ArtistTracksProps {
   artist: SectionState<ArtistInfo>
@@ -96,12 +96,11 @@ export function ArtistTracksSection({
                     >
                       <Play />
                     </Button>
-                    <WishlistButton
-                      wanted={track.want.kind === "catalog" && track.want.wanted}
-                      onWant={() =>
-                        track.want.kind === "catalog"
-                          ? wantCatalogTrack(track.want.id)
-                          : wantExternalTrack(track.want.track)
+                    <AddToLibraryButton
+                      onAdd={
+                        track.addable
+                          ? () => addExternalTrackToLibrary(track.addable!)
+                          : undefined
                       }
                     />
                     <Button

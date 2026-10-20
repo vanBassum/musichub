@@ -4,8 +4,8 @@ namespace MusicHub.Api.Catalog;
 
 /// <summary>
 /// One specific recording/performance/version. A remix, live performance or remake is a
-/// distinct track. A track exists independently of audio files: availability is derived
-/// from <see cref="Files"/>, not stored.
+/// distinct track. Every track is in the library; it exists independently of audio files, and
+/// availability (hence "missing music") is derived from <see cref="Files"/>, not stored.
 /// </summary>
 public class Track
 {
@@ -16,12 +16,6 @@ public class Track
     public string? Version { get; set; }
 
     public DateTimeOffset CreatedAt { get; set; }
-
-    /// <summary>
-    /// When the user explicitly asked for this track (the wishlist); null when not wanted. Independent of audio
-    /// availability and quality.
-    /// </summary>
-    public DateTimeOffset? WantedAt { get; set; }
 
     public List<TrackArtist> Artists { get; set; } = [];
     public List<TrackExternalId> ExternalIds { get; set; } = [];
