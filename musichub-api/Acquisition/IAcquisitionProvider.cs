@@ -26,7 +26,15 @@ public record AcquisitionCandidate(
     int? QueueLength = null)
 {
     /// <summary>The last segment of <see cref="Path"/>, whichever separator the source uses.</summary>
-    public string FileName => Path[(Path.LastIndexOfAny(['/', '\\']) + 1)..];
+    public string FileName => RemotePath.Segments(Path)[^1];
+}
+
+/// <summary>Reads a path as a source gave it, which may use either separator.</summary>
+public static class RemotePath
+{
+    public static string[] Segments(string path) => path.Split('\\', '/');
+
+    public static string FileName(string path) => Segments(path)[^1];
 }
 
 /// <summary>Why a download did not deliver a file; the outcome's detail says what to do about it.</summary>

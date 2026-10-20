@@ -61,10 +61,24 @@ public sealed class SlskdAcquisitionProvider(HttpClient http, IOptions<SlskdOpti
     {
         using var bound = CancellationTokenSource.CreateLinkedTokenSource(ct);
         bound.CancelAfter(TimeSpan.FromSeconds(_options.DownloadTimeoutSeconds));
-        var known = new HashSet<string>();
+        HashSet<string> known;
         try
         {
             known = (await FindTransfersAsync(candidate, bound.Token)).Select(t => t.Id).ToHashSet();
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        {
+            // Nothing was queued yet, so there is nothing of ours to cancel.
+            return Failed(AcquisitionFailure.TimedOut,
+                $"The download did not finish within {_options.DownloadTimeoutSeconds} seconds.");
+        }
+        catch (AcquisitionUnavailableException e)
+        {
+            return Failed(AcquisitionFailure.Unavailable, e.Message);
+        }
+
+        try
+        {
             await SendAsync(HttpMethod.Post, $"api/v0/transfers/downloads/{Uri.EscapeDataString(candidate.Source)}",
                 new[] { new { filename = candidate.Path, size = candidate.SizeBytes } }, bound.Token);
             return await WaitForDownloadAsync(candidate, known, bound.Token);
@@ -118,7 +132,7 @@ public sealed class SlskdAcquisitionProvider(HttpClient http, IOptions<SlskdOpti
             .ToList();
 
     private static string FormatOf(string path) =>
-        System.IO.Path.GetExtension(path[(path.LastIndexOfAny(['/', '\\']) + 1)..]).TrimStart('.').ToLowerInvariant();
+        System.IO.Path.GetExtension(RemotePath.FileName(path)).TrimStart('.').ToLowerInvariant();
 
     private async Task<AcquisitionDownloadOutcome> WaitForDownloadAsync(
         AcquisitionCandidate candidate, HashSet<string> known, CancellationToken ct)
@@ -163,7 +177,7 @@ public sealed class SlskdAcquisitionProvider(HttpClient http, IOptions<SlskdOpti
         }
 
         var root = System.IO.Path.GetFullPath(_options.DownloadsPath);
-        var segments = candidate.Path.Split('\\', '/');
+        var segments = RemotePath.Segments(candidate.Path);
         var folder = segments.Length > 1 ? segments[^2] : "";
         var path = System.IO.Path.GetFullPath(System.IO.Path.Combine(root, folder, candidate.FileName));
         if (!path.StartsWith(root.TrimEnd(System.IO.Path.DirectorySeparatorChar) + System.IO.Path.DirectorySeparatorChar,
