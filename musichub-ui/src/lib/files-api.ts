@@ -6,6 +6,24 @@ export type FileStatus =
   | "Expired"
   | "Deleting"
 
+// Extensions the API streams for playback (GET /api/files/{id}/audio answers 415 otherwise).
+const audioExtensions = [
+  ".mp3",
+  ".flac",
+  ".wav",
+  ".ogg",
+  ".oga",
+  ".opus",
+  ".m4a",
+  ".aac",
+  ".weba",
+]
+
+export function isAudioFilename(name: string) {
+  const lower = name.toLowerCase()
+  return audioExtensions.some((extension) => lower.endsWith(extension))
+}
+
 // One row of GET /api/files: a persisted registration, not a track.
 export interface FileRegistration {
   id: string

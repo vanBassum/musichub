@@ -1,5 +1,5 @@
-import { RefreshCw, Trash2, Upload, X } from "lucide-react"
-import { useRef, useState } from "react"
+import { Pause, Play, RefreshCw, Trash2, Upload, X } from "lucide-react"
+import { Fragment, useRef, useState } from "react"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -18,7 +18,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import type { FileStatus } from "@/lib/files-api"
+import {
+  isAudioFilename,
+  type FileRegistration,
+  type FileStatus,
+} from "@/lib/files-api"
 import { formatBytes } from "@/lib/format"
 import { MAX_CONCURRENCY, MIN_CONCURRENCY } from "@/lib/upload-queue"
 import type {
@@ -27,6 +31,7 @@ import type {
   FilesState,
   Upload as UploadItem,
 } from "@/lib/use-files"
+import { usePlayer } from "@/lib/use-player"
 import { cn } from "@/lib/utils"
 
 const statusClassNames: Record<FileStatus, string> = {
@@ -50,6 +55,17 @@ const statusHints: Record<FileStatus, string> = {
   Pending: "Registered, not confirmed as stored",
   Expired: "Never finished and not stored: upload it again",
   Deleting: "Deletion not finished: delete it again to retry",
+}
+
+function fileSize(bytes: number | null) {
+  return bytes === null ? "Unknown" : formatBytes(bytes)
+}
+
+// The one mapping from delete state to what a row shows: used by the actions cell and the full-width row below sm.
+function deleteStatusKind(state: DeleteState | undefined, confirming: boolean) {
+  if (state?.pending) return "pending"
+  if (confirming) return "confirm"
+  return state ? "error" : null
 }
 
 export function FilesView({
@@ -87,6 +103,18 @@ export function FilesView({
     if (input.current) input.current.value = ""
   }
 
+  const deleteProps = (file: FileRegistration) => ({
+    name: file.originalFilename,
+    state: deletions[file.id],
+    confirming: confirming === file.id,
+    onAsk: () => setConfirming(file.id),
+    onCancel: () => setConfirming(null),
+    onConfirm: () => {
+      setConfirming(null)
+      remove(file.id)
+    },
+  })
+
   return (
     <section
       aria-labelledby="files-heading"
@@ -102,7 +130,7 @@ export function FilesView({
         <span className="text-muted-foreground">
           Uploaded files as stored, not the music catalog
         </span>
-        <div className="ml-auto flex items-center gap-2">
+        <div className="ml-auto flex flex-wrap items-center gap-2">
           <Button
             variant="outline"
             size="lg"
@@ -195,55 +223,67 @@ export function FilesView({
       )}
 
       <div className="min-h-0 flex-1 overflow-auto border-t [&_[data-slot=table-container]]:overflow-visible">
-        <Table className="min-w-[36rem] text-sm">
+        <Table className="table-fixed text-sm sm:table-auto">
           <TableHeader className="sticky top-0 z-10 bg-card">
             <TableRow className="hover:bg-transparent">
               <TableHead className="pl-4">Filename</TableHead>
-              <TableHead>Size</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead>Started</TableHead>
-              <TableHead className="pr-4">
+              <TableHead className="hidden sm:table-cell">Size</TableHead>
+              <TableHead className="w-24 sm:w-auto">Status</TableHead>
+              <TableHead className="hidden sm:table-cell">Started</TableHead>
+              <TableHead className="w-14 pr-4 sm:w-auto">
                 <span className="sr-only">Actions</span>
               </TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {files?.map((file) => (
-              <TableRow key={file.id}>
-                <TableCell className="max-w-80 truncate pl-4" title={file.originalFilename}>
-                  {file.originalFilename}
-                </TableCell>
-                <TableCell>
-                  {file.sizeBytes === null ? "Unknown" : formatBytes(file.sizeBytes)}
-                </TableCell>
-                <TableCell>
-                  <Badge
-                    title={
-                      file.deletionError ??
-                      file.statusDetail ??
-                      statusHints[file.status]
-                    }
-                    className={statusClassNames[file.status]}
-                  >
-                    {file.status}
-                  </Badge>
-                </TableCell>
-                <TableCell>{new Date(file.startedAt).toLocaleString()}</TableCell>
-                <TableCell className="pr-4">
-                  <DeleteControl
-                    name={file.originalFilename}
-                    state={deletions[file.id]}
-                    retry={file.status === "Deleting"}
-                    confirming={confirming === file.id}
-                    onAsk={() => setConfirming(file.id)}
-                    onCancel={() => setConfirming(null)}
-                    onConfirm={() => {
-                      setConfirming(null)
-                      remove(file.id)
-                    }}
-                  />
-                </TableCell>
-              </TableRow>
+              <Fragment key={file.id}>
+                <TableRow>
+                  <TableCell className="truncate pl-4 sm:max-w-80" title={file.originalFilename}>
+                    {file.originalFilename}
+                    <span className="block truncate text-xs text-muted-foreground sm:hidden">
+                      {fileSize(file.sizeBytes)} · {new Date(file.startedAt).toLocaleString()}
+                    </span>
+                  </TableCell>
+                  <TableCell className="hidden sm:table-cell">
+                    {fileSize(file.sizeBytes)}
+                  </TableCell>
+                  <TableCell>
+                    <Badge
+                      title={
+                        file.deletionError ??
+                        file.statusDetail ??
+                        statusHints[file.status]
+                      }
+                      className={statusClassNames[file.status]}
+                    >
+                      {file.status}
+                    </Badge>
+                  </TableCell>
+                  <TableCell className="hidden sm:table-cell">
+                    {new Date(file.startedAt).toLocaleString()}
+                  </TableCell>
+                  <TableCell className="pr-4">
+                    <span className="flex items-center justify-end gap-1">
+                      {file.status === "Stored" &&
+                        isAudioFilename(file.originalFilename) && (
+                          <PlayControl file={file} />
+                        )}
+                      <DeleteControl
+                        {...deleteProps(file)}
+                        retry={file.status === "Deleting"}
+                      />
+                    </span>
+                  </TableCell>
+                </TableRow>
+                {deleteStatusKind(deletions[file.id], confirming === file.id) && (
+                  <TableRow className="sm:hidden">
+                    <TableCell colSpan={3} className="px-4 whitespace-normal">
+                      <DeleteStatus {...deleteProps(file)} className="flex" />
+                    </TableCell>
+                  </TableRow>
+                )}
+              </Fragment>
             ))}
             {files?.length === 0 && (
               <TableRow className="hover:bg-transparent">
@@ -256,6 +296,23 @@ export function FilesView({
         </Table>
       </div>
     </section>
+  )
+}
+
+// Plays a Stored audio file in the shared player; the row of the loaded file toggles pause.
+function PlayControl({ file }: { file: FileRegistration }) {
+  const { source, status, playFile, toggle } = usePlayer()
+  const current = source?.id === file.id && status !== "error"
+  const playing = current && (status === "playing" || status === "loading")
+  return (
+    <Button
+      variant="ghost"
+      size="icon-sm"
+      aria-label={`${playing ? "Pause" : "Play"} ${file.originalFilename}`}
+      onClick={() => (current ? toggle() : playFile(file))}
+    >
+      {playing ? <Pause /> : <Play />}
+    </Button>
   )
 }
 
@@ -280,7 +337,7 @@ function DeleteFailedControl({
       <span
         role="group"
         aria-label="Confirm deleting all failed files"
-        className="flex items-center gap-1.5"
+        className="flex flex-wrap items-center gap-1.5"
       >
         <span className="text-sm">
           Delete {count} failed {count === 1 ? "file" : "files"}? This cannot be undone.
@@ -352,15 +409,78 @@ function BulkDeleteResult({
   )
 }
 
-// Delete with an inline confirmation. On success the row leaves the list (the list is refreshed); a failure shows here and the row stays.
-function DeleteControl({
+function ConfirmDelete({
   name,
-  state,
-  retry,
-  confirming,
-  onAsk,
   onCancel,
   onConfirm,
+}: {
+  name: string
+  onCancel: () => void
+  onConfirm: () => void
+}) {
+  return (
+    <span
+      role="group"
+      aria-label={`Confirm deleting ${name}`}
+      className="flex flex-wrap items-center gap-1.5"
+    >
+      <span className="text-xs">Delete the stored file?</span>
+      <Button
+        variant="destructive"
+        size="sm"
+        aria-label={`Confirm delete of ${name}`}
+        onClick={onConfirm}
+      >
+        Delete
+      </Button>
+      <Button variant="outline" size="sm" onClick={onCancel}>
+        Keep
+      </Button>
+    </span>
+  )
+}
+
+// Renders the pending, confirming or error state of a delete; nothing when there is none.
+function DeleteStatus({
+  name,
+  state,
+  confirming,
+  onCancel,
+  onConfirm,
+  className,
+}: {
+  name: string
+  state: DeleteState | undefined
+  confirming: boolean
+  onCancel: () => void
+  onConfirm: () => void
+  className: string
+}) {
+  const kind = deleteStatusKind(state, confirming)
+  if (!kind) return null
+  return (
+    <span className={cn("items-center", className)}>
+      {kind === "pending" ? (
+        <span role="status" className="text-xs text-muted-foreground">
+          Deleting…
+        </span>
+      ) : kind === "confirm" ? (
+        <ConfirmDelete name={name} onCancel={onCancel} onConfirm={onConfirm} />
+      ) : (
+        <span role="alert" className="text-xs text-destructive">
+          {state && !state.pending ? state.error : null}
+        </span>
+      )}
+    </span>
+  )
+}
+
+// Delete with an inline confirmation. On success the row leaves the list (the list is refreshed); a failure shows here and the row stays.
+// Below sm the actions column is too narrow for the status: the row shows it in a full-width row under the file instead.
+function DeleteControl({
+  retry,
+  onAsk,
+  ...status
 }: {
   name: string
   state: DeleteState | undefined
@@ -370,50 +490,20 @@ function DeleteControl({
   onCancel: () => void
   onConfirm: () => void
 }) {
-  if (state?.pending) {
-    return (
-      <span role="status" className="text-xs text-muted-foreground">
-        Deleting…
-      </span>
-    )
-  }
-  if (confirming) {
-    return (
-      <span
-        role="group"
-        aria-label={`Confirm deleting ${name}`}
-        className="flex items-center gap-1.5"
-      >
-        <span className="text-xs">Delete the stored file?</span>
-        <Button
-          variant="destructive"
-          size="sm"
-          aria-label={`Confirm delete of ${name}`}
-          onClick={onConfirm}
-        >
-          Delete
-        </Button>
-        <Button variant="outline" size="sm" onClick={onCancel}>
-          Keep
-        </Button>
-      </span>
-    )
-  }
+  const kind = deleteStatusKind(status.state, status.confirming)
   return (
     <span className="flex items-center gap-2">
-      {state && (
-        <span role="alert" className="text-xs text-destructive">
-          {state.error}
-        </span>
+      <DeleteStatus {...status} className="hidden sm:flex" />
+      {kind !== "pending" && kind !== "confirm" && (
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          aria-label={`${retry || status.state ? "Retry delete of" : "Delete"} ${status.name}`}
+          onClick={onAsk}
+        >
+          <Trash2 />
+        </Button>
       )}
-      <Button
-        variant="ghost"
-        size="icon-sm"
-        aria-label={`${retry || state ? "Retry delete of" : "Delete"} ${name}`}
-        onClick={onAsk}
-      >
-        <Trash2 />
-      </Button>
     </span>
   )
 }

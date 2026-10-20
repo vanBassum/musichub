@@ -67,7 +67,7 @@ public sealed class AiRecordingIdentifier(
                         return Unresolved($"The AI proposed unknown candidate \"{action.CandidateId}\".", reports);
                     }
                     return IdentificationResult.Identified(
-                        new ProposedRecordingIdentity(chosen.Title, chosen.Artists, chosen.Album),
+                        new ProposedRecordingIdentity(chosen.Title, chosen.Artists, chosen.Album, chosen.ArtistReferences),
                         reports.SelectMany(Describe).ToList());
 
                 case AiActionKind.RunTool:

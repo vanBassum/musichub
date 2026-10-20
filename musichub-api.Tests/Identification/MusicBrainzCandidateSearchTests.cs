@@ -76,6 +76,23 @@ public class MusicBrainzCandidateSearchTests
     }
 
     [Fact]
+    public async Task Credited_artists_carry_their_musicbrainz_identifiers()
+    {
+        const string body = """
+            {"recordings":[{"id":"rec-1","title":"Song",
+              "artist-credit":[
+                {"name":"The Band","artist":{"id":"art-1","name":"The Band"}},
+                {"name":"Guest","artist":{"name":"Guest"}}],
+              "releases":[]}]}
+            """;
+
+        var candidate = Assert.Single(await Search(new StubHandler(Json(body))).SearchAsync("Song", ["The Band"], CancellationToken.None));
+
+        Assert.Equal(["The Band", "Guest"], candidate.Artists);
+        Assert.Equal(new ArtistReference("musicbrainz", "art-1", "The Band"), Assert.Single(candidate.ArtistReferences!));
+    }
+
+    [Fact]
     public async Task The_query_carries_the_tags_as_quoted_hints()
     {
         var handler = new StubHandler(Json("""{"recordings":[]}"""));

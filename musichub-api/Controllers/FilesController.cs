@@ -112,6 +112,70 @@ public class FilesController(
     }
 
     /// <summary>
+    /// Streams a Stored file inline as audio for browser playback, with byte-range support (206) so seeking works.
+    /// 404 when the file is absent, not Stored or its object is gone; 415 when its extension isn't a known audio type;
+    /// 416 for an unsatisfiable range; 502 when storage cannot be read. Read-only; the download endpoint is unchanged.
+    /// </summary>
+    [HttpGet("{id:int}/audio")]
+    public async Task<IActionResult> Audio(int id, CancellationToken cancellationToken)
+    {
+        var record = await ingestion.FindStoredAsync(id, cancellationToken);
+        if (record is null)
+            return NotFound();
+
+        var contentType = AudioStreaming.ContentTypeFor(record.OriginalFilename);
+        if (contentType is null)
+            return Problem(
+                title: "Not a playable audio file",
+                detail: "The file's extension is not a supported audio type.",
+                statusCode: StatusCodes.Status415UnsupportedMediaType);
+
+        if (record.SizeBytes is not { } total)
+            return Problem(
+                title: "File length unknown",
+                detail: "The file cannot be streamed without its stored length.",
+                statusCode: StatusCodes.Status502BadGateway);
+
+        Response.Headers.AcceptRanges = "bytes";
+        Response.Headers.XContentTypeOptions = "nosniff";
+
+        var range = AudioStreaming.ResolveRange(Request.Headers.Range.ToString(), total);
+        if (!range.IsSatisfiable)
+        {
+            Response.Headers.ContentRange = $"bytes */{total}";
+            return StatusCode(StatusCodes.Status416RangeNotSatisfiable);
+        }
+
+        if (total == 0)
+            return File(Stream.Null, contentType);
+
+        Stream content;
+        try
+        {
+            content = await ingestion.OpenStoredRangeAsync(record, range.Start, range.End, cancellationToken);
+        }
+        catch (FileNotFoundException)
+        {
+            return NotFound();
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            return Problem(
+                title: "File playback failed",
+                detail: "The file could not be read from storage.",
+                statusCode: StatusCodes.Status502BadGateway);
+        }
+
+        Response.ContentLength = range.Length;
+        if (range.IsPartial)
+        {
+            Response.StatusCode = StatusCodes.Status206PartialContent;
+            Response.Headers.ContentRange = $"bytes {range.Start}-{range.End}/{total}";
+        }
+        return File(content, contentType);
+    }
+
+    /// <summary>
     /// Deletes the file whatever its status: removes its object and its registration (204), so it leaves the list.
     /// Retrying a Deleting file is safe; a file that is already gone is 404. 409 while an upload for it is running, 502 when storage could not be cleaned.
     /// </summary>

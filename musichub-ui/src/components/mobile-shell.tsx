@@ -28,6 +28,7 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import type { Track } from "@/data/mock-tracks"
 import type { FilesState } from "@/lib/use-files"
 import type { JobsState } from "@/lib/use-jobs"
+import { cn } from "@/lib/utils"
 
 interface MobileShellProps {
   // The catalog's track count, once known.
@@ -72,7 +73,7 @@ function Page({
       aria-label={label}
       hidden={!show}
       inert={!show}
-      className={`${pageClassName} ${className ?? ""}`}
+      className={cn(pageClassName, className)}
     >
       {children}
     </section>
@@ -94,7 +95,6 @@ export function MobileShell({
   const hash = useSyncExternalStore(subscribe, getHash)
   const location = useMemo(() => parseLocation(hash), [hash])
   const { tab, screen, playerView } = location
-  const current = queue.find((track) => track.id === nowPlayingId) ?? null
 
   const navigate = (id: MobileTabId) =>
     go({ tab: id, screen: null, playerView: "now-playing" })
@@ -129,7 +129,7 @@ export function MobileShell({
           hidden={playerView !== "now-playing"}
           className="min-h-0 flex-1 overflow-y-auto"
         >
-          <NowPlaying current={current} large />
+          <NowPlaying large />
         </div>
         <div hidden={playerView !== "queue"} className="min-h-0 flex-1 p-3">
           <div className="flex h-full min-h-0 flex-col rounded-xl border bg-card">
