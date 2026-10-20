@@ -72,7 +72,9 @@ export interface IdentificationMethodResult {
   candidates: string[]
 }
 
+// `jobExecutionId` is the execution that recorded the outcome; Hangfire may have dropped that execution since.
 export interface FileOutcome {
+  jobExecutionId: string
   fileId: number
   fileName: string
   decision: IdentificationDecision
@@ -121,6 +123,31 @@ export const getOutcomes = (id: string, signal?: AbortSignal) =>
     "The file outcomes",
     signal
   )
+
+export interface OutcomePage {
+  items: FileOutcome[]
+  total: number
+  page: number
+  pageSize: number
+}
+
+// GET /api/identification-history: recorded outcomes across executions, newest first. Without a decision only the
+// unresolved ones; with one, that decision.
+export const getIdentificationHistory = (
+  query: { decision: IdentificationDecision | null; page: number; pageSize: number },
+  signal?: AbortSignal
+) => {
+  const params = new URLSearchParams({
+    page: String(query.page),
+    pageSize: String(query.pageSize),
+  })
+  if (query.decision) params.set("decision", query.decision)
+  return getJson<OutcomePage>(
+    `/api/identification-history?${params}`,
+    "The identification history",
+    signal
+  )
+}
 
 // POST /api/jobs/catalog-reconciliation/start: 202 with the new execution; 409 while a run is already active.
 export async function startCatalogReconciliation() {

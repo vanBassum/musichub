@@ -13,6 +13,7 @@ public static class JobsServiceCollectionExtensions
         services.AddScoped<PingJob>();
         services.AddScoped<PingJobService>();
         services.AddScoped<CatalogReconciliation>();
+        services.AddScoped<ManualIdentification>();
         services.AddScoped<CatalogReconciliationJob>();
         services.AddScoped<CatalogReconciliationJobService>();
         services.AddHostedService<HangfireServerService>();
