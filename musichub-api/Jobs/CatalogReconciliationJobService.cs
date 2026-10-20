@@ -77,29 +77,18 @@ public sealed class CatalogReconciliationJobService(JobEngine engine)
     public async Task<IReadOnlyList<JobExecution>> ListAsync(int count, CancellationToken cancellationToken)
     {
         var monitor = (await engine.StorageAsync(cancellationToken)).GetMonitoringApi();
-        return ActiveIds(monitor)
+        var ids = ActiveIds(monitor)
             .Concat(Ids(monitor.SucceededJobs(0, PerState), j => j.Job))
             .Concat(Ids(monitor.FailedJobs(0, PerState), j => j.Job))
-            .Distinct()
-            .OrderByDescending(IdOrder)
-            .Take(count)
-            .Select(id => (Id: id, Details: monitor.JobDetails(id)))
-            .Where(job => job.Details is not null)
-            .Select(job => ToDetails(job.Id, job.Details!).Execution)
-            .ToList();
+            .Distinct();
+        return NewestDetails(monitor, ids, count).Select(details => details.Execution).ToList();
     }
 
     /// <summary>The newest executions that ended Failed, newest first.</summary>
     public async Task<IReadOnlyList<JobExecutionDetails>> FailedAsync(int count, CancellationToken cancellationToken)
     {
         var monitor = (await engine.StorageAsync(cancellationToken)).GetMonitoringApi();
-        return Ids(monitor.FailedJobs(0, PerState), j => j.Job)
-            .OrderByDescending(IdOrder)
-            .Take(count)
-            .Select(id => (Id: id, Details: monitor.JobDetails(id)))
-            .Where(job => job.Details is not null)
-            .Select(job => ToDetails(job.Id, job.Details!))
-            .ToList();
+        return NewestDetails(monitor, Ids(monitor.FailedJobs(0, PerState), j => j.Job), count).ToList();
     }
 
     public async Task<JobExecutionDetails?> GetAsync(string id, CancellationToken cancellationToken)
@@ -110,6 +99,13 @@ public sealed class CatalogReconciliationJobService(JobEngine engine)
 
     private static IEnumerable<string> Ids<T>(IEnumerable<KeyValuePair<string, T>> jobs, Func<T, Job?> job) =>
         jobs.Where(pair => job(pair.Value)?.Type == typeof(CatalogReconciliationJob)).Select(pair => pair.Key);
+
+    private static IEnumerable<JobExecutionDetails> NewestDetails(IMonitoringApi monitor, IEnumerable<string> ids, int count) =>
+        ids.OrderByDescending(IdOrder)
+            .Take(count)
+            .Select(id => (Id: id, Details: monitor.JobDetails(id)))
+            .Where(job => job.Details is not null)
+            .Select(job => ToDetails(job.Id, job.Details!));
 
     // Hangfire job ids are increasing numbers, so the biggest is the newest.
     private static long IdOrder(string id) => long.TryParse(id, out var n) ? n : 0;
