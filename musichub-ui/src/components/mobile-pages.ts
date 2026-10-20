@@ -39,12 +39,49 @@ export interface MobileLocation {
 // The location lives in the URL hash (#/search, #/player, #/player/queue, #/more,
 // #/more/files), so browser back and shared links work.
 export function parseLocation(hash: string): MobileLocation {
-  const [tab, sub] = hash.replace(/^#\/?/, "").split("/")
+  const [tab, sub] = hash.replace(/^#\/?/, "").split("?")[0].split("/")
   const screen = moreScreens.find((s) => s.id === sub)?.id ?? null
   return {
     tab: mobileTabs.find((t) => t.id === tab)?.id ?? "search",
     screen: tab === "more" ? screen : null,
     playerView: tab === "player" && sub === "queue" ? "queue" : "now-playing",
+  }
+}
+
+export function isSearchHash(hash: string): boolean {
+  return hash.startsWith("#/search")
+}
+
+// A search deep link is `#/search?q=<term>`, on desktop and phone alike.
+export function parseSearchQuery(hash: string): string {
+  const { tab } = parseLocation(hash)
+  if (tab !== "search") return ""
+  return new URLSearchParams(hash.split("?")[1] ?? "").get("q") ?? ""
+}
+
+export function formatSearchHash(query: string): string {
+  const term = query.trim()
+  return term ? `#/search?${new URLSearchParams({ q: term })}` : "#/search"
+}
+
+// Phone: go to the Search tab, keeping the term in the hash (a history entry).
+export function openSearchHash(query: string) {
+  window.location.hash = formatSearchHash(query)
+}
+
+// Keeps the hash in step with the search term, without a history entry. The desktop
+// owns the hash while its Search view shows and clears it elsewhere; the phone only
+// updates it while its location is Search.
+export function syncSearchHash(
+  query: string,
+  isDesktop: boolean,
+  desktopOnSearch: boolean
+) {
+  const onHash = isSearchHash(window.location.hash)
+  if (isDesktop ? desktopOnSearch : onHash) {
+    window.history.replaceState(null, "", formatSearchHash(query))
+  } else if (isDesktop && onHash) {
+    window.history.replaceState(null, "", window.location.pathname)
   }
 }
 

@@ -6,7 +6,13 @@ import { FilesView } from "@/components/files-view"
 import { FilterSidebar } from "@/components/filter-sidebar"
 import { JobsView } from "@/components/jobs-view"
 import { MobileShell } from "@/components/mobile-shell"
+import {
+  isSearchHash,
+  parseSearchQuery,
+  syncSearchHash,
+} from "@/components/mobile-pages"
 import { PlayerPanel } from "@/components/player-panel"
+import { SearchPage } from "@/components/search-page"
 import { TrackDetailsSheet } from "@/components/track-details-sheet"
 import { TrackTable } from "@/components/track-table"
 import { mockNowPlayingId, mockQueue } from "@/data/mock-tracks"
@@ -21,7 +27,13 @@ const searchDelayMs = 300
 
 export function App() {
   const [selectedId, setSelectedId] = useState<number | null>(null)
-  const [view, setView] = useState<AppView>("library")
+  const [view, setView] = useState<AppView>(
+    isSearchHash(window.location.hash) ? "search" : "library"
+  )
+  // The global search page's term, shared by the desktop page and the phone's tab.
+  const [searchQuery, setSearchQuery] = useState(() =>
+    parseSearchQuery(window.location.hash)
+  )
   // The artist page shows this artist, found by a local or an external search.
   const [artistRef, setArtistRef] = useState<ArtistRef | null>(null)
   // What the box shows now, and the term sent to the API once typing pauses.
@@ -44,7 +56,17 @@ export function App() {
     return () => clearTimeout(timer)
   }, [searchInput])
 
-  const openArtist = (artist: ArtistRef) => {
+  // The URL hash carries the search (#/search?q=...), so it can be shared and
+  // reloaded. Updated once typing pauses; Safari limits how often it may change.
+  useEffect(() => {
+    const timer = setTimeout(
+      () => syncSearchHash(searchQuery, isDesktop, view === "search"),
+      searchDelayMs
+    )
+    return () => clearTimeout(timer)
+  }, [isDesktop, view, searchQuery])
+
+  const openArtist =(artist: ArtistRef) => {
     setArtistRef(artist)
     setView("artists")
   }
@@ -100,6 +122,8 @@ export function App() {
           filesState={filesState}
           jobsState={jobsState}
           artistRef={artistRef}
+          searchQuery={searchQuery}
+          onSearchQueryChange={setSearchQuery}
           onSelectTrack={setSelectedId}
           onSelectArtist={setArtistRef}
         />
@@ -110,12 +134,7 @@ export function App() {
 
   return (
     <div className="flex min-h-svh flex-col lg:h-svh">
-      <AppHeader
-        view={view}
-        onNavigate={setView}
-        onSelectTrack={setSelectedId}
-        onSelectArtist={openArtist}
-      />
+      <AppHeader view={view} onNavigate={setView} />
       {view === "library" ? (
         <main className="grid min-h-0 flex-1 gap-4 p-4 lg:grid-cols-[15rem_minmax(0,1fr)_20rem] xl:grid-cols-[17rem_minmax(0,1fr)_24rem]">
           {filters()}
@@ -125,7 +144,16 @@ export function App() {
       ) : (
         // The player stays docked beside every view, so playback can be controlled anywhere.
         <main className="grid min-h-0 flex-1 gap-4 p-4 lg:grid-cols-[minmax(0,1fr)_20rem] xl:grid-cols-[minmax(0,1fr)_24rem]">
-          {view === "files" ? (
+          {view === "search" ? (
+            <SearchPage
+              query={searchQuery}
+              onQueryChange={setSearchQuery}
+              onSelectTrack={setSelectedId}
+              onSelectArtist={openArtist}
+              autoFocus
+              className="min-h-0"
+            />
+          ) : view === "files" ? (
             <FilesView state={filesState} className="min-h-0" />
           ) : view === "jobs" ? (
             <JobsView state={jobsState} className="min-h-0" />
