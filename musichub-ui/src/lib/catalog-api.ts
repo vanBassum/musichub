@@ -14,6 +14,8 @@ export interface CatalogTrack {
   artists: CatalogArtist[]
   // False for Missing Music: no available (Stored) file is linked.
   hasAudio: boolean
+  // The Stored file linked to this track that plays it; null exactly when hasAudio is false.
+  audioFileId: number | null
 }
 
 // The one place a catalog track's audio becomes an availability.
@@ -103,6 +105,11 @@ export function fetchArtists(
 
 export function fetchTrack(id: number, signal: AbortSignal) {
   return getJson<CatalogTrack>(`/api/tracks/${id}`, signal)
+}
+
+// The title with its version, which tells two recordings of one song apart.
+export function trackTitle(track: CatalogTrack) {
+  return track.version ? `${track.title} (${track.version})` : track.title
 }
 
 export function artistNames(track: CatalogTrack) {

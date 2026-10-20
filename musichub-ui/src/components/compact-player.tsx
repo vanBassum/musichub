@@ -9,7 +9,7 @@ import {
   SheetTrigger,
 } from "@/components/ui/sheet"
 import type { Track } from "@/data/mock-tracks"
-import { usePlayer } from "@/lib/use-player"
+import { isAudible, usePlayer } from "@/lib/use-player"
 
 interface CompactPlayerProps {
   queue: Track[]
@@ -24,7 +24,7 @@ export function CompactPlayer({ queue, nowPlayingId }: CompactPlayerProps) {
   const { source, status, toggle } = usePlayer()
   if (!source) return null
 
-  const playing = status === "playing" || status === "loading"
+  const playing = isAudible(status)
 
   return (
     <Sheet>
@@ -47,7 +47,7 @@ export function CompactPlayer({ queue, nowPlayingId }: CompactPlayerProps) {
           <span className="flex min-w-0 flex-col text-left">
             <span className="truncate text-sm font-medium">{source.title}</span>
             <span className="truncate text-xs text-muted-foreground">
-              Stored file
+              {source.subtitle ?? "Stored file"}
             </span>
           </span>
         </SheetTrigger>

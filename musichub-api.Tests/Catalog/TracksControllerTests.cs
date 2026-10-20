@@ -173,6 +173,24 @@ public sealed class TracksControllerTests : IDisposable
     }
 
     [Fact]
+    public async Task AudioFileId_is_the_stored_file_linked_to_that_track_only()
+    {
+        var withAudio = await Seed("Same title");
+        var other = await Seed("Same title");
+        var failedOnly = await Seed("Failed");
+        await AddFile(withAudio, FileStatus.Failed);
+        await AddFile(withAudio);
+        await AddFile(failedOnly, FileStatus.Failed);
+
+        using var db = CreateDb();
+        var storedId = db.Files.Single(f => f.TrackId == withAudio && f.Status == FileStatus.Stored).Id;
+
+        Assert.Equal(storedId, Body<TrackResponse>(await GetDetail(withAudio)).AudioFileId);
+        Assert.Null(Body<TrackResponse>(await GetDetail(other)).AudioFileId);
+        Assert.Null(Body<TrackResponse>(await GetDetail(failedOnly)).AudioFileId);
+    }
+
+    [Fact]
     public async Task Track_is_missing_music_until_a_stored_file_is_linked_and_again_after_the_last_is_removed()
     {
         var id = await Seed("Song");
