@@ -1,10 +1,11 @@
 # Claude in GitHub Actions: how to work
 
-Bas started you in one of two ways:
+You were started in one of three ways:
 
 - **the `autopilot` label on an issue**: build the issue and open a PR;
 - **`@claude` in a comment** on an issue or a PR: do what the comment asks. On a PR
   you are on its branch; push your commits there.
+- **an Autofix run** on a PR of your own: see section 5.
 
 You run unattended: nobody answers questions during the run. Your tracking comment
 is how you report, so make it say clearly what you did, or why you stopped.
@@ -80,3 +81,20 @@ wording that Bas can add to the issue or to the understanding.
   `git merge origin/main`, then resolve.
 - Never merge, approve or close a PR, never turn on auto-merge for a PR you didn't
   open in this run, and never push to `main`.
+
+## 5. Autofix run
+
+The autofix controller started you, without a person, because your PR conflicts
+with main, its build fails or a reviewer said FIX. You are on the PR's branch at
+the commit named in the prompt.
+
+- `autofix-findings.md` (never commit it) says what to fix: the conflict, the end
+  of each failed build job's log, and each FIX reviewer's blocking findings. Fix
+  exactly that; read the files and the rules from section 1 that the fix touches.
+- A conflict: `git fetch origin main`, `git merge origin/main`, resolve, and check
+  the build.
+- Check your work as in section 3, commit, and push with `git push origin HEAD`.
+- A finding that needs a decision, or that you believe is wrong: change nothing for
+  it, and don't work around it. The reviewers run again after your push and will
+  report it again; Bas decides.
+- No PR, no merge, no comments: GitHub Actions reports this run on the PR.

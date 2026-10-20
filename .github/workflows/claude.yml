@@ -1,4 +1,7 @@
 name: Claude
+# The autofix controller counts its runs by this name (.github/scripts/autofix.sh).
+# An empty name gives the usual one.
+run-name: "${{ github.event_name == 'workflow_dispatch' && format('Autofix #{0}', inputs.pr) || '' }}"
 
 # Claude works on an issue or a PR, with the official anthropics/claude-code-action:
 #
@@ -6,6 +9,9 @@ name: Claude
 #   opens the PR, or stops and says in its comment which decision is missing;
 # - `@claude` in a comment on an issue or a PR: Claude does what the comment asks.
 #   On a PR it pushes to the PR's branch ("@claude fix the review findings").
+# - an Autofix run (workflow_dispatch from autofix.yml): Claude fixes a PR of its
+#   own at the given head commit: a conflict with main, a failed build or a
+#   reviewer's FIX. It reports in one PR comment that this workflow keeps updated.
 #
 # Claude follows .github/autopilot.md. Its PR gets the usual build check and the
 # four reviewers; Bas merges. The action authenticates as the Claude GitHub App
@@ -23,19 +29,28 @@ on:
     types: [created]
   pull_request_review_comment:
     types: [created]
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: Autofix this pull request (a claude/ branch)
+        required: true
+      sha:
+        description: The PR's head commit to fix; the run does nothing if the PR has moved on
+        required: true
 
 permissions: {}
 
 jobs:
   claude:
     if: >-
+      github.event_name == 'workflow_dispatch' ||
       (github.event_name == 'issues' && github.event.label.name == 'autopilot') ||
       (github.event_name != 'issues' && contains(github.event.comment.body, '@claude') &&
        github.event.comment.user.type != 'Bot')
     runs-on: [self-hosted, strato]
     timeout-minutes: 90
     concurrency:
-      group: claude-${{ github.event.issue.number || github.event.pull_request.number }}
+      group: claude-${{ github.event.issue.number || github.event.pull_request.number || inputs.pr }}
       cancel-in-progress: false
     permissions:
       contents: write
@@ -45,7 +60,33 @@ jobs:
       id-token: write
       # The build check's results on a PR (additional_permissions below).
       actions: read
+      # Autofix: the reviewers' verdict checks.
+      checks: read
     steps:
+      # Autofix: only a PR of Claude's, and only while it is still at the commit
+      # the fix was started for. A second run for the same commit finds it moved on.
+      - name: "Autofix: find the PR"
+        id: autofix
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ inputs.pr }}
+          SHA: ${{ inputs.sha }}
+        run: |
+          pr_json=$(gh pr view "$PR" -R "$GITHUB_REPOSITORY" --json state,headRefName,headRefOid,mergeable)
+          branch=$(jq -r .headRefName <<<"$pr_json")
+          if [ "$(jq -r .state <<<"$pr_json")" != OPEN ] || [[ $branch != claude/* ]]; then
+            echo "::error::PR #$PR is not an open PR of Claude's."
+            exit 1
+          fi
+          if [ "$(jq -r .headRefOid <<<"$pr_json")" = "$SHA" ]; then
+            echo "current=true" >>"$GITHUB_OUTPUT"
+          else
+            echo "PR #$PR has moved on from $SHA: nothing to fix."
+          fi
+          echo "branch=$branch" >>"$GITHUB_OUTPUT"
+          echo "mergeable=$(jq -r .mergeable <<<"$pr_json")" >>"$GITHUB_OUTPUT"
+
       # Full history: on a PR the action then fetches the branch without a depth
       # limit, so `git fetch origin main` and `git merge origin/main` find the
       # merge base and Claude can resolve a conflict with main.
@@ -85,7 +126,68 @@ jobs:
         with:
           node-version: '22'
 
+      # Autofix: what to fix, from GitHub's own state, into autofix-findings.md (never
+      # committed): the conflict, the failed build jobs' logs and the reviewers' FIX
+      # findings. Collected by main's code, before switching to the PR's branch.
+      - name: "Autofix: collect what to fix"
+        id: findings
+        if: steps.autofix.outputs.current == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ inputs.pr }}
+          SHA: ${{ inputs.sha }}
+          MERGEABLE: ${{ steps.autofix.outputs.mergeable }}
+        run: |
+          checks=$(gh api "repos/$GITHUB_REPOSITORY/commits/$SHA/check-runs" --paginate --jq '.check_runs[]' \
+            | jq -s 'group_by(.name) | map(max_by(.id))')
+          reasons=()
+          {
+            echo "# What this Autofix run must fix (PR #$PR at $SHA)"
+            if [ "$MERGEABLE" = CONFLICTING ]; then
+              reasons+=("conflict")
+              printf '\n## Conflict with main\n\nThe PR conflicts with main: merge origin/main and resolve it.\n'
+            fi
+            while IFS=$'\t' read -r id name; do
+              reasons+=("$name fails")
+              printf '\n## The %s job failed\n\nThe end of its log:\n\n```\n' "$name"
+              { gh run view --job "$id" --log-failed -R "$GITHUB_REPOSITORY" || echo "(the log is not available)"; } | tail -n 150
+              printf '```\n'
+            done < <(jq -r '.[] | select((.name == "test" or .name == "guard-tests") and .conclusion == "failure")
+              | [.id, .name] | @tsv' <<<"$checks")
+            while IFS= read -r reviewer; do
+              reasons+=("FIX $reviewer")
+              printf '\n## The %s reviewer: FIX\n\n' "$reviewer"
+              jq -r --arg name "verdict · $reviewer" '.[] | select(.name == $name) | .output.summary' <<<"$checks"
+            done < <(jq -r '.[] | select(.external_id == "FIX") | .name | sub("^verdict · "; "")' <<<"$checks")
+          } >autofix-findings.md
+          printf '/autofix-findings.md\n' >>.git/info/exclude
+          printf -v reason '%s, ' "${reasons[@]}"
+          echo "reason=${reason%, }" >>"$GITHUB_OUTPUT"
+
+      - name: "Autofix: switch to the PR's branch"
+        if: steps.autofix.outputs.current == 'true'
+        env:
+          BRANCH: ${{ steps.autofix.outputs.branch }}
+        run: git switch "$BRANCH"
+
+      - name: "Autofix: report the start"
+        id: report
+        if: steps.autofix.outputs.current == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ inputs.pr }}
+          REASON: ${{ steps.findings.outputs.reason }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          id=$(gh api "repos/$GITHUB_REPOSITORY/issues/$PR/comments" \
+            -f body="AUTOFIX · $REASON · running · [run]($RUN_URL)" --jq .id)
+          echo "comment=$id" >>"$GITHUB_OUTPUT"
+
       - uses: anthropics/claude-code-action@v1
+        id: claude
+        if: github.event_name != 'workflow_dispatch' || steps.autofix.outputs.current == 'true'
+        env:
+          CLAUDE_BRANCH: ${{ steps.autofix.outputs.branch }}
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           label_trigger: autopilot
@@ -97,13 +199,50 @@ jobs:
           # The repository is public: Claude reads only the comments of Bas, of
           # itself and of the reviewers, so nobody else can steer it.
           include_comments_by_actor: "vanBassum,claude[bot],github-actions[bot]"
-          # One entry per command Claude needs, as the action's docs advise. git add,
-          # commit, rm and push come from the action itself: it pushes through its
-          # own wrapper, which allows no flags, so no git push or fetch here.
+          # An Autofix run is started by autofix.yml, so its actor is this bot. The
+          # prompt puts the action in agent mode, which has no comment trigger and no
+          # tracking comment; other events have no prompt and stay in tag mode.
+          allowed_bots: ${{ github.event_name == 'workflow_dispatch' && 'github-actions[bot]' || '' }}
+          prompt: >-
+            ${{ github.event_name == 'workflow_dispatch' && format('Autofix run for PR #{0} (branch {1}, head {2}). Follow the "Autofix run" section of .github/autopilot.md. What to fix is in autofix-findings.md.', inputs.pr, steps.autofix.outputs.branch, inputs.sha) || '' }}
+          # One entry per command Claude needs, as the action's docs advise. In tag
+          # mode git add, commit, rm and push come from the action itself: it pushes
+          # through its own wrapper, which allows no flags. Agent mode (Autofix) has
+          # no wrapper, so it gets them here; it pushes only the current branch.
           # Only a run started by the autopilot label may turn on auto-merge, for the
           # PR it opens itself; a run on someone else's PR never can.
           claude_args: |
             --max-turns 150
             --add-dir understanding
-            --allowedTools "Edit,Write,Bash(git status:*),Bash(git diff:*),Bash(git log:*),Bash(git show:*),Bash(git mv:*),Bash(git fetch origin main),Bash(git merge origin/main:*),Bash(dotnet restore:*),Bash(dotnet build:*),Bash(dotnet test:*),Bash(dotnet add:*),Bash(dotnet ef migrations add:*),Bash(pnpm --dir musichub-ui install:*),Bash(pnpm --dir musichub-ui lint:*),Bash(pnpm --dir musichub-ui typecheck:*),Bash(pnpm --dir musichub-ui build:*),Bash(pnpm --dir musichub-ui format:*),Bash(pnpm --dir musichub-ui add:*),Bash(pnpm --dir musichub-ui exec shadcn add:*),Bash(gh pr create:*),Bash(gh pr view:*),Bash(gh pr diff:*),Bash(gh issue view:*)${{ github.event_name == 'issues' && ',Bash(gh pr merge --auto --squash:*)' || '' }}"
+            --allowedTools "Edit,Write,Bash(git status:*),Bash(git diff:*),Bash(git log:*),Bash(git show:*),Bash(git mv:*),Bash(git fetch origin main),Bash(git merge origin/main:*),Bash(dotnet restore:*),Bash(dotnet build:*),Bash(dotnet test:*),Bash(dotnet add:*),Bash(dotnet ef migrations add:*),Bash(pnpm --dir musichub-ui install:*),Bash(pnpm --dir musichub-ui lint:*),Bash(pnpm --dir musichub-ui typecheck:*),Bash(pnpm --dir musichub-ui build:*),Bash(pnpm --dir musichub-ui format:*),Bash(pnpm --dir musichub-ui add:*),Bash(pnpm --dir musichub-ui exec shadcn add:*),Bash(gh pr create:*),Bash(gh pr view:*),Bash(gh pr diff:*),Bash(gh issue view:*)${{ github.event_name == 'issues' && ',Bash(gh pr merge --auto --squash:*)' || '' }}${{ github.event_name == 'workflow_dispatch' && ',Bash(git add:*),Bash(git rm:*),Bash(git commit:*),Bash(git push origin HEAD)' || '' }}"
             --append-system-prompt "Before anything else, read .github/autopilot.md and follow it."
+
+      # Autofix: the outcome and what it cost, in the comment from the start. The
+      # cost is the action's own API-price equivalent, not what the subscription
+      # pays. If the runner dies, the comment keeps saying "running"; the run's own
+      # status is the one to trust.
+      - name: "Autofix: report the result"
+        if: always() && steps.report.outputs.comment != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ inputs.pr }}
+          SHA: ${{ inputs.sha }}
+          COMMENT: ${{ steps.report.outputs.comment }}
+          REASON: ${{ steps.findings.outputs.reason }}
+          OUTCOME: ${{ steps.claude.outcome }}
+          EXECUTION_FILE: ${{ steps.claude.outputs.execution_file }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          head=$(gh pr view "$PR" -R "$GITHUB_REPOSITORY" --json headRefOid --jq .headRefOid || echo "$SHA")
+          if [ "$OUTCOME" != success ]; then result="$OUTCOME"
+          elif [ "$head" != "$SHA" ]; then result="pushed ${head:0:7}"
+          else result="no change"
+          fi
+          stats=
+          if [ -f "$EXECUTION_FILE" ]; then
+            stats=$(jq -r 'map(select(.type == "result")) | last | select(. != null)
+              | " · \(.num_turns) turns · \(.duration_ms / 60000 | floor)m\(.duration_ms / 1000 % 60 | floor)s · ≈$\(.total_cost_usd * 100 | round / 100) API-eq"' \
+              "$EXECUTION_FILE" || true)
+          fi
+          gh api --method PATCH "repos/$GITHUB_REPOSITORY/issues/comments/$COMMENT" \
+            -f body="AUTOFIX · $REASON · $result$stats · [run]($RUN_URL)" >/dev/null

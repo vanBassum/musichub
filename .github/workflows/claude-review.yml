@@ -47,6 +47,8 @@ jobs:
       contents: read
       pull-requests: write
       issues: write
+      # The verdict check (review-verdict.sh).
+      checks: write
     steps:
       - name: Check out main (reviewer rules and gate)
         uses: actions/checkout@v4
@@ -128,10 +130,32 @@ jobs:
             --allowedTools "Read,Grep,Glob,mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(git log:*),Bash(git show:*)"
 
       # Red: a blocking finding (read the review comment), or no valid verdict for
-      # this exact commit (rerun the job).
+      # this exact commit (rerun the job). Also after a failed review step, so that
+      # a missing verdict is published as NONE and the autofix can rerun it.
       - name: Check the verdict
+        if: success() || failure()
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR: ${{ github.event.pull_request.number }}
           SHA: ${{ github.event.pull_request.head.sha }}
         run: bash .github/scripts/review-verdict.sh "${{ matrix.reviewer }}"
+
+  # A PR of Claude's: the autofix controller (autofix.yml) decides what's next now
+  # that the reviewers are done.
+  autofix:
+    name: Start autofix
+    needs: review
+    if: >-
+      always() &&
+      github.event.pull_request.draft == false &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      startsWith(github.event.pull_request.head.ref, 'claude/')
+    runs-on: [self-hosted, strato]
+    timeout-minutes: 5
+    permissions:
+      actions: write
+    steps:
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+        run: gh workflow run autofix.yml -R "$GITHUB_REPOSITORY" --ref main -f pr="$PR"
