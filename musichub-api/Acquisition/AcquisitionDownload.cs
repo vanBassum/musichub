@@ -76,6 +76,18 @@ public class AcquisitionDownload
     /// <summary>SHA-256 of the downloaded bytes, lowercase hex; kept when the temporary file is deleted.</summary>
     public string? ContentHash { get; set; }
 
+    /// <summary>
+    /// SHA-256 of the MP3 audio payload without ID3 or other metadata, lowercase hex; null unless
+    /// <see cref="AudioHashStatus"/> is Computed. See <see cref="Mp3AudioPayload"/>.
+    /// </summary>
+    public string? AudioHash { get; set; }
+
+    /// <summary>How the audio hash came out; null until the bytes arrived. Unsupported and Malformed leave no hash.</summary>
+    public AudioHashStatus? AudioHashStatus { get; set; }
+
+    /// <summary>The <see cref="Mp3AudioPayload.Version"/> that produced <see cref="AudioHashStatus"/> and the hash.</summary>
+    public int? AudioHashVersion { get; set; }
+
     /// <summary>The canonical file record of an accepted download; null otherwise or once that file was deleted.</summary>
     public int? FileId { get; set; }
     public FileRecord? File { get; set; }

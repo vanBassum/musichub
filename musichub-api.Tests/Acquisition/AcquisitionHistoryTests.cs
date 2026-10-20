@@ -35,7 +35,8 @@ public sealed class AcquisitionHistoryTests : IDisposable
         {
             var history = History(db);
             var download = await history.BeginAsync(Candidate(), null, default);
-            await history.DownloadedAsync(download, new string('a', 64), default);
+            await history.DownloadedAsync(download, new DownloadHashes(new string('a', 64),
+                new AudioHashResult(AudioHashStatus.Computed, new string('b', 64))), default);
             await history.RejectedAsync(download, "Recording could not be verified.", default);
         }
 
@@ -47,6 +48,27 @@ public sealed class AcquisitionHistoryTests : IDisposable
         Assert.False(await History(restarted).WasRejectedAsync(Candidate(source: "peer2"), default));
         Assert.False(await History(restarted).WasRejectedAsync(Candidate(path: @"Music\a\other.mp3"), default));
         Assert.True(await History(restarted).WasContentRejectedAsync(new string('a', 64), default));
+        Assert.Equal(new string('b', 64), stored.AudioHash);
+        Assert.Equal(AudioHashStatus.Computed, stored.AudioHashStatus);
+        Assert.Equal(Mp3AudioPayload.Version, stored.AudioHashVersion);
+        Assert.True(await History(restarted).WasAudioRejectedAsync(new string('b', 64), default));
+        Assert.False(await History(restarted).WasAudioRejectedAsync(new string('a', 64), default));
+    }
+
+    [Fact]
+    public async Task An_unhashable_payload_is_recorded_without_an_audio_hash()
+    {
+        await using var db = CreateDb();
+        var history = History(db);
+        var download = await history.BeginAsync(Candidate(), null, default);
+        await history.DownloadedAsync(download, new DownloadHashes(new string('a', 64),
+            new AudioHashResult(AudioHashStatus.Malformed, null)), default);
+
+        await using var reread = CreateDb();
+        var stored = await reread.AcquisitionDownloads.SingleAsync();
+        Assert.Equal(new string('a', 64), stored.ContentHash);
+        Assert.Null(stored.AudioHash);
+        Assert.Equal(AudioHashStatus.Malformed, stored.AudioHashStatus);
     }
 
     [Fact]
