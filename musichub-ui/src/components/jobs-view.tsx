@@ -1,6 +1,7 @@
 import { Database, Play, RefreshCw } from "lucide-react"
 import type { ReactNode } from "react"
 
+import { IdentificationHistory } from "@/components/identification-history"
 import { IdentificationOutcomes } from "@/components/identification-outcomes"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -253,6 +254,8 @@ export function JobsView({
 
         <ExecutionDetails state={state} />
       </div>
+
+      <IdentificationHistory />
     </section>
   )
 }

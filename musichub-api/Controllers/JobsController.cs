@@ -69,8 +69,7 @@ public class JobsController(CatalogReconciliationJobService catalogReconciliatio
             .Where(o => o.JobExecutionId == id)
             .OrderBy(o => o.Id)
             .ToListAsync(cancellationToken);
-        return Ok(rows.Select(o => new FileOutcome(
-            o.FileId, o.FileName, o.Decision, o.Reason, o.TrackId, o.RecordedAt, o.ReadMethods())));
+        return Ok(rows.Select(FileOutcome.From));
     }
 
     /// <summary>Enqueues a catalog reconciliation run: 202 with the new execution. 409 while a run is already active.</summary>
@@ -95,9 +94,14 @@ public class JobsController(CatalogReconciliationJobService catalogReconciliatio
             detail: "The job engine has not started yet or is disabled. Try again shortly.",
             statusCode: StatusCodes.Status503ServiceUnavailable);
 
+    /// <summary>One recorded outcome. <c>JobExecutionId</c> is the execution that recorded it; that execution may have expired.</summary>
     public sealed record FileOutcome(
-        int FileId, string FileName, IdentificationDecision Decision, string Reason, int? TrackId, DateTimeOffset RecordedAt,
-        IReadOnlyList<IdentificationMethodResult> Methods);
+        string JobExecutionId, int FileId, string FileName, IdentificationDecision Decision, string Reason, int? TrackId,
+        DateTimeOffset RecordedAt, IReadOnlyList<IdentificationMethodResult> Methods)
+    {
+        public static FileOutcome From(IdentificationOutcome o) => new(
+            o.JobExecutionId, o.FileId, o.FileName, o.Decision, o.Reason, o.TrackId, o.RecordedAt, o.ReadMethods());
+    }
 
     public sealed record JobInfo(string Id, string Name, string Description, string? ActiveExecutionId);
 }
