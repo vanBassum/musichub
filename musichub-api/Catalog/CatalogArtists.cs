@@ -16,16 +16,21 @@ internal static class CatalogArtists
         .Distinct(StringComparer.OrdinalIgnoreCase)
         .ToList();
 
+    public static async Task<Artist> FindOrNewAsync(
+        MusicHubDbContext db, string name, DateTimeOffset now, CancellationToken cancellationToken)
+    {
+        var lower = name.ToLower();
+        return await db.Artists.OrderBy(a => a.Id).FirstOrDefaultAsync(a => a.Name.ToLower() == lower, cancellationToken)
+               ?? new Artist { Name = name, CreatedAt = now };
+    }
+
     public static async Task AttachAsync(
         MusicHubDbContext db, Track track, IEnumerable<string> names, DateTimeOffset now,
         CancellationToken cancellationToken)
     {
         foreach (var name in names)
         {
-            var lower = name.ToLower();
-            var artist = await db.Artists.OrderBy(a => a.Id)
-                             .FirstOrDefaultAsync(a => a.Name.ToLower() == lower, cancellationToken)
-                         ?? new Artist { Name = name, CreatedAt = now };
+            var artist = await FindOrNewAsync(db, name, now, cancellationToken);
             track.Artists.Add(new TrackArtist { Artist = artist });
         }
     }

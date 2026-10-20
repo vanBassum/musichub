@@ -202,9 +202,7 @@ public sealed class CatalogReconciliation(
 
         if (reference is null)
         {
-            var lower = name.ToLower();
-            return await db.Artists.OrderBy(a => a.Id).FirstOrDefaultAsync(a => a.Name.ToLower() == lower, cancellationToken)
-                   ?? new Artist { Name = name, CreatedAt = now };
+            return await CatalogArtists.FindOrNewAsync(db, name, now, cancellationToken);
         }
 
         var artist = new Artist { Name = name, CreatedAt = now };
