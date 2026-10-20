@@ -63,6 +63,9 @@ wording that Bas can add to the issue or to the understanding.
 - Commit in small commits; a message says what is now true. Commit no build output.
 - Your tools are an explicit list of commands, exactly as written here (one command
   per call, no `cd`, no chaining). Push with the push command the action gave you.
+  Anything else is refused, `dotnet --version` and `ls` included. A refused command
+  says nothing about the commands above: they are allowed, so run them. Use Read,
+  Grep and Glob to look around. Never stop because you think you can't build.
 
 ## 4. Deliver
 
