@@ -32,8 +32,8 @@ public sealed class CatalogReconciliation(
     ILogger<CatalogReconciliation> logger)
 {
     // Finding and creating tracks and artists must not interleave between runs in this process (the job itself is
-    // exclusive across processes).
-    private static readonly SemaphoreSlim CatalogLock = new(1, 1);
+    // exclusive across processes). The wishlist creates tracks too, so it takes the same lock.
+    internal static readonly SemaphoreSlim CatalogLock = new(1, 1);
 
     private readonly ArtistExternalLinks links = new(db, time);
 
@@ -241,11 +241,7 @@ public sealed class CatalogReconciliation(
     {
         if (identity is null || string.IsNullOrWhiteSpace(identity.Title))
             return null;
-        var artists = identity.Artists
-            .Select(a => a?.Trim() ?? "")
-            .Where(a => a.Length > 0)
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToList();
+        var artists = CatalogArtists.Normalize(identity.Artists);
         return artists.Count == 0 ? null : identity with { Title = identity.Title.Trim(), Artists = artists };
     }
 
@@ -289,9 +285,7 @@ public sealed class CatalogReconciliation(
 
         if (reference is null)
         {
-            var lower = name.ToLower();
-            return await db.Artists.OrderBy(a => a.Id).FirstOrDefaultAsync(a => a.Name.ToLower() == lower, cancellationToken)
-                   ?? new Artist { Name = name, CreatedAt = now };
+            return await CatalogArtists.FindOrNewAsync(db, name, now, cancellationToken);
         }
 
         var artist = new Artist { Name = name, CreatedAt = now };

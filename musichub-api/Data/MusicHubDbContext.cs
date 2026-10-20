@@ -10,6 +10,7 @@ public class MusicHubDbContext(DbContextOptions<MusicHubDbContext> options) : Db
     public DbSet<Track> Tracks => Set<Track>();
     public DbSet<Artist> Artists => Set<Artist>();
     public DbSet<TrackArtist> TrackArtists => Set<TrackArtist>();
+    public DbSet<TrackExternalId> TrackExternalIds => Set<TrackExternalId>();
     public DbSet<ArtistExternalLink> ArtistExternalLinks => Set<ArtistExternalLink>();
 
     public DbSet<IdentificationOutcome> IdentificationOutcomes => Set<IdentificationOutcome>();
@@ -42,11 +43,22 @@ public class MusicHubDbContext(DbContextOptions<MusicHubDbContext> options) : Db
 
         modelBuilder.Entity<Track>(track =>
         {
-            track.Property(t => t.Title).HasMaxLength(500);
-            track.Property(t => t.Version).HasMaxLength(500);
+            track.Property(t => t.Title).HasMaxLength(CatalogLimits.Title);
+            track.Property(t => t.Version).HasMaxLength(CatalogLimits.Version);
         });
 
-        modelBuilder.Entity<Artist>().Property(a => a.Name).HasMaxLength(500);
+        modelBuilder.Entity<TrackExternalId>(external =>
+        {
+            external.Property(e => e.Provider).HasMaxLength(CatalogLimits.Provider);
+            external.Property(e => e.ExternalId).HasMaxLength(CatalogLimits.ExternalId);
+            external.HasOne(e => e.Track).WithMany(t => t.ExternalIds)
+                .HasForeignKey(e => e.TrackId).OnDelete(DeleteBehavior.Cascade);
+            // A provider recording is one catalog track.
+            external.HasIndex(e => new { e.Provider, e.ExternalId }).IsUnique();
+            external.HasIndex(e => e.TrackId);
+        });
+
+        modelBuilder.Entity<Artist>().Property(a => a.Name).HasMaxLength(CatalogLimits.ArtistName);
 
         modelBuilder.Entity<ArtistExternalLink>(link =>
         {
@@ -65,7 +77,7 @@ public class MusicHubDbContext(DbContextOptions<MusicHubDbContext> options) : Db
 
         modelBuilder.Entity<TrackArtist>(link =>
         {
-            link.Property(l => l.Role).HasMaxLength(100);
+            link.Property(l => l.Role).HasMaxLength(CatalogLimits.Role);
             link.HasOne(l => l.Track).WithMany(t => t.Artists)
                 .HasForeignKey(l => l.TrackId).OnDelete(DeleteBehavior.Cascade);
             link.HasOne(l => l.Artist).WithMany(a => a.Tracks)

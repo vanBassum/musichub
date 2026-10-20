@@ -71,13 +71,13 @@ public sealed class TracksControllerTests : IDisposable
     {
         using var db = CreateDb();
         return Body<PagedResponse<TrackResponse>>(
-            await new TracksController(db).List(search, hasAudio, fields, page, pageSize, default));
+            await new TracksController(db, new Wishlist(db, TimeProvider.System)).List(search, hasAudio, fields, page, pageSize, default));
     }
 
     private async Task<IActionResult> GetDetail(int id)
     {
         using var db = CreateDb();
-        return await new TracksController(db).Get(id, default);
+        return await new TracksController(db, new Wishlist(db, TimeProvider.System)).Get(id, default);
     }
 
     [Fact]
@@ -135,7 +135,7 @@ public sealed class TracksControllerTests : IDisposable
     public async Task List_WithInvalidPaging_IsRejected(int page, int pageSize)
     {
         using var db = CreateDb();
-        Invalid(await new TracksController(db).List(null, null, null, page, pageSize, default));
+        Invalid(await new TracksController(db, new Wishlist(db, TimeProvider.System)).List(null, null, null, page, pageSize, default));
     }
 
     [Fact]
@@ -199,7 +199,7 @@ public sealed class TracksControllerTests : IDisposable
     public async Task List_WithUnknownOrEmptyFields_ReturnsBadRequest(string fields)
     {
         using var db = CreateDb();
-        var result = await new TracksController(db).List("a", null, fields, 1, 25, default);
+        var result = await new TracksController(db, new Wishlist(db, TimeProvider.System)).List("a", null, fields, 1, 25, default);
         Assert.Contains("fields", Invalid(result).Errors.Keys);
     }
 

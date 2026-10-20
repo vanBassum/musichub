@@ -11,6 +11,8 @@ export interface CatalogTrack {
   createdAt: string
   artists: CatalogArtist[]
   hasAudio: boolean
+  // The user explicitly wants the track; independent of hasAudio.
+  wanted: boolean
 }
 
 export interface PagedTracks {
@@ -153,6 +155,42 @@ export function fetchExternalTracks(
     `/api/external/tracks?${params}`,
     signal
   )
+}
+
+export interface WishlistResult {
+  status: "added" | "alreadyWanted"
+  track: CatalogTrack
+  created: boolean
+}
+
+async function sendWish(url: string, init: RequestInit) {
+  const response = await fetch(url, init)
+  if (!response.ok) {
+    throw new Error(`The server answered ${response.status}.`)
+  }
+  // Only a 200 or 201 that says the track is wanted counts: anything else is an error,
+  // so the UI never shows Wanted for a track that is not.
+  const result = (await response.json()) as Partial<WishlistResult>
+  if (
+    (response.status !== 200 && response.status !== 201) ||
+    (result.status !== "added" && result.status !== "alreadyWanted") ||
+    result.track?.wanted !== true
+  ) {
+    throw new Error("The server did not confirm the track as wanted.")
+  }
+  return result as WishlistResult
+}
+
+export function wantCatalogTrack(id: number) {
+  return sendWish(`/api/tracks/${id}/wanted`, { method: "PUT" })
+}
+
+export function wantExternalTrack(track: ExternalTrack) {
+  return sendWish("/api/tracks/wishlist/external", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(track),
+  })
 }
 
 export function fetchExternalArtists(

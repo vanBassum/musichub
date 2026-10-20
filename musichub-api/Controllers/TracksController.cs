@@ -6,12 +6,12 @@ using MusicHub.Api.Data;
 namespace MusicHub.Api.Controllers;
 
 /// <summary>
-/// The catalog of known tracks, independent of audio files. Read-only: it lists, searches
-/// and shows tracks; how tracks enter or change in the catalog is not part of this API.
+/// The catalog of known tracks, independent of audio files. It lists, searches and shows tracks and lets the
+/// user mark them wanted (the wishlist); other changes to the catalog are not part of this API.
 /// </summary>
 [ApiController]
 [Route("api/tracks")]
-public class TracksController(MusicHubDbContext db) : ControllerBase
+public class TracksController(MusicHubDbContext db, Wishlist wishlist) : ControllerBase
 {
     public const int MaxPageSize = 100;
     private const int DefaultPageSize = 25;
@@ -51,6 +51,47 @@ public class TracksController(MusicHubDbContext db) : ControllerBase
         var track = await FindResponse(id, cancellationToken);
         return track is null ? NotFound() : Ok(track);
     }
+
+    /// <summary>Marks an existing catalog track wanted. Idempotent: 200 with status added or alreadyWanted.</summary>
+    [HttpPut("{id:int}/wanted")]
+    public async Task<IActionResult> Want(int id, CancellationToken cancellationToken)
+    {
+        var result = await wishlist.AddCatalogTrackAsync(id, cancellationToken);
+        return result is null ? NotFound() : Ok(result);
+    }
+
+    /// <summary>
+    /// Wants a track the user chose from external search results. Idempotent. Answers 201 when the catalog track was
+    /// created (no catalog track is mapped to the provider identifier), and 200 when the mapped track was reused
+    /// (status added or alreadyWanted).
+    /// </summary>
+    [HttpPost("wishlist/external")]
+    public async Task<IActionResult> WantExternal(
+        [FromBody] ExternalTrackWishlistRequest request, CancellationToken cancellationToken)
+    {
+        var errors = new Dictionary<string, string[]>();
+        if (string.IsNullOrWhiteSpace(request.Provider)) errors["provider"] = ["Provider is required."];
+        if (string.IsNullOrWhiteSpace(request.ExternalId)) errors["externalId"] = ["External id is required."];
+        if (string.IsNullOrWhiteSpace(request.Title)) errors["title"] = ["Title is required."];
+        if (request.Artists is null || request.Artists.Any(a => a is null))
+            errors["artists"] = ["Artists must be a list of artists with a name."];
+        else if (!request.Artists.Any(a => !string.IsNullOrWhiteSpace(a.Name)))
+            errors["artists"] = ["At least one artist with a name is required."];
+        else if (request.Artists.Any(a => a.Name?.Trim().Length > CatalogLimits.ArtistName))
+            errors["artists"] = [$"An artist name is at most {CatalogLimits.ArtistName} characters."];
+        if (TooLong(request.Provider, CatalogLimits.Provider)) errors["provider"] = [$"Provider is at most {CatalogLimits.Provider} characters."];
+        if (TooLong(request.ExternalId, CatalogLimits.ExternalId)) errors["externalId"] = [$"External id is at most {CatalogLimits.ExternalId} characters."];
+        if (TooLong(request.Title, CatalogLimits.Title)) errors["title"] = [$"Title is at most {CatalogLimits.Title} characters."];
+        if (TooLong(request.Disambiguation, CatalogLimits.Version)) errors["disambiguation"] = [$"Disambiguation is at most {CatalogLimits.Version} characters."];
+        if (errors.Count > 0)
+            return BadRequest(new ValidationProblemDetails(errors));
+
+        var result = await wishlist.AddExternalTrackAsync(request, cancellationToken);
+        return result.Created ? StatusCode(StatusCodes.Status201Created, result) : Ok(result);
+    }
+
+    // Checked on the trimmed value, which is what is stored.
+    private static bool TooLong(string? value, int max) => value?.Trim().Length > max;
 
     private Task<TrackResponse?> FindResponse(int id, CancellationToken cancellationToken) =>
         db.Tracks.AsNoTracking()
