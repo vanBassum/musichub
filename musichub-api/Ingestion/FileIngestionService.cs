@@ -118,13 +118,27 @@ public sealed class FileIngestionService(
     /// </summary>
     public async Task<(FileRecord Record, Stream Content)?> OpenStoredAsync(int id, CancellationToken cancellationToken)
     {
-        var record = await db.Files.AsNoTracking().FirstOrDefaultAsync(f => f.Id == id, cancellationToken);
-        if (record is not { Status: FileStatus.Stored })
+        var record = await FindStoredAsync(id, cancellationToken);
+        if (record is null)
             return null;
 
         var content = await storage.OpenReadAsync(record.StorageKey, cancellationToken);
         return (record, content);
     }
+
+    /// <summary>Returns the registration <paramref name="id"/> when it is Stored; null when it doesn't exist or is not Stored.</summary>
+    public async Task<FileRecord?> FindStoredAsync(int id, CancellationToken cancellationToken)
+    {
+        var record = await db.Files.AsNoTracking().FirstOrDefaultAsync(f => f.Id == id, cancellationToken);
+        return record is { Status: FileStatus.Stored } ? record : null;
+    }
+
+    /// <summary>
+    /// Opens bytes <paramref name="start"/> to <paramref name="end"/> (inclusive) of a Stored record's object.
+    /// The caller owns the stream. Throws <see cref="FileNotFoundException"/> when the object is gone.
+    /// </summary>
+    public Task<Stream> OpenStoredRangeAsync(FileRecord record, long start, long end, CancellationToken cancellationToken) =>
+        storage.OpenReadRangeAsync(record.StorageKey, start, end, cancellationToken);
 
     private static void VerifyReceived(int fileId, Sha256HashingStream body, UploadExpectation? expected)
     {

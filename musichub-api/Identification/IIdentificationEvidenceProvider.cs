@@ -50,8 +50,21 @@ public enum EvidenceAvailability
 /// <param name="Detail">The tool's own provenance for the suggestion, e.g. an external recording ID and the service's
 /// score; shown with the evidence, never read as MusicHub's confidence.</param>
 /// <param name="Reference">Where the source names this candidate, when it does.</param>
+/// <param name="ArtistReferences">The source's own identifiers of the artists it credits, when it gives them; each
+/// pairs with the entry of <paramref name="Artists"/> that has the same name.</param>
 public sealed record EvidenceCandidate(
-    string Title, IReadOnlyList<string> Artists, string? Album, string? Detail = null, EvidenceSourceReference? Reference = null);
+    string Title,
+    IReadOnlyList<string> Artists,
+    string? Album,
+    string? Detail = null,
+    EvidenceSourceReference? Reference = null,
+    IReadOnlyList<ArtistReference>? ArtistReferences = null);
+
+/// <summary>A source's identifier of one credited artist, e.g. a MusicBrainz artist ID.</summary>
+/// <param name="Source">The provider, as <see cref="ICandidateSearch.Source"/> names it.</param>
+/// <param name="ExternalId">The provider's identifier of the artist.</param>
+/// <param name="Name">The artist name as the candidate credits it.</param>
+public sealed record ArtistReference(string Source, string ExternalId, string Name);
 
 /// <summary>A candidate as the source identifies it: its identifiers and URLs, and what the source says about it.</summary>
 /// <param name="RecordingId">The source's identifier for the recording.</param>

@@ -1,11 +1,5 @@
-import { SlidersHorizontal } from "lucide-react"
-import {
-  useCallback,
-  useLayoutEffect,
-  useRef,
-  useState,
-  type ReactNode,
-} from "react"
+import { ChevronLeft, ChevronRight, SlidersHorizontal } from "lucide-react"
+import { useMemo, useSyncExternalStore, type ReactNode } from "react"
 
 import { ArtistPage } from "@/components/artist-page"
 import { BuildInfoSheet } from "@/components/build-info-sheet"
@@ -14,7 +8,16 @@ import { FilesView } from "@/components/files-view"
 import { GlobalSearch } from "@/components/global-search"
 import { JobsView } from "@/components/jobs-view"
 import { MobileNav } from "@/components/mobile-nav"
-import { mobilePageIndex } from "@/components/mobile-pages"
+import {
+  formatLocation,
+  moreScreens,
+  parseLocation,
+  type MobileLocation,
+  type MobileTabId,
+  type MoreScreenId,
+  type PlayerView,
+} from "@/components/mobile-pages"
+import { NowPlaying, QueueList } from "@/components/player-panel"
 import { Button } from "@/components/ui/button"
 import {
   Sheet,
@@ -22,9 +25,10 @@ import {
   SheetTitle,
   SheetTrigger,
 } from "@/components/ui/sheet"
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import type { Track } from "@/data/mock-tracks"
 import type { FilesState } from "@/lib/use-files"
 import type { JobsState } from "@/lib/use-jobs"
-import type { PlayerState } from "@/lib/use-player"
 import { cn } from "@/lib/utils"
 
 interface MobileShellProps {
@@ -32,122 +36,182 @@ interface MobileShellProps {
   total: number | undefined
   filters: ReactNode
   table: ReactNode
-  player: PlayerState
+  queue: Track[]
+  nowPlayingId: string
   filesState: FilesState
   jobsState: JobsState
   onSelectTrack: (trackId: number) => void
 }
 
-const libraryPage = mobilePageIndex("library")
-const filesPage = mobilePageIndex("files")
-const artistsPage = mobilePageIndex("artists")
-const jobsPage = mobilePageIndex("jobs")
+const pageClassName = "flex min-h-0 flex-1 flex-col overflow-hidden"
 
-const pageClassName =
-  "flex h-full w-full shrink-0 snap-center snap-always flex-col overflow-hidden"
+function subscribe(onChange: () => void) {
+  window.addEventListener("hashchange", onChange)
+  return () => window.removeEventListener("hashchange", onChange)
+}
 
-// Below `lg` the Library, Files, Artists and Jobs views become full-width pages in a
-// horizontal scroll-snap strip, opening on the Library. The compact player sits between
-// the strip and the page navigation. Pages that aren't showing are inert, so keyboard
-// focus can't land in them.
+const getHash = () => window.location.hash
+
+function go(location: MobileLocation) {
+  window.location.hash = formatLocation(location)
+}
+
+// A page that isn't showing stays mounted (so uploads, jobs and search keep their
+// state) but is hidden and inert, so keyboard focus can't land in it.
+function Page({
+  show,
+  label,
+  className,
+  children,
+}: {
+  show: boolean
+  label: string
+  className?: string
+  children: ReactNode
+}) {
+  return (
+    <section
+      aria-label={label}
+      hidden={!show}
+      inert={!show}
+      className={cn(pageClassName, className)}
+    >
+      {children}
+    </section>
+  )
+}
+
+// Below `lg` the phone has three destinations: Search, Player (Now Playing and
+// Queue) and More (Library, Files, Jobs, Artists). The location is the URL hash.
+// Outside the Player page a compact player sits above the navigation.
 export function MobileShell({
   total,
   filters,
   table,
-  player,
+  queue,
+  nowPlayingId,
   filesState,
   jobsState,
   onSelectTrack,
 }: MobileShellProps) {
-  const strip = useRef<HTMLDivElement>(null)
-  const [active, setActive] = useState(libraryPage)
+  const hash = useSyncExternalStore(subscribe, getHash)
+  const location = useMemo(() => parseLocation(hash), [hash])
+  const { tab, screen, playerView } = location
 
-  useLayoutEffect(() => {
-    const element = strip.current
-    if (!element) return
-    element.scrollTo({ left: libraryPage * element.clientWidth })
-
-    // A rotation changes the page width: stay on the page that is showing.
-    let page = libraryPage
-    const onResize = () =>
-      element.scrollTo({ left: page * element.clientWidth })
-    const onScroll = () => {
-      page = Math.round(element.scrollLeft / element.clientWidth)
-      setActive(page)
-    }
-    window.addEventListener("resize", onResize)
-    element.addEventListener("scroll", onScroll, { passive: true })
-    return () => {
-      window.removeEventListener("resize", onResize)
-      element.removeEventListener("scroll", onScroll)
-    }
-  }, [])
-
-  const navigate = useCallback((index: number) => {
-    const element = strip.current
-    if (!element) return
-    const reduceMotion = window.matchMedia(
-      "(prefers-reduced-motion: reduce)"
-    ).matches
-    element.scrollTo({
-      left: index * element.clientWidth,
-      behavior: reduceMotion ? "instant" : "smooth",
-    })
-  }, [])
+  const navigate = (id: MobileTabId) =>
+    go({ tab: id, screen: null, playerView: "now-playing" })
+  const openScreen = (id: MoreScreenId) =>
+    go({ tab: "more", screen: id, playerView })
+  const showMore = (id: MoreScreenId) => tab === "more" && screen === id
 
   return (
     <div className="flex h-dvh flex-col overflow-hidden">
-      <GlobalSearch
-        onSelectTrack={onSelectTrack}
-        onSelectArtist={() => navigate(artistsPage)}
-        className="border-b p-2"
-      />
-      <div
-        ref={strip}
-        className="flex min-h-0 flex-1 snap-x snap-mandatory [scrollbar-width:none] overflow-x-auto overflow-y-hidden overscroll-x-contain [&::-webkit-scrollbar]:hidden"
-      >
-        <div
-          inert={active !== libraryPage}
-          className={cn(pageClassName, "gap-3 p-3")}
+      <Page show={tab === "search"} label="Search" className="gap-2 p-2">
+        <GlobalSearch
+          variant="page"
+          onSelectTrack={onSelectTrack}
+          onSelectArtist={() => openScreen("artists")}
+          className="flex-1"
+        />
+      </Page>
+      <Page show={tab === "player"} label="Player">
+        <Tabs
+          value={playerView}
+          onValueChange={(value) =>
+            go({ tab: "player", screen: null, playerView: value as PlayerView })
+          }
+          className="p-2 pb-0"
         >
+          <TabsList className="w-full">
+            <TabsTrigger value="now-playing">Now Playing</TabsTrigger>
+            <TabsTrigger value="queue">Queue</TabsTrigger>
+          </TabsList>
+        </Tabs>
+        <div
+          hidden={playerView !== "now-playing"}
+          className="min-h-0 flex-1 overflow-y-auto"
+        >
+          <NowPlaying large />
+        </div>
+        <div hidden={playerView !== "queue"} className="min-h-0 flex-1 p-3">
+          <div className="flex h-full min-h-0 flex-col rounded-xl border bg-card">
+            <QueueList queue={queue} nowPlayingId={nowPlayingId} />
+          </div>
+        </div>
+      </Page>
+      <Page
+        show={tab === "more" && screen === null}
+        label="More"
+        className="gap-3 p-3"
+      >
+        <div className="flex items-center gap-2">
+          <h1 className="text-xl font-semibold">More</h1>
+          <BuildInfoSheet className="ml-auto" />
+        </div>
+        <ul className="flex flex-col gap-1">
+          {moreScreens.map(({ id, label, icon: Icon }) => (
+            <li key={id}>
+              <Button
+                variant="ghost"
+                className="h-12 w-full justify-start gap-3 text-base"
+                onClick={() => openScreen(id)}
+              >
+                <Icon />
+                <span className="flex-1 text-left">{label}</span>
+                <ChevronRight className="text-muted-foreground" />
+              </Button>
+            </li>
+          ))}
+        </ul>
+      </Page>
+      {moreScreens.map(({ id, label }) => (
+        <Page key={id} show={showMore(id)} label={label} className="gap-3 p-3">
           <div className="flex items-center gap-2">
-            <h1 className="text-xl font-semibold">Library</h1>
-            {total !== undefined && (
+            <Button
+              variant="ghost"
+              size="icon-lg"
+              aria-label="Back to More"
+              onClick={() => navigate("more")}
+            >
+              <ChevronLeft />
+            </Button>
+            <h1 className="text-xl font-semibold">{label}</h1>
+            {id === "library" && total !== undefined && (
               <span className="text-muted-foreground">{total} tracks</span>
             )}
-            <BuildInfoSheet className="ml-auto" />
-            <Sheet>
-              <SheetTrigger
-                render={
-                  <Button
-                    variant="outline"
-                    size="icon-lg"
-                    aria-label="Filters"
-                  />
-                }
-              >
-                <SlidersHorizontal />
-              </SheetTrigger>
-              <SheetContent side="bottom" className="h-[85dvh]">
-                <SheetTitle className="sr-only">Filters</SheetTitle>
-                {filters}
-              </SheetContent>
-            </Sheet>
+            {id === "library" && (
+              <Sheet>
+                <SheetTrigger
+                  render={
+                    <Button
+                      variant="outline"
+                      size="icon-lg"
+                      aria-label="Filters"
+                      className="ml-auto"
+                    />
+                  }
+                >
+                  <SlidersHorizontal />
+                </SheetTrigger>
+                <SheetContent side="bottom" className="h-[85dvh]">
+                  <SheetTitle className="sr-only">Filters</SheetTitle>
+                  {filters}
+                </SheetContent>
+              </Sheet>
+            )}
           </div>
-          {table}
-        </div>
-        <div inert={active !== filesPage} className={cn(pageClassName, "p-3")}>
-          <FilesView state={filesState} className="flex-1" />
-        </div>
-        <div inert={active !== artistsPage} className={cn(pageClassName, "p-3")}>
-          <ArtistPage className="flex-1" />
-        </div>
-        <div inert={active !== jobsPage} className={cn(pageClassName, "p-3")}>
-          <JobsView state={jobsState} className="flex-1" />
-        </div>
-      </div>
-      <CompactPlayer player={player} />
-      <MobileNav active={active} onNavigate={navigate} />
+          {id === "library" && table}
+          {id === "files" && (
+            <FilesView state={filesState} className="flex-1" />
+          )}
+          {id === "jobs" && <JobsView state={jobsState} className="flex-1" />}
+          {id === "artists" && <ArtistPage className="flex-1" />}
+        </Page>
+      ))}
+      {tab !== "player" && (
+        <CompactPlayer queue={queue} nowPlayingId={nowPlayingId} />
+      )}
+      <MobileNav active={tab} onNavigate={navigate} />
     </div>
   )
 }

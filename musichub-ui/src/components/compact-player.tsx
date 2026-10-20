@@ -1,6 +1,5 @@
-import { Pause, Play, SkipBack, SkipForward } from "lucide-react"
+import { Music, Pause, Play, SkipBack, SkipForward } from "lucide-react"
 
-import { CoverArt } from "@/components/cover-art"
 import { NowPlaying, QueueList } from "@/components/player-panel"
 import { Button } from "@/components/ui/button"
 import {
@@ -9,41 +8,46 @@ import {
   SheetTitle,
   SheetTrigger,
 } from "@/components/ui/sheet"
-import type { PlayerState } from "@/lib/use-player"
+import type { Track } from "@/data/mock-tracks"
+import { usePlayer } from "@/lib/use-player"
 
 interface CompactPlayerProps {
-  player: PlayerState
+  queue: Track[]
+  nowPlayingId: string
 }
 
-// The persistent player below `lg`: a bar above the page navigation, with the current
-// track and the basic controls (previous and next from `md` up). Activating the track
-// opens the full player as an overlay over the current page; closing it returns there.
-export function CompactPlayer({ player }: CompactPlayerProps) {
-  const { current, playing } = player
-  if (!current) return null
+// The persistent player below `lg`, outside the Player page: a bar above the navigation
+// with the loaded file and play/pause (previous and next, still placeholders, from `md`).
+// Activating the file opens the full player as an overlay over the current page; closing
+// it returns there. It shows only while something is loaded.
+export function CompactPlayer({ queue, nowPlayingId }: CompactPlayerProps) {
+  const { source, status, toggle } = usePlayer()
+  if (!source) return null
+
+  const playing = status === "playing" || status === "loading"
 
   return (
     <Sheet>
       <section
-        aria-label="Player"
+        aria-label="Compact player"
         className="flex items-center gap-1 border-t bg-card p-2"
       >
         <SheetTrigger
           render={
             <Button
               variant="ghost"
-              aria-label={`Open player: ${current.title} by ${current.artist}`}
+              aria-label={`Open player: ${source.title}`}
               className="h-12 min-w-0 flex-1 justify-start gap-3 px-1"
             />
           }
         >
-          <CoverArt track={current} className="size-10 text-xs" />
+          <span className="flex size-10 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground">
+            <Music className="size-5" />
+          </span>
           <span className="flex min-w-0 flex-col text-left">
-            <span className="truncate text-sm font-medium">
-              {current.title}
-            </span>
+            <span className="truncate text-sm font-medium">{source.title}</span>
             <span className="truncate text-xs text-muted-foreground">
-              {current.artist}
+              Stored file
             </span>
           </span>
         </SheetTrigger>
@@ -52,14 +56,16 @@ export function CompactPlayer({ player }: CompactPlayerProps) {
           size="icon-lg"
           disabled
           aria-label="Previous"
+          title="Not available yet"
           className="hidden size-10 md:inline-flex"
         >
           <SkipBack className="fill-current" />
         </Button>
         <Button
           size="icon-lg"
+          disabled={status === "error"}
           aria-label={playing ? "Pause" : "Play"}
-          onClick={player.onTogglePlaying}
+          onClick={toggle}
           className="size-10 rounded-full"
         >
           {playing ? (
@@ -73,16 +79,20 @@ export function CompactPlayer({ player }: CompactPlayerProps) {
           size="icon-lg"
           disabled
           aria-label="Next"
+          title="Not available yet"
           className="hidden size-10 md:inline-flex"
         >
           <SkipForward className="fill-current" />
         </Button>
       </section>
-      <SheetContent side="bottom" className="data-[side=bottom]:h-dvh sm:max-w-none">
+      <SheetContent
+        side="bottom"
+        className="data-[side=bottom]:h-dvh sm:max-w-none"
+      >
         <SheetTitle className="sr-only">Player</SheetTitle>
         <div className="mx-auto flex min-h-0 w-full max-w-xl flex-1 flex-col overflow-y-auto pt-10">
-          <NowPlaying player={player} large />
-          <QueueList queue={player.queue} nowPlayingId={player.nowPlayingId} />
+          <NowPlaying large />
+          <QueueList queue={queue} nowPlayingId={nowPlayingId} />
         </div>
       </SheetContent>
     </Sheet>

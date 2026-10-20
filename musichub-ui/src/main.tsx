@@ -4,11 +4,14 @@ import { createRoot } from "react-dom/client"
 import "./index.css"
 import App from "./App.tsx"
 import { ThemeProvider } from "@/components/theme-provider.tsx"
+import { PlayerProvider } from "@/lib/use-player.tsx"
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <ThemeProvider defaultTheme="dark">
-      <App />
+      <PlayerProvider>
+        <App />
+      </PlayerProvider>
     </ThemeProvider>
   </StrictMode>
 )
