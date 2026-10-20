@@ -379,6 +379,20 @@ public sealed class CatalogReconciliationTests : IDisposable
     }
 
     [Fact]
+    public void Methods_round_trip_through_the_outcome_and_unreadable_json_gives_an_empty_list()
+    {
+        var outcome = new IdentificationOutcome();
+        outcome.SetMethods([new IdentificationMethodResult("acoustid", IdentificationMethodStatus.Found, "one hit", ["\"Song\" by Artist"])]);
+
+        var method = Assert.Single(outcome.ReadMethods());
+        Assert.Equal(("acoustid", IdentificationMethodStatus.Found, "one hit"), (method.Source, method.Status, method.Note));
+        Assert.Equal("\"Song\" by Artist", Assert.Single(method.Candidates));
+
+        outcome.MethodsJson = "not json";
+        Assert.Empty(outcome.ReadMethods());
+    }
+
+    [Fact]
     public async Task Repeated_executions_keep_their_own_outcomes()
     {
         _identities["x.mp3"] = () => Unresolved("nothing", Method("musicbrainz", IdentificationMethodStatus.NothingFound));

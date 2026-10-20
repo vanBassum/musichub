@@ -1,4 +1,3 @@
-using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using MusicHub.Api.Data;
 using MusicHub.Api.Identification;
@@ -120,14 +119,12 @@ public sealed class CatalogReconciliation(
         public IReadOnlyList<IdentificationMethodResult> Methods { get; set; } = [];
     }
 
-    internal static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
-
     // The diagnostic must never fail the file: it only describes what happened.
     private async Task RecordAsync(string executionId, int fileId, Attempt attempt, CancellationToken cancellationToken)
     {
         try
         {
-            db.IdentificationOutcomes.Add(new IdentificationOutcome
+            var outcome = new IdentificationOutcome
             {
                 JobExecutionId = executionId,
                 FileId = fileId,
@@ -135,9 +132,10 @@ public sealed class CatalogReconciliation(
                 Decision = attempt.Decision,
                 Reason = IdentificationOutcome.Truncate(attempt.Reason, IdentificationOutcome.ReasonMaxLength),
                 TrackId = attempt.TrackId,
-                MethodsJson = JsonSerializer.Serialize(attempt.Methods, JsonOptions),
                 RecordedAt = time.GetUtcNow(),
-            });
+            };
+            outcome.SetMethods(attempt.Methods);
+            db.IdentificationOutcomes.Add(outcome);
             await db.SaveChangesAsync(cancellationToken);
         }
         catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)

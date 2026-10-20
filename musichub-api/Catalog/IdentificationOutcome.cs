@@ -1,4 +1,6 @@
+using System.Text.Json;
 using System.Text.Json.Serialization;
+using MusicHub.Api.Identification;
 using MusicHub.Api.Ingestion;
 
 namespace MusicHub.Api.Catalog;
@@ -63,6 +65,26 @@ public class IdentificationOutcome
     /// <summary>The track the file was linked to, when <see cref="Decision"/> is Identified.</summary>
     public int? TrackId { get; set; }
 
+    /// <summary>The serialized method results; only <see cref="SetMethods"/> and <see cref="ReadMethods"/> know the format.</summary>
     public string MethodsJson { get; set; } = "[]";
     public DateTimeOffset RecordedAt { get; set; }
+
+    private static readonly JsonSerializerOptions MethodsJsonOptions = new(JsonSerializerDefaults.Web);
+
+    /// <summary>Stores what each method did in <see cref="MethodsJson"/>.</summary>
+    public void SetMethods(IReadOnlyList<IdentificationMethodResult> methods) =>
+        MethodsJson = JsonSerializer.Serialize(methods, MethodsJsonOptions);
+
+    /// <summary>What each method did; an unreadable <see cref="MethodsJson"/> gives an empty list, so one bad row never hides the rest.</summary>
+    public IReadOnlyList<IdentificationMethodResult> ReadMethods()
+    {
+        try
+        {
+            return JsonSerializer.Deserialize<List<IdentificationMethodResult>>(MethodsJson, MethodsJsonOptions) ?? [];
+        }
+        catch (JsonException)
+        {
+            return [];
+        }
+    }
 }

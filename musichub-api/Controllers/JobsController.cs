@@ -1,4 +1,3 @@
-using System.Text.Json;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using MusicHub.Api.Catalog;
@@ -71,19 +70,7 @@ public class JobsController(CatalogReconciliationJobService catalogReconciliatio
             .OrderBy(o => o.Id)
             .ToListAsync(cancellationToken);
         return Ok(rows.Select(o => new FileOutcome(
-            o.FileId, o.FileName, o.Decision, o.Reason, o.TrackId, o.RecordedAt, ReadMethods(o.MethodsJson))));
-    }
-
-    private static IReadOnlyList<IdentificationMethodResult> ReadMethods(string json)
-    {
-        try
-        {
-            return JsonSerializer.Deserialize<List<IdentificationMethodResult>>(json, CatalogReconciliation.JsonOptions) ?? [];
-        }
-        catch (JsonException)
-        {
-            return [];
-        }
+            o.FileId, o.FileName, o.Decision, o.Reason, o.TrackId, o.RecordedAt, o.ReadMethods())));
     }
 
     /// <summary>Enqueues a catalog reconciliation run: 202 with the new execution. 409 while a run is already active.</summary>
