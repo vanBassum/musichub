@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using MusicHub.Api.Acquisition;
 using MusicHub.Api.Catalog;
 using MusicHub.Api.Ingestion;
 
@@ -17,8 +18,30 @@ public class MusicHubDbContext(DbContextOptions<MusicHubDbContext> options) : Db
 
     public DbSet<AppliedIdentification> AppliedIdentifications => Set<AppliedIdentification>();
 
+    public DbSet<AcquisitionDownload> AcquisitionDownloads => Set<AcquisitionDownload>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
+        modelBuilder.Entity<AcquisitionDownload>(download =>
+        {
+            download.Property(d => d.Provider).HasMaxLength(AcquisitionDownload.ProviderMaxLength);
+            download.Property(d => d.Source).HasMaxLength(AcquisitionDownload.SourceMaxLength);
+            download.Property(d => d.RemotePath).HasMaxLength(AcquisitionDownload.RemotePathMaxLength);
+            download.Property(d => d.Reason).HasMaxLength(AcquisitionDownload.ReasonMaxLength);
+            download.Property(d => d.ContentHash).HasMaxLength(64);
+            download.Property(d => d.State).HasConversion<string>().HasMaxLength(20);
+            download.Property(d => d.Failure).HasConversion<string>().HasMaxLength(30);
+            download.Property(d => d.Outcome).HasConversion<string>().HasMaxLength(20);
+            // History outlives its track and its file: deleting either only empties the reference.
+            download.HasOne(d => d.IntendedTrack).WithMany()
+                .HasForeignKey(d => d.IntendedTrackId).OnDelete(DeleteBehavior.SetNull);
+            download.HasOne(d => d.File).WithMany()
+                .HasForeignKey(d => d.FileId).OnDelete(DeleteBehavior.SetNull);
+            download.HasIndex(d => new { d.Provider, d.Source, d.RemotePath });
+            download.HasIndex(d => d.ContentHash);
+            download.HasIndex(d => d.StartedAt);
+        });
+
         modelBuilder.Entity<AppliedIdentification>(applied =>
         {
             applied.Property(a => a.Source).HasConversion<string>().HasMaxLength(50);
