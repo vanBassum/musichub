@@ -79,13 +79,13 @@ export function TrackTable({
           status === "loading" && data && "opacity-60"
         )}
       >
-        <Table className="min-w-[32rem] text-sm">
+        <Table className="table-fixed text-sm sm:table-auto">
           <TableHeader className="sticky top-0 z-10 bg-card">
             <TableRow className="hover:bg-transparent">
               <TableHead className="pl-4">Title</TableHead>
-              <TableHead>Artist</TableHead>
-              <TableHead>Audio</TableHead>
-              <TableHead className="pr-4">Added</TableHead>
+              <TableHead className="hidden sm:table-cell">Artist</TableHead>
+              <TableHead className="w-24 pr-4 sm:w-auto sm:pr-2">Audio</TableHead>
+              <TableHead className="hidden pr-4 sm:table-cell">Added</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -111,7 +111,7 @@ export function TrackTable({
                     selected && "bg-primary/20 hover:bg-primary/25"
                   )}
                 >
-                  <TableCell className="max-w-64 truncate pl-4 font-medium">
+                  <TableCell className="truncate pl-4 font-medium sm:max-w-64">
                     {track.title}
                     {track.version && (
                       <span className="font-normal text-muted-foreground">
@@ -119,16 +119,19 @@ export function TrackTable({
                         ({track.version})
                       </span>
                     )}
+                    <span className="block truncate text-xs font-normal text-muted-foreground sm:hidden">
+                      {artistNames(track) || "No artist"} · {formatDate(track.createdAt)}
+                    </span>
                   </TableCell>
-                  <TableCell className="max-w-56 truncate">
+                  <TableCell className="hidden max-w-56 truncate sm:table-cell">
                     {artistNames(track) || (
                       <span className="text-muted-foreground">No artist</span>
                     )}
                   </TableCell>
-                  <TableCell>
+                  <TableCell className="pr-4 sm:pr-2">
                     <AudioBadge hasAudio={track.hasAudio} />
                   </TableCell>
-                  <TableCell className="pr-4">
+                  <TableCell className="hidden pr-4 sm:table-cell">
                     {formatDate(track.createdAt)}
                   </TableCell>
                 </TableRow>

@@ -16,6 +16,7 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover"
 import { Skeleton } from "@/components/ui/skeleton"
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { WishlistButton } from "@/components/wishlist-button"
 import { artistNames, wantExternalTrack } from "@/lib/catalog-api"
 import { useExternalSearch } from "@/lib/use-external-search"
@@ -26,8 +27,13 @@ import { cn } from "@/lib/utils"
 interface GlobalSearchProps {
   onSelectTrack: (trackId: number) => void
   onSelectArtist: (artistId: number) => void
+  // "popover" (default) drops the results over the page; "page" shows them inline,
+  // split into All / My Music / External.
+  variant?: "popover" | "page"
   className?: string
 }
+
+type Scope = "all" | "local" | "external"
 
 function Group({
   label,
@@ -183,15 +189,20 @@ function ExternalResults({
 export function GlobalSearch({
   onSelectTrack,
   onSelectArtist,
+  variant = "popover",
   className,
 }: GlobalSearchProps) {
   const [input, setInput] = useState("")
   const [open, setOpen] = useState(false)
+  const [scope, setScope] = useState<Scope>("all")
   const { fields, setField } = useSearchFields()
   const search = useGlobalSearch(input, fields)
   const external = useExternalSearch(input, fields)
   const resultsId = useId()
-  const showResults = open && search.status !== "idle"
+  const inline = variant === "page"
+  const showResults = (inline || open) && search.status !== "idle"
+  const showLocal = scope !== "external"
+  const showExternal = scope !== "local"
 
   const choose = (select: () => void) => {
     select()
@@ -200,7 +211,12 @@ export function GlobalSearch({
 
   return (
     <div
-      className={cn("relative flex items-center gap-1", className)}
+      className={cn(
+        inline
+          ? "flex min-h-0 flex-col gap-2"
+          : "relative flex items-center gap-1",
+        className
+      )}
       onFocus={() => setOpen(true)}
       onBlur={(event) => {
         if (!event.currentTarget.contains(event.relatedTarget)) setOpen(false)
@@ -209,6 +225,7 @@ export function GlobalSearch({
         if (event.key === "Escape") setOpen(false)
       }}
     >
+      <div className={cn("flex items-center gap-1", !inline && "flex-1")}>
       <div className="relative flex-1">
         <Search
           className="pointer-events-none absolute top-1/2 left-2 size-3.5 -translate-y-1/2 text-muted-foreground"
@@ -257,6 +274,21 @@ export function GlobalSearch({
           ))}
         </PopoverContent>
       </Popover>
+      </div>
+      {inline && (
+        <Tabs value={scope} onValueChange={(value) => setScope(value as Scope)}>
+          <TabsList className="w-full">
+            <TabsTrigger value="all">All</TabsTrigger>
+            <TabsTrigger value="local">My Music</TabsTrigger>
+            <TabsTrigger value="external">External</TabsTrigger>
+          </TabsList>
+        </Tabs>
+      )}
+      {inline && search.status === "idle" && (
+        <p className="p-2 text-sm text-muted-foreground">
+          Search your music and external sources.
+        </p>
+      )}
       {showResults && (
         <div
           id={resultsId}
@@ -264,9 +296,14 @@ export function GlobalSearch({
           // list would blur the input and close the list before the click lands.
           // Keeping focus where it is makes selection work with mouse and touch.
           onMouseDown={(event) => event.preventDefault()}
-          className="absolute top-full right-0 left-0 z-50 mt-1 flex max-h-[70dvh] flex-col gap-2 overflow-y-auto rounded-lg border bg-popover p-1 text-popover-foreground shadow-md"
+          className={cn(
+            "flex flex-col gap-2 overflow-y-auto",
+            inline
+              ? "min-h-0 flex-1"
+              : "absolute top-full right-0 left-0 z-50 mt-1 max-h-[70dvh] rounded-lg border bg-popover p-1 text-popover-foreground shadow-md"
+          )}
         >
-          {search.status === "loading" && (
+          {showLocal && search.status === "loading" && (
             <div
               role="status"
               aria-label="Searching"
@@ -277,7 +314,7 @@ export function GlobalSearch({
               <Skeleton className="h-4 w-3/5" />
             </div>
           )}
-          {search.status === "error" && (
+          {showLocal && search.status === "error" && (
             <div role="alert" className="flex items-center gap-2 p-2 text-xs">
               <span className="flex-1">The search failed.</span>
               <Button size="sm" variant="outline" onClick={search.retry}>
@@ -285,7 +322,7 @@ export function GlobalSearch({
               </Button>
             </div>
           )}
-          {search.status === "ready" && (
+          {showLocal && search.status === "ready" && (
             <>
               <Group label="Tracks" empty={search.tracks.length === 0}>
                 {search.tracks.map((track) => (
@@ -341,7 +378,9 @@ export function GlobalSearch({
               )}
             </>
           )}
-          <ExternalResults search={external} showArtists={fields.artist} />
+          {showExternal && (
+            <ExternalResults search={external} showArtists={fields.artist} />
+          )}
         </div>
       )}
     </div>

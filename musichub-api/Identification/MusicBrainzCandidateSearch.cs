@@ -88,7 +88,7 @@ public sealed partial class MusicBrainzCandidateSearch : ICandidateSearch
     {
         var id = Text(recording, "id");
         var title = Text(recording, "title");
-        var artists = ArtistNames(recording);
+        var (artists, artistReferences) = ArtistCredits(recording);
         // No id, title or artist: nothing to name, so nothing to offer.
         if (id is null || string.IsNullOrWhiteSpace(title) || artists.Count == 0)
         {
@@ -112,7 +112,8 @@ public sealed partial class MusicBrainzCandidateSearch : ICandidateSearch
         if (releases.Count == 0)
         {
             yield return new EvidenceCandidate(title, artists, null, Reference:
-                new EvidenceSourceReference(id, recordingUrl, null, null, string.Join("; ", [.. details, "no release listed"])));
+                new EvidenceSourceReference(id, recordingUrl, null, null, string.Join("; ", [.. details, "no release listed"])),
+                ArtistReferences: artistReferences);
             yield break;
         }
 
@@ -129,7 +130,8 @@ public sealed partial class MusicBrainzCandidateSearch : ICandidateSearch
                     recordingUrl,
                     releaseId,
                     releaseId is null ? null : $"{SiteUrl}release/{releaseId}",
-                    string.Join("; ", releaseDetails)));
+                    string.Join("; ", releaseDetails)),
+                ArtistReferences: artistReferences);
         }
     }
 
@@ -150,25 +152,31 @@ public sealed partial class MusicBrainzCandidateSearch : ICandidateSearch
         return details;
     }
 
-    private static List<string> ArtistNames(JsonElement recording)
+    private (List<string> Names, List<ArtistReference> References) ArtistCredits(JsonElement recording)
     {
         var names = new List<string>();
+        var references = new List<ArtistReference>();
         if (recording.TryGetProperty("artist-credit", out var credits) && credits.ValueKind == JsonValueKind.Array)
         {
             foreach (var credit in credits.EnumerateArray())
             {
+                var artist = credit.TryGetProperty("artist", out var a) ? a : default;
                 var name = Text(credit, "name");
-                if (string.IsNullOrWhiteSpace(name) && credit.TryGetProperty("artist", out var artist))
+                if (string.IsNullOrWhiteSpace(name))
                 {
                     name = Text(artist, "name");
                 }
                 if (!string.IsNullOrWhiteSpace(name))
                 {
                     names.Add(name);
+                    if (Text(artist, "id") is { Length: > 0 } artistId)
+                    {
+                        references.Add(new ArtistReference(Source, artistId, name));
+                    }
                 }
             }
         }
-        return names;
+        return (names, references);
     }
 
     private static string? Text(JsonElement element, string property) =>

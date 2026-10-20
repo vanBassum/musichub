@@ -11,6 +11,7 @@ public class MusicHubDbContext(DbContextOptions<MusicHubDbContext> options) : Db
     public DbSet<Artist> Artists => Set<Artist>();
     public DbSet<TrackArtist> TrackArtists => Set<TrackArtist>();
     public DbSet<TrackExternalId> TrackExternalIds => Set<TrackExternalId>();
+    public DbSet<ArtistExternalLink> ArtistExternalLinks => Set<ArtistExternalLink>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -42,6 +43,21 @@ public class MusicHubDbContext(DbContextOptions<MusicHubDbContext> options) : Db
         });
 
         modelBuilder.Entity<Artist>().Property(a => a.Name).HasMaxLength(CatalogLimits.ArtistName);
+
+        modelBuilder.Entity<ArtistExternalLink>(link =>
+        {
+            link.Property(l => l.Source).HasMaxLength(50);
+            link.Property(l => l.ExternalId).HasMaxLength(ExternalSources.MaxExternalIdLength);
+            link.Property(l => l.Evidence).HasMaxLength(2000);
+            link.Property(l => l.Status).HasConversion<string>().HasMaxLength(20);
+            link.Property(l => l.Origin).HasConversion<string>().HasMaxLength(20);
+            link.HasOne(l => l.Artist).WithMany(a => a.ExternalLinks)
+                .HasForeignKey(l => l.ArtistId).OnDelete(DeleteBehavior.Cascade);
+            // One row per artist and identifier (an Unlinked row is the correction), and an identifier is Linked to at
+            // most one artist per source.
+            link.HasIndex(l => new { l.ArtistId, l.Source, l.ExternalId }).IsUnique();
+            link.HasIndex(l => new { l.Source, l.ExternalId }).IsUnique().HasFilter("\"Status\" = 'Linked'");
+        });
 
         modelBuilder.Entity<TrackArtist>(link =>
         {
