@@ -5,11 +5,11 @@ import { ArtistPage } from "@/components/artist-page"
 import { BuildInfoSheet } from "@/components/build-info-sheet"
 import { CompactPlayer } from "@/components/compact-player"
 import { FilesView } from "@/components/files-view"
-import { GlobalSearch } from "@/components/global-search"
 import { JobsView } from "@/components/jobs-view"
 import { MobileNav } from "@/components/mobile-nav"
 import {
   formatLocation,
+  formatSearchHash,
   moreScreens,
   parseLocation,
   type MobileLocation,
@@ -18,6 +18,7 @@ import {
   type PlayerView,
 } from "@/components/mobile-pages"
 import { NowPlaying, QueueList } from "@/components/player-panel"
+import { SearchPage } from "@/components/search-page"
 import { Button } from "@/components/ui/button"
 import {
   Sheet,
@@ -42,6 +43,8 @@ interface MobileShellProps {
   filesState: FilesState
   jobsState: JobsState
   artistRef: ArtistRef | null
+  searchQuery: string
+  onSearchQueryChange: (query: string) => void
   onSelectTrack: (trackId: number) => void
   onSelectArtist: (artist: ArtistRef) => void
 }
@@ -96,6 +99,8 @@ export function MobileShell({
   filesState,
   jobsState,
   artistRef,
+  searchQuery,
+  onSearchQueryChange,
   onSelectTrack,
   onSelectArtist,
 }: MobileShellProps) {
@@ -103,8 +108,10 @@ export function MobileShell({
   const location = useMemo(() => parseLocation(hash), [hash])
   const { tab, screen, playerView } = location
 
-  const navigate = (id: MobileTabId) =>
-    go({ tab: id, screen: null, playerView: "now-playing" })
+  const navigate = (id: MobileTabId) => {
+    if (id === "search") window.location.hash = formatSearchHash(searchQuery)
+    else go({ tab: id, screen: null, playerView: "now-playing" })
+  }
   const openScreen = (id: MoreScreenId) =>
     go({ tab: "more", screen: id, playerView })
   const showMore = (id: MoreScreenId) => tab === "more" && screen === id
@@ -112,8 +119,9 @@ export function MobileShell({
   return (
     <div className="flex h-dvh flex-col overflow-hidden">
       <Page show={tab === "search"} label="Search" className="gap-2 p-2">
-        <GlobalSearch
-          variant="page"
+        <SearchPage
+          query={searchQuery}
+          onQueryChange={onSearchQueryChange}
           onSelectTrack={onSelectTrack}
           onSelectArtist={(artist) => {
             onSelectArtist(artist)

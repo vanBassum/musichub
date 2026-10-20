@@ -39,13 +39,25 @@ export interface MobileLocation {
 // The location lives in the URL hash (#/search, #/player, #/player/queue, #/more,
 // #/more/files), so browser back and shared links work.
 export function parseLocation(hash: string): MobileLocation {
-  const [tab, sub] = hash.replace(/^#\/?/, "").split("/")
+  const [tab, sub] = hash.replace(/^#\/?/, "").split("?")[0].split("/")
   const screen = moreScreens.find((s) => s.id === sub)?.id ?? null
   return {
     tab: mobileTabs.find((t) => t.id === tab)?.id ?? "search",
     screen: tab === "more" ? screen : null,
     playerView: tab === "player" && sub === "queue" ? "queue" : "now-playing",
   }
+}
+
+// A search deep link is `#/search?q=<term>`, on desktop and phone alike.
+export function parseSearchQuery(hash: string): string {
+  const { tab } = parseLocation(hash)
+  if (tab !== "search") return ""
+  return new URLSearchParams(hash.split("?")[1] ?? "").get("q") ?? ""
+}
+
+export function formatSearchHash(query: string): string {
+  const term = query.trim()
+  return term ? `#/search?${new URLSearchParams({ q: term })}` : "#/search"
 }
 
 export function formatLocation({

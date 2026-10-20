@@ -4,32 +4,24 @@ import {
   ListChecks,
   ListMusic,
   Music,
+  Search,
   Settings,
   UserRound,
 } from "lucide-react"
 
 import { BuildInfoSheet } from "@/components/build-info-sheet"
-import { GlobalSearch } from "@/components/global-search"
 import { Button } from "@/components/ui/button"
-import type { ArtistRef } from "@/lib/artist"
 
-export type AppView = "library" | "files" | "artists" | "jobs"
+export type AppView = "search" | "library" | "files" | "artists" | "jobs"
 
 interface AppHeaderProps {
   view: AppView
   onNavigate: (view: AppView) => void
-  onSelectTrack: (trackId: number) => void
-  onSelectArtist: (artist: ArtistRef) => void
 }
 
 const activeClassName = "bg-primary/15 text-primary hover:bg-primary/20"
 
-export function AppHeader({
-  view,
-  onNavigate,
-  onSelectTrack,
-  onSelectArtist,
-}: AppHeaderProps) {
+export function AppHeader({ view, onNavigate }: AppHeaderProps) {
   return (
     <header className="flex h-14 shrink-0 items-center gap-6 border-b px-4 lg:px-6">
       <div className="flex items-center gap-2 text-base font-semibold">
@@ -37,6 +29,16 @@ export function AppHeader({
         MusicHub
       </div>
       <nav aria-label="Primary" className="flex items-center gap-1">
+        <Button
+          variant={view === "search" ? "secondary" : "ghost"}
+          size="lg"
+          aria-current={view === "search" ? "page" : undefined}
+          className={view === "search" ? activeClassName : undefined}
+          onClick={() => onNavigate("search")}
+        >
+          <Search data-icon="inline-start" />
+          Search
+        </Button>
         <Button
           variant={view === "library" ? "secondary" : "ghost"}
           size="lg"
@@ -82,11 +84,6 @@ export function AppHeader({
           Jobs
         </Button>
       </nav>
-      <GlobalSearch
-        onSelectTrack={onSelectTrack}
-        onSelectArtist={onSelectArtist}
-        className="max-w-md min-w-48 flex-1"
-      />
       <div className="ml-auto flex items-center gap-4">
         <BuildInfoSheet />
         <Button variant="ghost" size="lg" disabled title="Not available yet">

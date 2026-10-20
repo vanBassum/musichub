@@ -8,7 +8,7 @@ import {
 import { useDebouncedSearch, type SearchStatus } from "@/lib/use-debounced-search"
 
 const delayMs = 300
-const groupSize = 5
+const groupSize = 20
 
 export type GlobalSearchStatus = SearchStatus
 
