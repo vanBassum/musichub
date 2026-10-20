@@ -124,6 +124,130 @@ function ProviderLink({ provider, url }: { provider: string; url: string }) {
   )
 }
 
+type LocalSearch = ReturnType<typeof useGlobalSearch>
+type ExternalSearch = ReturnType<typeof useExternalSearch>
+
+// A result name that opens its page.
+function RowLink({
+  onClick,
+  children,
+}: {
+  onClick: () => void
+  children: ReactNode
+}) {
+  return (
+    <Button
+      variant="link"
+      className="h-auto min-w-0 flex-1 justify-start p-0 text-left"
+      onClick={onClick}
+    >
+      <span className="truncate">{children}</span>
+    </Button>
+  )
+}
+
+function LocalArtistRow({
+  artist,
+  onSelect,
+}: {
+  artist: LocalSearch["artists"][number]
+  onSelect: (artist: ArtistRef) => void
+}) {
+  return (
+    <li className={rowClassName}>
+      <Badge variant="secondary">
+        <UserRound data-icon="inline-start" />
+        My Music
+      </Badge>
+      <RowLink onClick={() => onSelect({ kind: "local", id: artist.id })}>
+        {artist.name}
+      </RowLink>
+      <span className="text-muted-foreground">
+        {artist.trackCount} {artist.trackCount === 1 ? "track" : "tracks"}
+      </span>
+    </li>
+  )
+}
+
+function ExternalArtistRow({
+  artist,
+  onSelect,
+}: {
+  artist: ExternalSearch["artists"][number]
+  onSelect: (artist: ArtistRef) => void
+}) {
+  return (
+    <li className={rowClassName}>
+      <Badge variant="outline">{providerLabel(artist.provider)}</Badge>
+      <RowLink
+        onClick={() =>
+          onSelect({
+            kind: "external",
+            provider: artist.provider,
+            externalId: artist.externalId,
+            name: artist.name,
+          })
+        }
+      >
+        {artist.name}
+      </RowLink>
+      {artist.disambiguation && (
+        <span className="max-w-[40%] truncate text-muted-foreground">
+          {artist.disambiguation}
+        </span>
+      )}
+      <ProviderLink provider={artist.provider} url={artist.url} />
+    </li>
+  )
+}
+
+function LocalTrackRow({
+  track,
+  onSelect,
+}: {
+  track: LocalSearch["tracks"][number]
+  onSelect: (trackId: number) => void
+}) {
+  return (
+    <li className={rowClassName}>
+      <Badge variant="secondary">My Music</Badge>
+      <RowLink onClick={() => onSelect(track.id)}>
+        {track.title}
+        {track.version && ` (${track.version})`}
+      </RowLink>
+      <span className="max-w-[40%] truncate text-muted-foreground">
+        {artistNames(track)}
+      </span>
+      <WishlistButton
+        wanted={track.wanted}
+        onWant={() => wantCatalogTrack(track.id)}
+      />
+    </li>
+  )
+}
+
+function ExternalTrackRow({
+  track,
+}: {
+  track: ExternalSearch["tracks"][number]
+}) {
+  return (
+    <li className={rowClassName}>
+      <Badge variant="outline">{providerLabel(track.provider)}</Badge>
+      <span className="min-w-0 flex-1 truncate">
+        {track.disambiguation
+          ? `${track.title} (${track.disambiguation})`
+          : track.title}
+      </span>
+      <span className="max-w-[40%] truncate text-muted-foreground">
+        {track.artists.map((a) => a.name).join(", ")}
+      </span>
+      <ProviderLink provider={track.provider} url={track.url} />
+      <WishlistButton onWant={() => wantExternalTrack(track)} />
+    </li>
+  )
+}
+
 // Searches the local catalog and the external provider; one page for desktop and
 // phone. Which fields it looks in is a per-browser preference. Viewing a result
 // stores nothing: only "Add to wishlist" does.
@@ -238,25 +362,11 @@ export function SearchPage({
                   {local.status === "ready" && (
                     <ul>
                       {local.artists.map((artist) => (
-                        <li key={artist.id} className={rowClassName}>
-                          <Badge variant="secondary">
-                            <UserRound data-icon="inline-start" />
-                            My Music
-                          </Badge>
-                          <Button
-                            variant="link"
-                            className="h-auto min-w-0 flex-1 justify-start p-0 text-left"
-                            onClick={() =>
-                              onSelectArtist({ kind: "local", id: artist.id })
-                            }
-                          >
-                            <span className="truncate">{artist.name}</span>
-                          </Button>
-                          <span className="text-muted-foreground">
-                            {artist.trackCount}{" "}
-                            {artist.trackCount === 1 ? "track" : "tracks"}
-                          </span>
-                        </li>
+                        <LocalArtistRow
+                          key={artist.id}
+                          artist={artist}
+                          onSelect={onSelectArtist}
+                        />
                       ))}
                     </ul>
                   )}
@@ -273,37 +383,11 @@ export function SearchPage({
                   {external.status === "ready" && (
                     <ul>
                       {external.artists.map((artist) => (
-                        <li
+                        <ExternalArtistRow
                           key={`${artist.provider}:${artist.externalId}`}
-                          className={rowClassName}
-                        >
-                          <Badge variant="outline">
-                            {providerLabel(artist.provider)}
-                          </Badge>
-                          <Button
-                            variant="link"
-                            className="h-auto min-w-0 flex-1 justify-start p-0 text-left"
-                            onClick={() =>
-                              onSelectArtist({
-                                kind: "external",
-                                provider: artist.provider,
-                                externalId: artist.externalId,
-                                name: artist.name,
-                              })
-                            }
-                          >
-                            <span className="truncate">{artist.name}</span>
-                          </Button>
-                          {artist.disambiguation && (
-                            <span className="max-w-[40%] truncate text-muted-foreground">
-                              {artist.disambiguation}
-                            </span>
-                          )}
-                          <ProviderLink
-                            provider={artist.provider}
-                            url={artist.url}
-                          />
-                        </li>
+                          artist={artist}
+                          onSelect={onSelectArtist}
+                        />
                       ))}
                     </ul>
                   )}
@@ -322,26 +406,11 @@ export function SearchPage({
                 {local.status === "ready" && (
                   <ul>
                     {local.tracks.map((track) => (
-                      <li key={track.id} className={rowClassName}>
-                        <Badge variant="secondary">My Music</Badge>
-                        <Button
-                          variant="link"
-                          className="h-auto min-w-0 flex-1 justify-start p-0 text-left"
-                          onClick={() => onSelectTrack(track.id)}
-                        >
-                          <span className="truncate">
-                            {track.title}
-                            {track.version && ` (${track.version})`}
-                          </span>
-                        </Button>
-                        <span className="max-w-[40%] truncate text-muted-foreground">
-                          {artistNames(track)}
-                        </span>
-                        <WishlistButton
-                          wanted={track.wanted}
-                          onWant={() => wantCatalogTrack(track.id)}
-                        />
-                      </li>
+                      <LocalTrackRow
+                        key={track.id}
+                        track={track}
+                        onSelect={onSelectTrack}
+                      />
                     ))}
                   </ul>
                 )}
@@ -358,29 +427,10 @@ export function SearchPage({
                 {external.status === "ready" && (
                   <ul>
                     {external.tracks.map((track) => (
-                      <li
+                      <ExternalTrackRow
                         key={`${track.provider}:${track.externalId}`}
-                        className={rowClassName}
-                      >
-                        <Badge variant="outline">
-                          {providerLabel(track.provider)}
-                        </Badge>
-                        <span className="min-w-0 flex-1 truncate">
-                          {track.disambiguation
-                            ? `${track.title} (${track.disambiguation})`
-                            : track.title}
-                        </span>
-                        <span className="max-w-[40%] truncate text-muted-foreground">
-                          {track.artists.map((a) => a.name).join(", ")}
-                        </span>
-                        <ProviderLink
-                          provider={track.provider}
-                          url={track.url}
-                        />
-                        <WishlistButton
-                          onWant={() => wantExternalTrack(track)}
-                        />
-                      </li>
+                        track={track}
+                      />
                     ))}
                   </ul>
                 )}
