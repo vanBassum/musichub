@@ -7,9 +7,9 @@ import { FilterSidebar } from "@/components/filter-sidebar"
 import { JobsView } from "@/components/jobs-view"
 import { MobileShell } from "@/components/mobile-shell"
 import {
-  formatSearchHash,
   isSearchHash,
   parseSearchQuery,
+  syncSearchHash,
 } from "@/components/mobile-pages"
 import { PlayerPanel } from "@/components/player-panel"
 import { SearchPage } from "@/components/search-page"
@@ -59,16 +59,10 @@ export function App() {
   // The URL hash carries the search (#/search?q=...), so it can be shared and
   // reloaded. Updated once typing pauses; Safari limits how often it may change.
   useEffect(() => {
-    const timer = setTimeout(() => {
-      const onSearch = isDesktop
-        ? view === "search"
-        : isSearchHash(window.location.hash)
-      if (onSearch) {
-        window.history.replaceState(null, "", formatSearchHash(searchQuery))
-      } else if (isDesktop && isSearchHash(window.location.hash)) {
-        window.history.replaceState(null, "", window.location.pathname)
-      }
-    }, searchDelayMs)
+    const timer = setTimeout(
+      () => syncSearchHash(searchQuery, isDesktop, view === "search"),
+      searchDelayMs
+    )
     return () => clearTimeout(timer)
   }, [isDesktop, view, searchQuery])
 

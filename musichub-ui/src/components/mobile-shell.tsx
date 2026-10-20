@@ -9,8 +9,8 @@ import { JobsView } from "@/components/jobs-view"
 import { MobileNav } from "@/components/mobile-nav"
 import {
   formatLocation,
-  formatSearchHash,
   moreScreens,
+  openSearchHash,
   parseLocation,
   type MobileLocation,
   type MobileTabId,
@@ -109,7 +109,7 @@ export function MobileShell({
   const { tab, screen, playerView } = location
 
   const navigate = (id: MobileTabId) => {
-    if (id === "search") window.location.hash = formatSearchHash(searchQuery)
+    if (id === "search") openSearchHash(searchQuery)
     else go({ tab: id, screen: null, playerView: "now-playing" })
   }
   const openScreen = (id: MoreScreenId) =>

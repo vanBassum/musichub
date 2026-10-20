@@ -64,6 +64,27 @@ export function formatSearchHash(query: string): string {
   return term ? `#/search?${new URLSearchParams({ q: term })}` : "#/search"
 }
 
+// Phone: go to the Search tab, keeping the term in the hash (a history entry).
+export function openSearchHash(query: string) {
+  window.location.hash = formatSearchHash(query)
+}
+
+// Keeps the hash in step with the search term, without a history entry. The desktop
+// owns the hash while its Search view shows and clears it elsewhere; the phone only
+// updates it while its location is Search.
+export function syncSearchHash(
+  query: string,
+  isDesktop: boolean,
+  desktopOnSearch: boolean
+) {
+  const onHash = isSearchHash(window.location.hash)
+  if (isDesktop ? desktopOnSearch : onHash) {
+    window.history.replaceState(null, "", formatSearchHash(query))
+  } else if (isDesktop && onHash) {
+    window.history.replaceState(null, "", window.location.pathname)
+  }
+}
+
 export function formatLocation({
   tab,
   screen,
