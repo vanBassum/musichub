@@ -145,14 +145,14 @@ export function App() {
     <div className="flex min-h-svh flex-col lg:h-svh">
       <AppHeader view={view} onNavigate={setView} />
       {view === "library" ? (
-        <main className="grid min-h-0 flex-1 gap-4 p-4 lg:grid-cols-[15rem_minmax(0,1fr)_20rem] xl:grid-cols-[17rem_minmax(0,1fr)_24rem]">
+        <main className="grid min-h-0 flex-1 gap-4 p-4 lg:grid-rows-[minmax(0,1fr)] lg:grid-cols-[15rem_minmax(0,1fr)_20rem] xl:grid-cols-[17rem_minmax(0,1fr)_24rem]">
           {filters()}
           {table(true)}
           <PlayerPanel queue={mockQueue} nowPlayingId={mockNowPlayingId} />
         </main>
       ) : (
         // The player stays docked beside every view, so playback can be controlled anywhere.
-        <main className="grid min-h-0 flex-1 gap-4 p-4 lg:grid-cols-[minmax(0,1fr)_20rem] xl:grid-cols-[minmax(0,1fr)_24rem]">
+        <main className="grid min-h-0 flex-1 gap-4 p-4 lg:grid-rows-[minmax(0,1fr)] lg:grid-cols-[minmax(0,1fr)_20rem] xl:grid-cols-[minmax(0,1fr)_24rem]">
           {view === "search" ? (
             <SearchPage
               query={searchQuery}
