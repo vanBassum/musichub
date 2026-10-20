@@ -15,15 +15,31 @@ public class MusicHubDbContext(DbContextOptions<MusicHubDbContext> options) : Db
 
     public DbSet<IdentificationOutcome> IdentificationOutcomes => Set<IdentificationOutcome>();
 
+    public DbSet<AppliedIdentification> AppliedIdentifications => Set<AppliedIdentification>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
+        modelBuilder.Entity<AppliedIdentification>(applied =>
+        {
+            applied.Property(a => a.Source).HasConversion<string>().HasMaxLength(50);
+            // A deleted file takes its history with it; a deleted track or attempt only empties the reference.
+            applied.HasOne(a => a.File).WithMany()
+                .HasForeignKey(a => a.FileId).OnDelete(DeleteBehavior.Cascade);
+            applied.HasOne(a => a.Track).WithMany()
+                .HasForeignKey(a => a.TrackId).OnDelete(DeleteBehavior.SetNull);
+            applied.HasOne(a => a.Attempt).WithMany()
+                .HasForeignKey(a => a.AttemptId).OnDelete(DeleteBehavior.SetNull);
+            applied.HasIndex(a => new { a.FileId, a.AppliedAt });
+            applied.HasIndex(a => a.TrackId);
+        });
+
         modelBuilder.Entity<IdentificationOutcome>(outcome =>
         {
             outcome.Property(o => o.JobExecutionId).HasMaxLength(100);
             outcome.Property(o => o.FileName).HasMaxLength(IdentificationOutcome.FileNameMaxLength);
             outcome.Property(o => o.Reason).HasMaxLength(IdentificationOutcome.ReasonMaxLength);
             outcome.Property(o => o.Decision).HasConversion<string>().HasMaxLength(50);
-            // A deleted file takes its diagnostics with it.
+            // A deleted file takes its attempts with it.
             outcome.HasOne(o => o.File).WithMany()
                 .HasForeignKey(o => o.FileId).OnDelete(DeleteBehavior.Cascade);
             outcome.HasIndex(o => new { o.JobExecutionId, o.FileId });
