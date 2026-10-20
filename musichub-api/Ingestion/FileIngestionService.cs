@@ -21,14 +21,16 @@ public sealed class FileIngestionService(
     ILogger<FileIngestionService>? logger = null)
 {
     /// <summary>
-    /// Returns only a record with status Stored; every other outcome throws.
+    /// Returns only a record with status Stored; every other outcome throws. <paramref name="source"/> records
+    /// where the bytes came from (an upload, or an acquisition provider).
     /// </summary>
     public async Task<FileRecord> IngestAsync(
         Stream content,
         string filename,
         string? contentType,
         UploadExpectation? expected,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string source = "upload")
     {
         var id = Guid.NewGuid();
         var idStr = id.ToString("D"); // e.g. "5f8a2c91-7b43-4c90-a831-1d23e4567890"
@@ -44,7 +46,7 @@ public sealed class FileIngestionService(
             StorageLocation = "default",
             StorageKey = storageKey,
             Status = FileStatus.Pending,
-            Source = "upload",
+            Source = source,
             StartedAt = DateTimeOffset.UtcNow,
         };
         db.Files.Add(record);
