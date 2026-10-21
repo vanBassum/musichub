@@ -18,7 +18,7 @@ import {
   SheetTrigger,
 } from "@/components/ui/sheet"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import type { ArtistRef } from "@/lib/artist"
+import { openArtist } from "@/lib/artist-route"
 import {
   activeNav,
   locationOf,
@@ -38,11 +38,9 @@ interface MobileShellProps extends SettingsStates {
   filters: ReactNode
   table: ReactNode
   downloadsState: DownloadQueueState
-  artistRef: ArtistRef | null
   searchQuery: string
   onSearchQueryChange: (query: string) => void
   onSelectTrack: (trackId: number) => void
-  onOpenArtist: (artist: ArtistRef) => void
 }
 
 const pageClassName = "flex min-h-0 flex-1 flex-col overflow-hidden"
@@ -103,7 +101,8 @@ function PageHeader({
 }
 
 // Below `lg` the phone's navigation bar has Search, Library, Downloads, Player (Now
-// Playing and Queue) and Settings (Files, Jobs, Problems). The location is the URL
+// Playing and Queue) and Settings (Files, Jobs, Problems). An artist page opens from
+// Search or the Library and shows under the one it came from. The location is the URL
 // hash. Outside the Player page a compact player sits above the navigation.
 export function MobileShell({
   location,
@@ -113,23 +112,25 @@ export function MobileShell({
   filters,
   table,
   downloadsState,
-  artistRef,
   searchQuery,
   onSearchQueryChange,
   onSelectTrack,
-  onOpenArtist,
   ...settings
 }: MobileShellProps) {
-  const { tab, screen, playerView } = location
+  const { tab, screen, playerView, artist } = location
 
   return (
     <div className="flex h-dvh flex-col overflow-hidden">
-      <Page show={tab === "search"} label="Search" className="gap-2 p-2">
+      <Page
+        show={tab === "search"}
+        label="Search"
+        className="gap-2 p-2"
+      >
         <SearchPage
           query={searchQuery}
           onQueryChange={onSearchQueryChange}
           onSelectTrack={onSelectTrack}
-          onSelectArtist={onOpenArtist}
+          onSelectArtist={(ref) => openArtist({ ref, source: "search" })}
           className="flex-1"
         />
       </Page>
@@ -205,19 +206,21 @@ export function MobileShell({
           {...settings}
         />
       </Page>
-      <Page show={tab === "artist"} label="Artist" className="gap-3 p-3">
-        <PageHeader
-          title="Artist"
-          backLabel="Back to Search"
-          onBack={() => onNavigate(locationOf("search"))}
-        />
-        <ArtistPage artistRef={artistRef} className="flex-1" />
-      </Page>
+      {artist && (
+        <Page show label="Artist" className="p-2">
+          <ArtistPage
+            route={artist}
+            onBack={(source) => onNavigate(locationOf(source))}
+            className="flex-1"
+          />
+        </Page>
+      )}
       {tab !== "player" && <CompactPlayer />}
       <MobileNav
-        active={activeNav(tab)}
+        active={activeNav(location)}
         onNavigate={(id) => onNavigate(locationOf(id))}
       />
+
     </div>
   )
 }

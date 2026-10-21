@@ -1,3 +1,4 @@
+import { ArtistLinks } from "@/components/artist-links"
 import { AudioBadge } from "@/components/audio-badge"
 import { TrackPlayControl } from "@/components/track-play-control"
 import { Button } from "@/components/ui/button"
@@ -25,6 +26,7 @@ interface TrackTableProps {
   filtered: boolean
   selectedId: number | null
   onSelect: (id: number) => void
+  onSelectArtist: (artistId: number) => void
   // The mobile Library page has its own header with the Filters button.
   showHeader?: boolean
 }
@@ -38,6 +40,7 @@ export function TrackTable({
   filtered,
   selectedId,
   onSelect,
+  onSelectArtist,
   showHeader = true,
 }: TrackTableProps) {
   const tracks = data?.items ?? []
@@ -134,9 +137,14 @@ export function TrackTable({
                       </span>
                     </span>
                   </TableCell>
-                  <TableCell className="hidden truncate lg:table-cell">
-                    {artistNames(track) || (
+                  <TableCell className="hidden max-w-56 truncate lg:table-cell">
+                    {track.artists.length === 0 ? (
                       <span className="text-muted-foreground">No artist</span>
+                    ) : (
+                      <ArtistLinks
+                        artists={track.artists}
+                        onSelect={onSelectArtist}
+                      />
                     )}
                   </TableCell>
                   <TableCell>

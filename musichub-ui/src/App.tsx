@@ -11,7 +11,7 @@ import { defaultSettingsSection } from "@/components/settings-sections"
 import { SettingsView } from "@/components/settings-view"
 import { TrackDetailsSheet } from "@/components/track-details-sheet"
 import { TrackTable } from "@/components/track-table"
-import type { ArtistRef } from "@/lib/artist"
+import { openArtist, type ArtistSource } from "@/lib/artist-route"
 import type { AudioFilter } from "@/lib/catalog-api"
 import {
   activeNav,
@@ -33,13 +33,13 @@ const searchDelayMs = 300
 
 export function App() {
   const [selectedId, setSelectedId] = useState<number | null>(null)
+  // Which page the selected track was opened from; its artists' pages return there.
+  const [selectedSource, setSelectedSource] = useState<ArtistSource>("library")
   const location = useLocation()
   // The global search page's term, shared by the desktop page and the phone's tab.
   const [searchQuery, setSearchQuery] = useState(() =>
     parseSearchQuery(window.location.hash)
   )
-  // The artist page shows this artist, found by a local or an external search.
-  const [artistRef, setArtistRef] = useState<ArtistRef | null>(null)
   // What the box shows now, and the term sent to the API once typing pauses.
   const [searchInput, setSearchInput] = useState("")
   const [search, setSearch] = useState("")
@@ -75,11 +75,6 @@ export function App() {
     window.location.hash = formatLocation(next, searchQuery)
   }
 
-  const openArtist = (artist: ArtistRef) => {
-    setArtistRef(artist)
-    navigate(locationOf("artist"))
-  }
-
   const openExecution = (executionId: string) => {
     jobsState.select(executionId)
     navigate(locationOf("settings", "jobs"))
@@ -100,6 +95,12 @@ export function App() {
     />
   )
 
+  const selectTrack = (id: number, source: ArtistSource) => {
+    setSelectedSource(source)
+    setSelectedId(id)
+  }
+  const selectSearchTrack = (id: number) => selectTrack(id, "search")
+
   const filtered = search !== "" || audio !== "all"
 
   const table = (showHeader: boolean) => (
@@ -112,7 +113,10 @@ export function App() {
       onPageChange={setPage}
       filtered={filtered}
       selectedId={selectedId}
-      onSelect={setSelectedId}
+      onSelect={(id) => selectTrack(id, "library")}
+      onSelectArtist={(id) =>
+        openArtist({ ref: { kind: "local", id }, source: "library" })
+      }
     />
   )
 
@@ -120,6 +124,10 @@ export function App() {
     <TrackDetailsSheet
       trackId={selectedId}
       onClose={() => setSelectedId(null)}
+      onSelectArtist={(id) => {
+        setSelectedId(null)
+        openArtist({ ref: { kind: "local", id }, source: selectedSource })
+      }}
     />
   )
 
@@ -141,11 +149,9 @@ export function App() {
           downloadsState={downloadsState}
           problemsState={problemsState}
           onOpenExecution={openExecution}
-          artistRef={artistRef}
           searchQuery={searchQuery}
           onSearchQueryChange={setSearchQuery}
-          onSelectTrack={setSelectedId}
-          onOpenArtist={openArtist}
+          onSelectTrack={selectSearchTrack}
         />
         {details}
       </>
@@ -158,7 +164,7 @@ export function App() {
   return (
     <div className="flex min-h-svh flex-col lg:h-svh">
       <AppHeader
-        active={activeNav(tab)}
+        active={activeNav(location)}
         onNavigate={(id) => navigate(locationOf(id))}
         problems={problemCount(problemsState)}
       />
@@ -175,8 +181,8 @@ export function App() {
             <SearchPage
               query={searchQuery}
               onQueryChange={setSearchQuery}
-              onSelectTrack={setSelectedId}
-              onSelectArtist={openArtist}
+              onSelectTrack={selectSearchTrack}
+              onSelectArtist={(ref) => openArtist({ ref, source: "search" })}
               autoFocus
               className="min-h-0"
             />
@@ -193,7 +199,13 @@ export function App() {
               className="min-h-0"
             />
           ) : (
-            <ArtistPage artistRef={artistRef} className="min-h-0" />
+            location.artist && (
+              <ArtistPage
+                route={location.artist}
+                onBack={(source) => navigate(locationOf(source))}
+                className="min-h-0"
+              />
+            )
           )}
           <PlayerPanel />
         </main>

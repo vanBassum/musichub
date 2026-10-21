@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest"
 
+import { formatArtistHash, type ArtistRoute } from "@/lib/artist-route"
 import {
   activeNav,
   formatLocation,
@@ -33,7 +34,6 @@ describe("location", () => {
     ["#/settings/files", locationOf("settings", "files")],
     ["#/settings/jobs", locationOf("settings", "jobs")],
     ["#/settings/problems", locationOf("settings", "problems")],
-    ["#/artist", locationOf("artist")],
   ])("round-trips %s", (hash, location) => {
     expect(parseLocation(hash)).toEqual(location)
     expect(formatLocation(location)).toBe(hash)
@@ -64,8 +64,29 @@ describe("location", () => {
     expect(parseLocation("#/more/artists")).toEqual(locationOf("search"))
   })
 
-  it("shows an artist page under Search", () => {
-    expect(activeNav("artist")).toBe("search")
-    expect(activeNav("settings")).toBe("settings")
+  it("round-trips an artist link", () => {
+    const artist: ArtistRoute = { ref: { kind: "local", id: 7 }, source: "library" }
+    const hash = formatArtistHash(artist)
+    const location = { ...locationOf("artist"), artist }
+    expect(parseLocation(hash)).toEqual(location)
+    expect(formatLocation(location)).toBe(hash)
+  })
+
+  it("opens Search for an artist link that names no artist", () => {
+    expect(parseLocation("#/artist")).toEqual(locationOf("search"))
+    expect(
+      parseLocation("#/artist/external/musicbrainz/%E0%A4%A?name=x")
+    ).toEqual(locationOf("search"))
+  })
+
+  it("shows an artist page under the page it came from", () => {
+    const from = (source: ArtistRoute["source"]) =>
+      activeNav({
+        ...locationOf("artist"),
+        artist: { ref: { kind: "local", id: 1 }, source },
+      })
+    expect(from("library")).toBe("library")
+    expect(from("search")).toBe("search")
+    expect(activeNav(locationOf("settings"))).toBe("settings")
   })
 })

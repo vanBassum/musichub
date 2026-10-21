@@ -5,6 +5,11 @@ import {
   parseSettingsSection,
   type SettingsSectionId,
 } from "@/components/settings-sections"
+import {
+  formatArtistHash,
+  parseArtistHash,
+  type ArtistRoute,
+} from "@/lib/artist-route"
 
 // Where the app can be. Search, Library and Downloads are the music destinations,
 // Settings groups the operational screens, Player is the phone's playback page, and
@@ -39,6 +44,8 @@ export interface AppLocation {
   // The open Settings screen, if any.
   screen: SettingsSectionId | null
   playerView: PlayerView
+  // The artist page's artist and where it was opened from; set when `tab` is "artist".
+  artist: ArtistRoute | null
 }
 
 const isTab = (value: string): value is TabId =>
@@ -46,14 +53,16 @@ const isTab = (value: string): value is TabId =>
 
 
 // The location lives in the URL hash (#/search, #/library, #/downloads, #/player,
-// #/player/queue, #/settings, #/settings/files, #/artist), so browser back and shared
-// links work. The earlier `#/more/...` links still resolve to where those screens went.
+// #/player/queue, #/settings, #/settings/files, #/artist/local/7), so browser back and
+// shared links work. The earlier `#/more/...` links still resolve to where those
+// screens went. An artist link that names no artist opens Search.
 export function parseLocation(hash: string): AppLocation {
   const [tab, sub] = hash.replace(/^#\/?/, "").split("?")[0].split("/")
   const location: AppLocation = {
     tab: "search",
     screen: null,
     playerView: "now-playing",
+    artist: null,
   }
   if (tab === "more") {
     if (sub === "library" || sub === "downloads") return { ...location, tab: sub }
@@ -63,7 +72,12 @@ export function parseLocation(hash: string): AppLocation {
       : { ...location, tab: "settings", screen: parseSettingsSection(sub) }
   }
   if (!isTab(tab)) return location
+  if (tab === "artist") {
+    const artist = parseArtistHash(hash)
+    return artist ? { ...location, tab, artist } : location
+  }
   return {
+    ...location,
     tab,
     screen: tab === "settings" ? parseSettingsSection(sub) : null,
     playerView: tab === "player" && sub === "queue" ? "queue" : "now-playing",
@@ -93,10 +107,11 @@ export function syncSearchHash(query: string) {
 
 // `searchQuery` is the term Search reopens with.
 export function formatLocation(
-  { tab, screen, playerView }: AppLocation,
+  { tab, screen, playerView, artist }: AppLocation,
   searchQuery = ""
 ): string {
   if (tab === "search") return formatSearchHash(searchQuery)
+  if (tab === "artist" && artist) return formatArtistHash(artist)
   if (tab === "settings") return screen ? formatSettingsHash(screen) : "#/settings"
   if (tab === "player" && playerView === "queue") return "#/player/queue"
   return `#/${tab}`
@@ -107,10 +122,11 @@ export function locationOf(
   screen: SettingsSectionId | null = null,
   playerView: PlayerView = "now-playing"
 ): AppLocation {
-  return { tab, screen, playerView }
+  return { tab, screen, playerView, artist: null }
 }
 
-// The navigation entry that shows as current. An artist page belongs to Search.
-export function activeNav(tab: TabId): NavId {
-  return tab === "artist" ? "search" : tab
+// The navigation entry that shows as current. An artist page belongs to the page it
+// was opened from.
+export function activeNav({ tab, artist }: AppLocation): NavId {
+  return tab === "artist" ? (artist?.source ?? "search") : tab
 }
