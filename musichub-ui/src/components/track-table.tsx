@@ -87,7 +87,7 @@ export function TrackTable({
               <TableHead className="hidden sm:table-cell">Artist</TableHead>
               <TableHead className="w-24 sm:w-auto sm:pr-2">Audio</TableHead>
               <TableHead className="hidden sm:table-cell">Added</TableHead>
-              <TableHead className="w-12 pr-4">
+              <TableHead className="w-20 pr-4">
                 <span className="sr-only">Play</span>
               </TableHead>
             </TableRow>

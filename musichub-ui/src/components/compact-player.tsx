@@ -8,20 +8,14 @@ import {
   SheetTitle,
   SheetTrigger,
 } from "@/components/ui/sheet"
-import type { Track } from "@/data/mock-tracks"
 import { isAudible, usePlayer } from "@/lib/use-player"
 
-interface CompactPlayerProps {
-  queue: Track[]
-  nowPlayingId: string
-}
-
 // The persistent player below `lg`, outside the Player page: a bar above the navigation
-// with the loaded file and play/pause (previous and next, still placeholders, from `md`).
+// with the loaded file, play/pause and (from `md`) previous and next.
 // Activating the file opens the full player as an overlay over the current page; closing
 // it returns there. It shows only while something is loaded.
-export function CompactPlayer({ queue, nowPlayingId }: CompactPlayerProps) {
-  const { source, status, toggle } = usePlayer()
+export function CompactPlayer() {
+  const { source, status, hasNext, toggle, next, previous } = usePlayer()
   if (!source) return null
 
   const playing = isAudible(status)
@@ -54,9 +48,8 @@ export function CompactPlayer({ queue, nowPlayingId }: CompactPlayerProps) {
         <Button
           variant="ghost"
           size="icon-lg"
-          disabled
           aria-label="Previous"
-          title="Not available yet"
+          onClick={previous}
           className="hidden size-10 md:inline-flex"
         >
           <SkipBack className="fill-current" />
@@ -77,9 +70,9 @@ export function CompactPlayer({ queue, nowPlayingId }: CompactPlayerProps) {
         <Button
           variant="ghost"
           size="icon-lg"
-          disabled
+          disabled={!hasNext}
           aria-label="Next"
-          title="Not available yet"
+          onClick={next}
           className="hidden size-10 md:inline-flex"
         >
           <SkipForward className="fill-current" />
@@ -92,7 +85,7 @@ export function CompactPlayer({ queue, nowPlayingId }: CompactPlayerProps) {
         <SheetTitle className="sr-only">Player</SheetTitle>
         <div className="mx-auto flex min-h-0 w-full max-w-xl flex-1 flex-col overflow-y-auto pt-10">
           <NowPlaying large />
-          <QueueList queue={queue} nowPlayingId={nowPlayingId} />
+          <QueueList />
         </div>
       </SheetContent>
     </Sheet>

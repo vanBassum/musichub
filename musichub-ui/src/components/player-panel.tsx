@@ -1,7 +1,7 @@
 import { useState } from "react"
 import {
-  ListMusic,
-  MoreHorizontal,
+  ArrowDown,
+  ArrowUp,
   Music,
   Pause,
   Play,
@@ -9,20 +9,15 @@ import {
   Shuffle,
   SkipBack,
   SkipForward,
+  Trash2,
+  X,
 } from "lucide-react"
 
-import { CoverArt } from "@/components/cover-art"
 import { Button } from "@/components/ui/button"
 import { Slider } from "@/components/ui/slider"
-import type { Track } from "@/data/mock-tracks"
 import { formatDuration } from "@/lib/format"
 import { isAudible, usePlayer, type PlaybackStatus } from "@/lib/use-player"
 import { cn } from "@/lib/utils"
-
-interface PlayerPanelProps {
-  queue: Track[]
-  nowPlayingId: string
-}
 
 interface NowPlayingProps {
   // The mobile Player page: a bigger cover, and a seek slider that doesn't swipe pages.
@@ -30,8 +25,6 @@ interface NowPlayingProps {
 }
 
 interface QueueListProps {
-  queue: Track[]
-  nowPlayingId: string
   className?: string
 }
 
@@ -45,11 +38,21 @@ const statusLabels: Record<PlaybackStatus, string> = {
 }
 
 // The shared player: one playback state (`usePlayer`) behind every presentation. A stored
-// file has no catalog metadata, so its filename stands in. Only play/pause and seek exist;
-// the other controls are disabled placeholders.
+// file has no catalog metadata, so its filename stands in. Previous and Next follow the
+// current queue; shuffle and repeat are disabled placeholders.
 export function NowPlaying({ large = false }: NowPlayingProps) {
-  const { source, status, currentTime, duration, error, toggle, seek } =
-    usePlayer()
+  const {
+    source,
+    status,
+    currentTime,
+    duration,
+    error,
+    hasNext,
+    toggle,
+    seek,
+    next,
+    previous,
+  } = usePlayer()
   const [scrub, setScrub] = useState<number | null>(null)
 
   if (!source) {
@@ -134,9 +137,8 @@ export function NowPlaying({ large = false }: NowPlayingProps) {
         <Button
           variant="ghost"
           size="icon-lg"
-          disabled
+          onClick={previous}
           aria-label="Previous"
-          title="Not available yet"
         >
           <SkipBack className="fill-current" />
         </Button>
@@ -156,9 +158,9 @@ export function NowPlaying({ large = false }: NowPlayingProps) {
         <Button
           variant="ghost"
           size="icon-lg"
-          disabled
+          disabled={!hasNext}
+          onClick={next}
           aria-label="Next"
-          title="Not available yet"
         >
           <SkipForward className="fill-current" />
         </Button>
@@ -176,7 +178,11 @@ export function NowPlaying({ large = false }: NowPlayingProps) {
   )
 }
 
-export function QueueList({ queue, nowPlayingId, className }: QueueListProps) {
+// The current playback queue: ephemeral, edited while listening. Selecting an entry plays it.
+export function QueueList({ className }: QueueListProps) {
+  const { queue, currentKey, playEntry, removeEntry, moveEntry, clearQueue } =
+    usePlayer()
+
   return (
     <section
       aria-labelledby="queue-heading"
@@ -186,62 +192,89 @@ export function QueueList({ queue, nowPlayingId, className }: QueueListProps) {
         <h2 id="queue-heading" className="font-semibold">
           Current Playlist
         </h2>
-        <span className="text-muted-foreground">{queue.length} tracks</span>
-        <div className="ml-auto flex items-center">
-          <Button
-            variant="ghost"
-            size="icon"
-            disabled
-            aria-label="Queue view"
-            title="Not available yet"
-          >
-            <ListMusic />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            disabled
-            aria-label="Queue actions"
-            title="Not available yet"
-          >
-            <MoreHorizontal />
-          </Button>
-        </div>
+        <span className="text-muted-foreground">
+          {queue.length} {queue.length === 1 ? "track" : "tracks"}
+        </span>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="ml-auto"
+          disabled={queue.length === 0 || (queue.length === 1 && currentKey !== null)}
+          onClick={clearQueue}
+          title="Removes everything except the track that is playing"
+        >
+          <Trash2 />
+          Clear
+        </Button>
       </div>
+      {queue.length === 0 && (
+        <p className="px-4 pb-4 text-sm text-muted-foreground">
+          The queue is empty. Add tracks from the Library.
+        </p>
+      )}
       <ol className="min-h-48 flex-1 overflow-y-auto overscroll-y-contain px-2 pb-2 lg:min-h-0">
-        {queue.map((track, index) => {
-          const isCurrent = track.id === nowPlayingId
+        {queue.map((entry, index) => {
+          const isCurrent = entry.key === currentKey
           return (
             <li
-              key={track.id}
+              key={entry.key}
               aria-current={isCurrent ? "true" : undefined}
               className={cn(
-                "flex items-center gap-3 rounded-md px-2 py-1.5",
+                "flex items-center gap-1 rounded-md px-1 py-0.5",
                 isCurrent && "bg-primary/20"
               )}
             >
-              <span className="flex w-5 justify-center text-xs text-muted-foreground">
-                {isCurrent ? (
-                  <Play
-                    className="size-3.5 fill-current text-primary"
-                    aria-label="Now playing"
-                  />
-                ) : (
-                  index + 1
-                )}
-              </span>
-              <CoverArt track={track} className="size-9 text-xs" />
-              <div className="flex min-w-0 flex-1 flex-col">
-                <span className="truncate text-sm font-medium">
-                  {track.title}
+              <button
+                type="button"
+                onClick={() => playEntry(entry.key)}
+                aria-label={`Play ${entry.source.title}`}
+                className="flex min-w-0 flex-1 items-center gap-3 rounded-md px-1 py-1 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+              >
+                <span className="flex w-5 shrink-0 justify-center text-xs text-muted-foreground">
+                  {isCurrent ? (
+                    <Play
+                      className="size-3.5 fill-current text-primary"
+                      aria-label="Now playing"
+                    />
+                  ) : (
+                    index + 1
+                  )}
                 </span>
-                <span className="truncate text-xs text-muted-foreground">
-                  {track.artist}
+                <span className="flex min-w-0 flex-1 flex-col">
+                  <span className="truncate text-sm font-medium">
+                    {entry.source.title}
+                  </span>
+                  <span className="truncate text-xs text-muted-foreground">
+                    {entry.source.subtitle ?? "No artist"}
+                  </span>
                 </span>
-              </div>
-              <span className="text-xs text-muted-foreground">
-                {formatDuration(track.durationSeconds)}
-              </span>
+              </button>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                disabled={index === 0}
+                onClick={() => moveEntry(entry.key, -1)}
+                aria-label={`Move ${entry.source.title} up`}
+              >
+                <ArrowUp />
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                disabled={index === queue.length - 1}
+                onClick={() => moveEntry(entry.key, 1)}
+                aria-label={`Move ${entry.source.title} down`}
+              >
+                <ArrowDown />
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                onClick={() => removeEntry(entry.key)}
+                aria-label={`Remove ${entry.source.title}`}
+              >
+                <X />
+              </Button>
             </li>
           )
         })}
@@ -250,17 +283,13 @@ export function QueueList({ queue, nowPlayingId, className }: QueueListProps) {
   )
 }
 
-export function PlayerPanel({ queue, nowPlayingId }: PlayerPanelProps) {
+export function PlayerPanel() {
   return (
     <aside
       aria-label="Player"
       className="flex min-h-0 flex-col overflow-hidden rounded-xl border bg-card"
     >
-      <QueueList
-        queue={queue}
-        nowPlayingId={nowPlayingId}
-        className="border-t-0"
-      />
+      <QueueList className="border-t-0" />
       {/* Docked at the bottom: the queue scrolls above it, the controls never leave. */}
       <div className="shrink-0 border-t">
         <NowPlaying />
