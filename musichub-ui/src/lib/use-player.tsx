@@ -4,6 +4,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react"
@@ -13,6 +14,14 @@ import {
   trackTitle,
   type CatalogTrack,
 } from "@/lib/catalog-api"
+import {
+  clearExcept,
+  insertAfter,
+  moveEntry as moveQueueEntry,
+  neighbour,
+  removeEntry as removeQueueEntry,
+  type Keyed,
+} from "@/lib/player-queue"
 
 // "loading" is the time between asking for the audio and hearing it (or failing).
 export type PlaybackStatus =
@@ -31,6 +40,11 @@ export interface PlayerSource {
   title: string
   // The artists of a catalog track; null for a file.
   subtitle: string | null
+}
+
+// One place in the current playback queue (ephemeral: it lives in this tab only).
+export interface QueueEntry extends Keyed {
+  source: PlayerSource
 }
 
 // A catalog track that can be played: its linked Stored file is known.
@@ -60,8 +74,22 @@ export interface PlayerState {
   currentTime: number
   duration: number
   error: string | null
+  // The current playback queue and the entry that is loaded from it (null when nothing
+  // is loaded, or when the loaded source is a Files file, which is not queued).
+  queue: QueueEntry[]
+  currentKey: number | null
+  hasNext: boolean
   playFile: (file: { id: string; originalFilename: string }) => void
-  playTrack: (track: PlayableTrack) => void
+  // Starts the track right after the current entry; the rest of the queue stays.
+  playNow: (track: PlayableTrack) => void
+  playNext: (track: PlayableTrack) => void
+  enqueue: (track: PlayableTrack) => void
+  playEntry: (key: number) => void
+  removeEntry: (key: number) => void
+  moveEntry: (key: number, offset: -1 | 1) => void
+  clearQueue: () => void
+  next: () => void
+  previous: () => void
   toggle: () => void
   seek: (seconds: number) => void
 }
@@ -75,6 +103,18 @@ function describeMediaError(error: MediaError | null) {
     : "The file could not be played."
 }
 
+// A catalog track as the player shows and loads it.
+function trackSource(track: PlayableTrack): PlayerSource {
+  return {
+    id: String(track.audioFileId),
+    title: trackTitle(track),
+    subtitle: artistNames(track) || null,
+  }
+}
+
+// "Previous" restarts the track instead when it is already this far in.
+const RESTART_AFTER_SECONDS = 3
+
 // The one HTMLAudioElement of the app, outside React so no remount can restart it.
 const audio = new Audio()
 audio.preload = "metadata"
@@ -87,6 +127,11 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   const [currentTime, setCurrentTime] = useState(0)
   const [duration, setDuration] = useState(0)
   const [error, setError] = useState<string | null>(null)
+  const [queue, setQueue] = useState<QueueEntry[]>([])
+  const [currentKey, setCurrentKey] = useState<number | null>(null)
+  const nextKey = useRef(0)
+  // The ended listener is registered once; it calls whatever "next" is by then.
+  const advance = useRef<() => void>(() => {})
 
   useEffect(() => {
     const fail = () => {
@@ -110,9 +155,14 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       seeked: settle,
       playing: () => setStatus("playing"),
       pause: () => {
-        if (!audio.ended && !audio.error) setStatus("paused")
+        // A stopped player has no source left to be paused on.
+        if (!audio.ended && !audio.error && audio.getAttribute("src"))
+          setStatus("paused")
       },
-      ended: () => setStatus("ended"),
+      ended: () => {
+        setStatus("ended")
+        advance.current()
+      },
       error: fail,
       timeupdate: () => setCurrentTime(audio.currentTime),
       durationchange: () =>
@@ -136,11 +186,14 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     })
   }, [])
 
-  // The one place a Stored file is loaded, whoever asks: Files or a catalog track.
+  // The one place a Stored file is loaded, whoever asks: Files, a catalog track or a queue
+  // entry (`key`; null for a file that is not queued).
   const play = useCallback(
-    (next: PlayerSource) => {
+    (next: PlayerSource, key: number | null) => {
+      setCurrentKey(key)
       if (isLoaded(source, status, next.id)) {
-        if (status === "ended") audio.currentTime = 0
+        // Another entry of the same file starts over, too.
+        if (status === "ended" || key !== currentKey) audio.currentTime = 0
         start()
         return
       }
@@ -152,28 +205,100 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       audio.src = `/api/files/${encodeURIComponent(next.id)}/audio`
       start()
     },
-    [source, status, start]
+    [source, status, currentKey, start]
   )
+
+  // Unloads the player: nothing is left to play.
+  const stop = useCallback(() => {
+    audio.pause()
+    audio.removeAttribute("src")
+    audio.load()
+    setSource(null)
+    setCurrentKey(null)
+    setStatus("idle")
+    setError(null)
+    setCurrentTime(0)
+    setDuration(0)
+  }, [])
 
   const playFile = useCallback(
     (file: { id: string; originalFilename: string }) =>
-      play({
-        id: file.id,
-        title: file.originalFilename,
-        subtitle: null,
-      }),
+      play({ id: file.id, title: file.originalFilename, subtitle: null }, null),
     [play]
   )
 
-  const playTrack = useCallback(
-    (track: PlayableTrack) =>
-      play({
-        id: String(track.audioFileId),
-        title: trackTitle(track),
-        subtitle: artistNames(track) || null,
-      }),
-    [play]
+  const newEntry = useCallback(
+    (track: PlayableTrack): QueueEntry => ({
+      key: nextKey.current++,
+      source: trackSource(track),
+    }),
+    []
   )
+
+  const enqueue = useCallback(
+    (track: PlayableTrack) =>
+      setQueue((current) => [...current, newEntry(track)]),
+    [newEntry]
+  )
+
+  const playNext = useCallback(
+    (track: PlayableTrack) =>
+      setQueue((current) => insertAfter(current, currentKey, newEntry(track))),
+    [currentKey, newEntry]
+  )
+
+  const playNow = useCallback(
+    (track: PlayableTrack) => {
+      const entry = newEntry(track)
+      setQueue((current) => insertAfter(current, currentKey, entry))
+      play(entry.source, entry.key)
+    },
+    [currentKey, newEntry, play]
+  )
+
+  const playEntry = useCallback(
+    (key: number) => {
+      const entry = queue.find((candidate) => candidate.key === key)
+      if (entry) play(entry.source, entry.key)
+    },
+    [queue, play]
+  )
+
+  const following = neighbour(queue, currentKey, 1)
+  const preceding = neighbour(queue, currentKey, -1)
+
+  // Removing the loaded entry moves on to the one after it while audio is playing, and
+  // otherwise unloads the player; removing any other entry never touches playback.
+  const removeEntry = useCallback(
+    (key: number) => {
+      if (key === currentKey) {
+        if (following && isAudible(status)) play(following.source, following.key)
+        else stop()
+      }
+      setQueue((current) => removeQueueEntry(current, key))
+    },
+    [currentKey, following, status, play, stop]
+  )
+
+  const moveEntry = useCallback(
+    (key: number, offset: -1 | 1) =>
+      setQueue((current) => moveQueueEntry(current, key, offset)),
+    []
+  )
+
+  // The loaded entry stays, so clearing never cuts the audio off.
+  const clearQueue = useCallback(
+    () => setQueue((current) => clearExcept(current, currentKey)),
+    [currentKey]
+  )
+
+  const next = useCallback(() => {
+    if (following) play(following.source, following.key)
+  }, [following, play])
+
+  useEffect(() => {
+    advance.current = next
+  }, [next])
 
   const toggle = useCallback(() => {
     if (!source || status === "error") return
@@ -194,6 +319,13 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     [source, status]
   )
 
+  const previous = useCallback(() => {
+    if (!source) return
+    if (preceding && audio.currentTime <= RESTART_AFTER_SECONDS)
+      play(preceding.source, preceding.key)
+    else seek(0)
+  }, [source, preceding, play, seek])
+
   const value = useMemo(
     () => ({
       source,
@@ -201,8 +333,19 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       currentTime,
       duration,
       error,
+      queue,
+      currentKey,
+      hasNext: following !== undefined,
       playFile,
-      playTrack,
+      playNow,
+      playNext,
+      enqueue,
+      playEntry,
+      removeEntry,
+      moveEntry,
+      clearQueue,
+      next,
+      previous,
       toggle,
       seek,
     }),
@@ -212,8 +355,19 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       currentTime,
       duration,
       error,
+      queue,
+      currentKey,
+      following,
       playFile,
-      playTrack,
+      playNow,
+      playNext,
+      enqueue,
+      playEntry,
+      removeEntry,
+      moveEntry,
+      clearQueue,
+      next,
+      previous,
       toggle,
       seek,
     ]

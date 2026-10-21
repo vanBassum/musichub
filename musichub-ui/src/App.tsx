@@ -17,7 +17,6 @@ import { ProblemsView } from "@/components/problems-view"
 import { SearchPage } from "@/components/search-page"
 import { TrackDetailsSheet } from "@/components/track-details-sheet"
 import { TrackTable } from "@/components/track-table"
-import { mockNowPlayingId, mockQueue } from "@/data/mock-tracks"
 import type { ArtistRef } from "@/lib/artist"
 import type { AudioFilter } from "@/lib/catalog-api"
 import { useTracks } from "@/lib/use-catalog"
@@ -128,8 +127,6 @@ export function App() {
             "flex-1 rounded-none border-0 bg-transparent pt-12"
           )}
           table={table(false)}
-          queue={mockQueue}
-          nowPlayingId={mockNowPlayingId}
           filesState={filesState}
           jobsState={jobsState}
           downloadsState={downloadsState}
@@ -152,7 +149,7 @@ export function App() {
         <main className="grid min-h-0 flex-1 gap-4 p-4 lg:grid-rows-[minmax(0,1fr)] lg:grid-cols-[15rem_minmax(0,1fr)_20rem] xl:grid-cols-[17rem_minmax(0,1fr)_24rem]">
           {filters()}
           {table(true)}
-          <PlayerPanel queue={mockQueue} nowPlayingId={mockNowPlayingId} />
+          <PlayerPanel />
         </main>
       ) : (
         // The player stays docked beside every view, so playback can be controlled anywhere.
@@ -181,7 +178,7 @@ export function App() {
           ) : (
             <ArtistPage artistRef={artistRef} className="min-h-0" />
           )}
-          <PlayerPanel queue={mockQueue} nowPlayingId={mockNowPlayingId} />
+          <PlayerPanel />
         </main>
       )}
       {details}

@@ -29,7 +29,6 @@ import {
   SheetTrigger,
 } from "@/components/ui/sheet"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import type { Track } from "@/data/mock-tracks"
 import type { ArtistRef } from "@/lib/artist"
 import type { DownloadQueueState } from "@/lib/use-download-queue"
 import type { FilesState } from "@/lib/use-files"
@@ -42,8 +41,6 @@ interface MobileShellProps {
   total: number | undefined
   filters: ReactNode
   table: ReactNode
-  queue: Track[]
-  nowPlayingId: string
   filesState: FilesState
   jobsState: JobsState
   downloadsState: DownloadQueueState
@@ -100,8 +97,6 @@ export function MobileShell({
   total,
   filters,
   table,
-  queue,
-  nowPlayingId,
   filesState,
   jobsState,
   downloadsState,
@@ -163,7 +158,7 @@ export function MobileShell({
         </div>
         <div hidden={playerView !== "queue"} className="min-h-0 flex-1 p-3">
           <div className="flex h-full min-h-0 flex-col rounded-xl border bg-card">
-            <QueueList queue={queue} nowPlayingId={nowPlayingId} />
+            <QueueList />
           </div>
         </div>
       </Page>
@@ -247,7 +242,7 @@ export function MobileShell({
         </Page>
       ))}
       {tab !== "player" && (
-        <CompactPlayer queue={queue} nowPlayingId={nowPlayingId} />
+        <CompactPlayer />
       )}
       <MobileNav active={tab} onNavigate={navigate} />
     </div>
