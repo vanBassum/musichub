@@ -175,7 +175,7 @@ export interface DownloadItem {
   finishedAt: string | null
 }
 
-async function problemDetail(response: Response) {
+export async function problemDetail(response: Response) {
   try {
     return ((await response.json()) as { detail?: string }).detail
   } catch {
