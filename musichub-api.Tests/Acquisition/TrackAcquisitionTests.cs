@@ -143,6 +143,32 @@ public sealed class TrackAcquisitionTests : IDisposable
     }
 
     [Fact]
+    public async Task A_file_stored_by_an_import_that_stopped_before_linking_is_linked_not_stored_again()
+    {
+        var trackId = await AddTrackAsync();
+        var bytes = Bytes(3);
+        Offer(@"Oasis\Wonderwall.mp3", bytes, Identified("Wonderwall", "Oasis"));
+        using (var seed = CreateDb())
+        {
+            seed.Files.Add(new FileRecord
+            {
+                OriginalFilename = "Wonderwall.mp3", StorageLocation = "default", StorageKey = "library/ab/orphan",
+                Status = FileStatus.Stored, Source = AcquisitionHandoff.SourceOf("slskd"), StartedAt = DateTimeOffset.UtcNow,
+                ContentHash = Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(bytes)), SizeBytes = bytes.Length,
+            });
+            await seed.SaveChangesAsync();
+        }
+
+        var result = await RunAsync(trackId);
+
+        Assert.Equal(TrackAcquisitionOutcome.Imported, result.Outcome);
+        using var db = CreateDb();
+        var file = await db.Files.SingleAsync();
+        Assert.Equal(trackId, file.TrackId);
+        Assert.Equal(file.Id, (await db.AcquisitionDownloads.SingleAsync()).FileId);
+    }
+
+    [Fact]
     public async Task A_candidate_identified_as_another_recording_never_enters_the_library_and_is_not_downloaded_again()
     {
         var trackId = await AddTrackAsync();

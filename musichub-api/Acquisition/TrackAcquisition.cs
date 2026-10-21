@@ -194,8 +194,8 @@ public sealed class TrackAcquisition(
         FileRecord stored;
         try
         {
-            await using var content = outcome.File!.OpenRead();
-            stored = await handoff.IngestAsync(outcome, cancellationToken, new UploadExpectation(content.Length, hashes.ContentHash));
+            stored = await FindUnlinkedImportAsync(outcome.Provider, hashes.ContentHash, cancellationToken)
+                ?? await IngestAsync(outcome, hashes, cancellationToken);
         }
         catch (Exception ex) when (ex is UploadIntegrityException or FileIngestionException)
         {
@@ -231,6 +231,19 @@ public sealed class TrackAcquisition(
         }
         logger.LogInformation("Track {TrackId} acquired: download {DownloadId} imported as file {FileId}.", track.Id, download.Id, stored.Id);
     }
+
+    private async Task<FileRecord> IngestAsync(AcquisitionDownloadOutcome outcome, DownloadHashes hashes, CancellationToken cancellationToken)
+    {
+        await using var content = outcome.File!.OpenRead();
+        return await handoff.IngestAsync(outcome, cancellationToken, new UploadExpectation(content.Length, hashes.ContentHash));
+    }
+
+    // An earlier import of these very bytes that stored the file but stopped (a restart, a failure) before linking it.
+    // The identification just made is about the same bytes, so the file is linked instead of stored a second time.
+    private Task<FileRecord?> FindUnlinkedImportAsync(string provider, string contentHash, CancellationToken cancellationToken) =>
+        db.Files.OrderBy(f => f.Id).FirstOrDefaultAsync(f =>
+            f.TrackId == null && f.Status == FileStatus.Stored && f.ContentHash == contentHash
+            && f.Source == AcquisitionHandoff.SourceOf(provider), cancellationToken);
 
     private Task RejectAsync(
         AcquisitionDownload download, string fileName, IdentificationDecision decision,

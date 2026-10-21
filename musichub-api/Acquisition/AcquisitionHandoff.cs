@@ -19,6 +19,9 @@ public sealed class AcquisitionHandoff(FileIngestionService ingestion)
         }
 
         await using var content = file.OpenRead();
-        return await ingestion.IngestAsync(content, file.FileName, null, expected, ct, source: $"acquisition:{outcome.Provider}");
+        return await ingestion.IngestAsync(content, file.FileName, null, expected, ct, source: SourceOf(outcome.Provider));
     }
+
+    /// <summary>The <see cref="FileRecord.Source"/> of a file that a provider's download became.</summary>
+    public static string SourceOf(string provider) => $"acquisition:{provider}";
 }
