@@ -31,7 +31,7 @@ public sealed record JobExecutionDetails(JobExecution Execution, IReadOnlyList<J
 /// job returned, the failure message). It is the only way the API reaches the jobs; there is no Hangfire dashboard. A
 /// run of a task is refused while another run of it is enqueued, scheduled for a retry, or processing.
 /// </summary>
-public sealed class JobService(JobEngine engine)
+public sealed class JobService(JobEngine engine, JobSchedule schedule)
 {
     private const string Queue = "default";
     private const int PerState = 50;
@@ -62,6 +62,10 @@ public sealed class JobService(JobEngine engine)
         var monitor = (await engine.StorageAsync(cancellationToken)).GetMonitoringApi();
         return ActiveIds(monitor, kind).OrderByDescending(IdOrder).FirstOrDefault();
     }
+
+    /// <summary>The recurring schedule of <paramref name="kind"/>, with its next run; null for a task that cannot be scheduled.</summary>
+    public async Task<JobScheduleInfo?> ScheduleAsync(JobKind kind, CancellationToken cancellationToken) =>
+        schedule.Read(kind, await engine.StorageAsync(cancellationToken));
 
     // An active run is enqueued, scheduled for a retry, or processing. Without a kind: of any task.
     private static IEnumerable<string> ActiveIds(IMonitoringApi monitor, JobKind? kind = null) =>

@@ -12,6 +12,7 @@ namespace MusicHub.Api.Jobs;
 public sealed class HangfireServerService(
     IJobStorageFactory storageFactory,
     JobEngine engine,
+    JobSchedule schedule,
     MigrationState migrations,
     IOptions<HangfireOptions> options,
     IServiceScopeFactory scopes,
@@ -45,6 +46,7 @@ public sealed class HangfireServerService(
                     Activator = new ScopedJobActivator(scopes),
                 },
                 storage);
+            schedule.Apply(storage);
             engine.Publish(storage, new BackgroundJobClient(storage));
             logger.LogInformation("Background jobs are running ({Workers} workers, {Retries} retries).",
                 settings.WorkerCount, settings.RetryAttempts);

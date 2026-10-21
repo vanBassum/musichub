@@ -20,6 +20,13 @@ public class HangfireOptions
     /// <summary>The PostgreSQL schema Hangfire keeps its tables in, next to MusicHub's own tables.</summary>
     public string SchemaName { get; set; } = "hangfire";
 
+    /// <summary>
+    /// A five-field cron expression (UTC) that runs the catalog reconciliation on a schedule, e.g. <c>0 3 * * *</c>
+    /// for 03:00 every day. Empty (the default) means the task only runs when started by hand. An expression Hangfire
+    /// rejects is reported by the Jobs API and leaves the task unscheduled.
+    /// </summary>
+    public string? CatalogReconciliationCron { get; set; }
+
     /// <summary>Why the settings cannot be used, or null when they are valid.</summary>
     public string? Validate() =>
         WorkerCount is < 1 or > 32 ? "Hangfire:WorkerCount must be between 1 and 32."

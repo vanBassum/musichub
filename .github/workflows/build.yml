@@ -39,6 +39,7 @@ jobs:
         with:
           node-version: '22'
       - run: bash .github/scripts/review-verdict.test.sh
+      - run: bash .github/scripts/review-report.test.sh
       - run: bash .github/scripts/autofix.test.sh
       - run: bash .github/scripts/workflows.test.sh
       - run: bash .github/scripts/sandbox.test.sh

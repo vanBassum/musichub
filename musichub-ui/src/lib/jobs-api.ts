@@ -1,9 +1,21 @@
-// One background task of GET /api/jobs. `activeExecutionId` is its run that is waiting or in progress.
+// The recurring schedule of a task. `enabled` is false when no cron is configured or `problem` says why it
+// could not be registered. Times are UTC instants.
+export interface JobSchedule {
+  enabled: boolean
+  cron: string | null
+  nextRun: string | null
+  lastRun: string | null
+  problem: string | null
+}
+
+// One background task of GET /api/jobs. `activeExecutionId` is its run that is waiting or in progress;
+// `schedule` is null for a task that cannot be scheduled.
 export interface JobTask {
   id: string
   name: string
   description: string
   activeExecutionId: string | null
+  schedule: JobSchedule | null
 }
 
 // What a catalog reconciliation run did, as the job returned it.

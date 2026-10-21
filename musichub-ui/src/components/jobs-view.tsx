@@ -14,7 +14,7 @@ import {
 } from "@/components/ui/select"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import type { JobExecution, JobTask } from "@/lib/jobs-api"
+import type { JobExecution, JobSchedule, JobTask } from "@/lib/jobs-api"
 import { formatElapsed } from "@/lib/format"
 import {
   executionVersion,
@@ -93,6 +93,24 @@ function StatusBadge({ execution }: { execution: JobExecution }) {
   )
 }
 
+// When a task runs next, or why it has no schedule. Nothing for a task that cannot be scheduled.
+function ScheduleLine({ schedule }: { schedule: JobSchedule | null }) {
+  if (!schedule) return null
+  if (schedule.problem)
+    return (
+      <p role="alert" className="text-sm break-words text-destructive">
+        {schedule.problem}
+      </p>
+    )
+  return (
+    <p className="text-sm text-muted-foreground">
+      {schedule.enabled
+        ? `Next run ${when(schedule.nextRun)} · cron ${schedule.cron} (UTC)`
+        : "Not scheduled, starts by hand only"}
+    </p>
+  )
+}
+
 // A task and its start button. One start is in flight at a time, and a task refuses a second run while one is active.
 function TaskCard({
   task,
@@ -114,6 +132,7 @@ function TaskCard({
           <h2 className="font-semibold">{task.name}</h2>
           <p className="text-sm text-muted-foreground">{task.description}</p>
         </div>
+        <ScheduleLine schedule={task.schedule} />
         <div className="flex flex-wrap items-center justify-between gap-2">
           <p className="flex items-center gap-2 text-sm">
             <span

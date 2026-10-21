@@ -81,6 +81,7 @@ Optional keys (the `Hangfire` section):
 | `Hangfire__RetentionHours` | `168` | How long finished jobs are kept |
 | `Hangfire__ShutdownTimeoutSeconds` | `15` | Wait for running jobs on stop (1–25) |
 | `Hangfire__SchemaName` | `hangfire` | PostgreSQL schema |
+| `Hangfire__CatalogReconciliationCron` | empty (off) | Five-field cron expression, in UTC, that runs "Synchronize catalog" on a schedule (`0 3 * * *` = daily 03:00). A scheduled run is skipped while a run is active. An invalid expression leaves the task unscheduled and is shown on the Jobs page |
 
 The PostgreSQL persistence test runs only when `MUSICHUB_TEST_POSTGRES` holds the
 connection string of a disposable database; otherwise it is reported as skipped.
