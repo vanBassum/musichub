@@ -18,7 +18,13 @@ public sealed class SlskdAcquisitionProviderTests : IDisposable
     /// <summary>A stand-in for slskd's HTTP API: answers with whatever the test's script says and records every call.</summary>
     private sealed class FakeSlskd(Func<Call, int, HttpResponseMessage> respond) : HttpMessageHandler
     {
-        public List<Call> Calls { get; } = [];
+        private readonly List<Call> _calls = [];
+
+        // Concurrent requests record at the same time, so reads take a snapshot under the lock.
+        public IReadOnlyList<Call> Calls
+        {
+            get { lock (_calls) return _calls.ToList(); }
+        }
 
         public int Count(HttpMethod method, string pathStart) =>
             Calls.Count(c => c.Method == method && c.PathAndQuery.StartsWith(pathStart, StringComparison.Ordinal));
@@ -27,8 +33,13 @@ public sealed class SlskdAcquisitionProviderTests : IDisposable
         {
             var call = new Call(request.Method, request.RequestUri!.PathAndQuery,
                 request.Content is null ? null : await request.Content.ReadAsStringAsync(ct));
-            Calls.Add(call);
-            return respond(call, Calls.Count(c => c.Method == call.Method && c.PathAndQuery == call.PathAndQuery));
+            int number;
+            lock (_calls)
+            {
+                _calls.Add(call);
+                number = _calls.Count(c => c.Method == call.Method && c.PathAndQuery == call.PathAndQuery);
+            }
+            return respond(call, number);
         }
     }
 

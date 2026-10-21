@@ -24,7 +24,7 @@ public static class JobKinds
     public static readonly JobKind MissingMusicAcquisition = new(
         "missing-music-acquisition",
         "Search for missing music",
-        "Searches for music that has no stored file, downloads the best matching MP3 and imports it once it is identified as the right recording.",
+        "Searches for music that has no stored file and queues the best matching MP3 for download. The queue downloads it and it is imported once it is identified as the right recording.",
         typeof(MissingMusicAcquisitionJob),
         typeof(MissingMusicSummary),
         client => client.Enqueue<MissingMusicAcquisitionJob>(job => job.Run(null, CancellationToken.None)));

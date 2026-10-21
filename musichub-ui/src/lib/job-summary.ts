@@ -15,7 +15,7 @@ export function summaryHeadline(summary: TaskSummary) {
   if (isMissingMusicSummary(summary)) {
     return {
       main: `${plural(summary.examined, "track", "tracks")} searched`,
-      sub: `${summary.imported} imported, ${summary.nothingFound + summary.noAcceptableCandidate} not found${failedPart}`,
+      sub: `${summary.enqueued} queued, ${summary.alreadyQueued} already queued, ${summary.nothingFound} not found${failedPart}`,
     }
   }
   return {
@@ -37,9 +37,9 @@ export function summaryFacts(summary: TaskSummary): [string, string | number][] 
   if (isMissingMusicSummary(summary)) {
     return [
       ["Searched", plural(summary.examined, "track", "tracks")],
-      ["Imported", plural(summary.imported, "track", "tracks")],
+      ["Queued for download", plural(summary.enqueued, "track", "tracks")],
+      ["Already queued", plural(summary.alreadyQueued, "track", "tracks")],
       ["Nothing found", plural(summary.nothingFound, "track", "tracks")],
-      ["None accepted", plural(summary.noAcceptableCandidate, "track", "tracks")],
       ["Provider unavailable", plural(summary.providerUnavailable, "track", "tracks")],
       ["Skipped", plural(summary.skipped, "track", "tracks")],
       ["Errors", summary.failed],
