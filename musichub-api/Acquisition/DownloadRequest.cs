@@ -30,8 +30,6 @@ public static class DownloadRequestStatuses
     public static readonly IReadOnlyList<DownloadRequestStatus> Active =
         [DownloadRequestStatus.Queued, DownloadRequestStatus.Downloading, DownloadRequestStatus.Downloaded];
 
-    public static bool IsActive(DownloadRequestStatus status) => Active.Contains(status);
-
     /// <summary>Downloading to Queued is a retry or the recovery of an interrupted transfer. Final statuses never change.</summary>
     public static bool CanTransition(DownloadRequestStatus from, DownloadRequestStatus to) => (from, to) switch
     {
