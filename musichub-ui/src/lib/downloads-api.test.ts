@@ -3,7 +3,9 @@ import { afterEach, describe, expect, it, vi } from "vitest"
 import {
   canRemoveDownload,
   canRetryDownload,
+  formatDownloadStatus,
   isDownloadActive,
+  parseDownloadStatus,
   listDownloadQueue,
   removeDownload,
   retryDownload,
@@ -32,10 +34,31 @@ describe("download queue api", () => {
     const fetchMock = vi.fn(async () => Response.json(page))
     vi.stubGlobal("fetch", fetchMock)
 
-    await expect(listDownloadQueue()).resolves.toEqual(page)
+    await expect(listDownloadQueue("all")).resolves.toEqual({ ...page, filter: "all" })
     expect(fetchMock).toHaveBeenCalledWith("/api/downloads?page=1&pageSize=100", {
       signal: undefined,
     })
+  })
+
+  it("asks the API for one status and reports the matching total", async () => {
+    const page = { items: [item({ status: "Failed" })], total: 7, page: 1, pageSize: 100 }
+    const fetchMock = vi.fn(async () => Response.json(page))
+    vi.stubGlobal("fetch", fetchMock)
+
+    const result = await listDownloadQueue("Failed")
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/downloads?page=1&pageSize=100&status=Failed",
+      { signal: undefined }
+    )
+    expect(result.total).toBe(7)
+    expect(result.filter).toBe("Failed")
+  })
+
+  it("round-trips a status through its deep link value", () => {
+    expect(formatDownloadStatus("Failed")).toBe("failed")
+    expect(parseDownloadStatus("failed")).toBe("Failed")
+    expect(parseDownloadStatus("nonsense")).toBe("all")
+    expect(parseDownloadStatus(null)).toBe("all")
   })
 
   it("returns an empty page as it is, without inventing requests", async () => {
@@ -43,7 +66,7 @@ describe("download queue api", () => {
       Response.json({ items: [], total: 0, page: 1, pageSize: 100 })
     )
 
-    const page = await listDownloadQueue()
+    const page = await listDownloadQueue("all")
     expect(page.items).toEqual([])
     expect(page.total).toBe(0)
   })
@@ -51,7 +74,7 @@ describe("download queue api", () => {
   it("fails with an explicit message when the API answers an error", async () => {
     vi.stubGlobal("fetch", async () => new Response("", { status: 500 }))
 
-    await expect(listDownloadQueue()).rejects.toThrow(
+    await expect(listDownloadQueue("all")).rejects.toThrow(
       "The downloads could not be loaded (HTTP 500)."
     )
   })

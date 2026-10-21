@@ -13,6 +13,7 @@ import { TrackDetailsSheet } from "@/components/track-details-sheet"
 import { TrackTable } from "@/components/track-table"
 import { openArtist, type ArtistSource } from "@/lib/artist-route"
 import type { AudioFilter } from "@/lib/catalog-api"
+import type { DownloadStatusFilter } from "@/lib/downloads-api"
 import {
   activeNav,
   formatLocation,
@@ -42,14 +43,15 @@ export function App() {
   // What the box shows now, and the term sent to the API once typing pauses.
   const [searchInput, setSearchInput] = useState("")
   const [search, setSearch] = useState("")
-  const [audio, setAudio] = useState<AudioFilter>("all")
+  // The Library's wanted/missing filter lives in the URL hash, so it can be linked to.
+  const { audio } = location
   const [page, setPage] = useState(1)
   const isDesktop = useIsDesktop()
   const catalog = useTracks(search, audio, page)
   // Held here so uploads survive navigation and the desktop/mobile layout swap.
   const filesState = useFiles()
   const jobsState = useJobs()
-  const downloadsState = useDownloadQueue()
+  const downloadsState = useDownloadQueue(location.downloadStatus)
 
   useEffect(() => {
     const term = searchInput.trim()
@@ -73,10 +75,13 @@ export function App() {
     window.location.hash = formatLocation(next, searchQuery)
   }
 
-  const changeAudio =(value: AudioFilter) => {
-    setAudio(value)
+  const changeAudio = (value: AudioFilter) => {
     setPage(1)
+    navigate({ ...locationOf("library"), audio: value })
   }
+
+  const changeDownloadStatus = (value: DownloadStatusFilter) =>
+    navigate({ ...locationOf("downloads"), downloadStatus: value })
 
   const filters = (className?: string) => (
     <FilterSidebar
@@ -140,6 +145,7 @@ export function App() {
           filesState={filesState}
           jobsState={jobsState}
           downloadsState={downloadsState}
+          onDownloadStatusChange={changeDownloadStatus}
           searchQuery={searchQuery}
           onSearchQueryChange={setSearchQuery}
           onSelectTrack={selectSearchTrack}
@@ -177,7 +183,12 @@ export function App() {
               className="min-h-0"
             />
           ) : tab === "downloads" ? (
-            <DownloadsView state={downloadsState} className="min-h-0" />
+            <DownloadsView
+              state={downloadsState}
+              status={location.downloadStatus}
+              onStatusChange={changeDownloadStatus}
+              className="min-h-0"
+            />
           ) : tab === "settings" ? (
             <SettingsView
               section={location.screen ?? defaultSettingsSection}
