@@ -17,6 +17,7 @@ import {
   activeNav,
   formatLocation,
   locationOf,
+  parseJobsFilter,
   parseSearchQuery,
   syncSearchHash,
   type AppLocation,
@@ -69,6 +70,15 @@ export function App() {
     const timer = setTimeout(() => syncSearchHash(searchQuery), searchDelayMs)
     return () => clearTimeout(timer)
   }, [location.tab, searchQuery])
+
+  // A Jobs link with a filter (#/settings/jobs?state=failed) opens History with that filter applied.
+  const { setFilter: setJobsFilter, setTab: setJobsTab } = jobsState
+  useEffect(() => {
+    if (location.screen !== "jobs") return
+    const filter = parseJobsFilter(window.location.hash)
+    setJobsFilter(filter)
+    if (filter !== "all") setJobsTab("history")
+  }, [location, setJobsFilter, setJobsTab])
 
   // A navigation is a history entry, so browser back returns to where it came from.
   const navigate = (next: AppLocation) => {

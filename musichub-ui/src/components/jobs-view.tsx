@@ -1,5 +1,5 @@
 import { ArrowLeft, Database, Play, RefreshCw } from "lucide-react"
-import { useState, type ReactNode } from "react"
+import type { ReactNode } from "react"
 
 import { IdentificationOutcomes } from "@/components/identification-outcomes"
 import { MissingMusicResults } from "@/components/missing-music-results"
@@ -14,7 +14,13 @@ import {
 } from "@/components/ui/select"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import type { JobExecution, JobSchedule, JobTask } from "@/lib/jobs-api"
+import {
+  jobFilters,
+  type JobExecution,
+  type JobFilter,
+  type JobSchedule,
+  type JobTask,
+} from "@/lib/jobs-api"
 import { formatElapsed } from "@/lib/format"
 import {
   executionVersion,
@@ -22,13 +28,23 @@ import {
   summaryFailures,
   summaryHeadline,
 } from "@/lib/job-summary"
+import { syncJobsHash } from "@/lib/navigation"
 import type { JobsState, JobsTab } from "@/lib/use-jobs"
 import { cn } from "@/lib/utils"
 
-type Outcome = "waiting" | "retrying" | "running" | "completed" | "partial" | "failed" | "deleted"
+type Outcome =
+  | "waiting"
+  | "stuck"
+  | "retrying"
+  | "running"
+  | "completed"
+  | "partial"
+  | "failed"
+  | "deleted"
 
 const outcomeLabels: Record<Outcome, string> = {
   waiting: "Waiting",
+  stuck: "Stuck",
   retrying: "Retrying",
   running: "Running",
   completed: "Completed",
@@ -39,6 +55,7 @@ const outcomeLabels: Record<Outcome, string> = {
 
 const outcomeClassNames: Record<Outcome, string> = {
   waiting: "bg-muted text-muted-foreground",
+  stuck: "bg-warning text-warning-foreground",
   retrying: "bg-warning text-warning-foreground",
   running: "bg-primary text-primary-foreground",
   completed: "bg-success text-success-foreground",
@@ -47,11 +64,16 @@ const outcomeClassNames: Record<Outcome, string> = {
   deleted: "bg-muted text-muted-foreground",
 }
 
-const allStatuses = "all"
-type StatusFilter = Outcome | typeof allStatuses
+const filterLabels: Record<JobFilter, string> = {
+  all: "All runs",
+  failed: "Failed",
+  stuck: "Stuck",
+}
 
-// A run that Succeeded but could not process some files is shown as Partial.
+// A run that Succeeded but could not process some files is shown as Partial; one that waits or processes for too
+// long is shown as Stuck.
 function outcomeOf(execution: JobExecution): Outcome {
+  if (execution.stuck) return "stuck"
   switch (execution.state) {
     case "Enqueued":
       return "waiting"
@@ -248,11 +270,11 @@ function HistoryTab({ state }: { state: JobsState }) {
 }
 
 function RunList({ state, className }: { state: JobsState; className?: string }) {
-  const { executions, selectedId, select } = state
-  const [status, setStatus] = useState<StatusFilter>(allStatuses)
-  const shown = executions?.filter(
-    (execution) => status === allStatuses || outcomeOf(execution) === status
-  )
+  const { executions, total, filter, setFilter, showMore, selectedId, select } = state
+  const changeFilter = (value: JobFilter) => {
+    setFilter(value)
+    syncJobsHash(value)
+  }
 
   return (
     <section
@@ -263,31 +285,35 @@ function RunList({ state, className }: { state: JobsState; className?: string })
         <h2 id="executions-heading" className="text-lg font-semibold">
           Runs
         </h2>
-        <Select value={status} onValueChange={(value) => setStatus(value as StatusFilter)}>
-          <SelectTrigger aria-label="Filter by status">
+        <Select value={filter} onValueChange={(value) => changeFilter(value as JobFilter)}>
+          <SelectTrigger aria-label="Filter runs">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value={allStatuses}>All statuses</SelectItem>
-            {(Object.keys(outcomeLabels) as Outcome[]).map((item) => (
+            {jobFilters.map((item) => (
               <SelectItem key={item} value={item}>
-                {outcomeLabels[item]}
+                {filterLabels[item]}
               </SelectItem>
             ))}
           </SelectContent>
         </Select>
       </div>
-      {shown === undefined ? (
+      {total !== null && (
+        <p role="status" className="text-muted-foreground">
+          {total} {total === 1 ? "run matches" : "runs match"} this filter
+        </p>
+      )}
+      {executions === null ? (
         <Skeleton className="h-24 w-full" />
-      ) : shown.length === 0 ? (
+      ) : executions.length === 0 ? (
         <p className="text-muted-foreground">
-          {executions?.length === 0
+          {filter === "all"
             ? "No runs yet. Start a task to see it here."
-            : "No runs have this status."}
+            : "No runs match this filter."}
         </p>
       ) : (
         <ul aria-label="Runs" className="flex flex-col gap-2">
-          {shown.map((execution) => {
+          {executions.map((execution) => {
             const result = describeResult(execution)
             const selected = execution.id === selectedId
             return (
@@ -320,6 +346,11 @@ function RunList({ state, className }: { state: JobsState; className?: string })
             )
           })}
         </ul>
+      )}
+      {executions !== null && total !== null && executions.length < total && (
+        <Button variant="outline" onClick={showMore}>
+          Show more runs
+        </Button>
       )}
     </section>
   )

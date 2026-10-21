@@ -17,7 +17,7 @@ namespace MusicHub.Api.Controllers;
 [Route("api/jobs")]
 public class JobsController(JobService jobs, MusicHubDbContext db, IServiceProvider services) : ControllerBase
 {
-    private const int RecentExecutions = 25;
+    private const int MaxPageSize = 100;
 
     /// <summary>The available background tasks; <c>activeExecutionId</c> is the task's run in progress, if any, and <c>schedule</c> its recurring schedule.</summary>
     [HttpGet]
@@ -35,11 +35,18 @@ public class JobsController(JobService jobs, MusicHubDbContext db, IServiceProvi
         return Ok(tasks.ToArray());
     }
 
-    /// <summary>The most recent executions of all tasks, newest first.</summary>
+    /// <summary>
+    /// A page of the executions of all tasks, newest first; <paramref name="state"/> narrows it to the failed or the
+    /// stuck ones. <c>total</c> counts every execution that matches, not only this page.
+    /// </summary>
     [HttpGet("executions")]
-    public async Task<IActionResult> Executions(CancellationToken cancellationToken) =>
+    public async Task<IActionResult> Executions(
+        [FromQuery] JobHistoryFilter state = JobHistoryFilter.All,
+        [FromQuery] int skip = 0,
+        [FromQuery] int take = 25,
+        CancellationToken cancellationToken = default) =>
         jobs.IsReady
-            ? Ok(await jobs.ListAsync(RecentExecutions, cancellationToken))
+            ? Ok(await jobs.ListAsync(Math.Clamp(take, 1, MaxPageSize), cancellationToken, state, Math.Max(skip, 0)))
             : JobsUnavailable();
 
     /// <summary>One execution with its Hangfire state history. 404 when it is unknown or has expired.</summary>

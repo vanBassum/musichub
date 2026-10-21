@@ -3,9 +3,11 @@ import { describe, expect, it } from "vitest"
 import { formatArtistHash, type ArtistRoute } from "@/lib/artist-route"
 import {
   activeNav,
+  formatJobsHash,
   formatLocation,
   formatSearchHash,
   locationOf,
+  parseJobsFilter,
   parseLocation,
   parseSearchQuery,
 } from "@/lib/navigation"
@@ -21,6 +23,22 @@ describe("search deep link", () => {
     expect(formatSearchHash("  ")).toBe("#/search")
     expect(parseSearchQuery("#/search")).toBe("")
     expect(parseSearchQuery("#/player?q=x")).toBe("")
+  })
+})
+
+describe("jobs history deep link", () => {
+  it.each(["failed", "stuck"] as const)("round-trips the %s filter", (filter) => {
+    const hash = formatJobsHash(filter)
+    expect(hash).toBe(`#/settings/jobs?state=${filter}`)
+    expect(parseJobsFilter(hash)).toBe(filter)
+    expect(parseLocation(hash)).toEqual(locationOf("settings", "jobs"))
+  })
+
+  it("lists all runs without a valid filter or on another screen", () => {
+    expect(formatJobsHash("all")).toBe("#/settings/jobs")
+    expect(parseJobsFilter("#/settings/jobs")).toBe("all")
+    expect(parseJobsFilter("#/settings/jobs?state=bogus")).toBe("all")
+    expect(parseJobsFilter("#/settings/files?state=failed")).toBe("all")
   })
 })
 
