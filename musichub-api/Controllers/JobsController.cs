@@ -95,8 +95,8 @@ public class JobsController(JobService jobs, MusicHubDbContext db, IServiceProvi
 
     /// <summary>
     /// Enqueues a catalog reconciliation run: 202 with the new execution. 409 while a run is already active. With
-    /// <paramref name="reIdentifyAll"/> (off by default) the run also identifies files that already have a track; it
-    /// never changes their link.
+    /// <paramref name="reIdentifyAll"/> (off by default) the run also identifies files that already have a track; an
+    /// automatic link is replaced only when the identification justifies another track, a person's confirmation never.
     /// </summary>
     [HttpPost("catalog-reconciliation/start")]
     public Task<IActionResult> StartCatalogReconciliation(

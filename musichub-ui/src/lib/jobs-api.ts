@@ -26,10 +26,10 @@ export interface JobSummary {
   unresolved: number
   skipped: number
   failed: number
-  // Re-identification only: linked files whose identity matches their track, and those whose candidate differs
-  // (the link was kept and the candidate recorded for review).
-  confirmed: number
-  differing: number
+  // Re-identification only: linked files whose automatic link was replaced, and those that kept their link
+  // (confirmed again, inconclusive, or confirmed by a person).
+  replaced: number
+  retained: number
 }
 
 export type TrackAcquisitionOutcome =
@@ -105,8 +105,8 @@ export interface JobExecutionDetails {
   errorType: string | null
 }
 
-// How the identification of one file in an execution ended. Only "Identified" links the file; "Confirmed" and
-// "Differs" are re-identifications of an already linked file, whose link stays.
+// How the identification of one file in an execution ended. "Identified" links the file (or, on a
+// re-identification, keeps the link it has).
 export type IdentificationDecision =
   | "Identified"
   | "NoMatch"
@@ -114,8 +114,6 @@ export type IdentificationDecision =
   | "NoMethodRan"
   | "MethodFailed"
   | "Skipped"
-  | "Confirmed"
-  | "Differs"
   | "Error"
   | "Mismatch"
 
@@ -232,7 +230,7 @@ export const getDownloads = (id: string, signal?: AbortSignal) =>
   )
 
 // What a manual start chooses. `reIdentifyAll` (Synchronize catalog only) also identifies files that already
-// have a track; their link is never changed.
+// have a track; only an automatic link can be replaced, never a person's confirmation.
 export interface JobStartOptions {
   reIdentifyAll?: boolean
 }

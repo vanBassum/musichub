@@ -13,7 +13,7 @@ namespace MusicHub.Api.Jobs;
 public class CatalogReconciliationJob(CatalogReconciliation reconciliation)
 {
     /// <param name="context">Supplied by Hangfire when the job runs; its job id names the execution.</param>
-    /// <param name="reIdentifyAll">Also identify files that already have a track, without changing their link.</param>
+    /// <param name="reIdentifyAll">Also identify files that already have a track; only an automatic link can be replaced.</param>
     [DisableConcurrentExecution(timeoutInSeconds: 30)]
     public Task<CatalogReconciliationSummary> Run(PerformContext? context, bool reIdentifyAll, CancellationToken cancellationToken) =>
         reconciliation.RunAsync(context?.BackgroundJob.Id, cancellationToken, reIdentifyAll);

@@ -135,7 +135,7 @@ public class CatalogReconciliationJobServiceTests
 
         Assert.Equal(0, (normalRun.Execution.Summary as MusicHub.Api.Catalog.CatalogReconciliationSummary)?.Examined);
         var summary = Assert.IsType<MusicHub.Api.Catalog.CatalogReconciliationSummary>(allRun.Execution.Summary);
-        Assert.Equal((1, 1), (summary.Examined, summary.Unresolved));
+        Assert.Equal((1, 1), (summary.Examined, summary.Retained));
     }
 
     [Fact]

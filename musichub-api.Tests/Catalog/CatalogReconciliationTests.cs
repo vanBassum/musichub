@@ -522,7 +522,7 @@ public sealed class CatalogReconciliationTests : IDisposable
     }
 
     [Fact]
-    public async Task Re_identification_confirms_a_linked_file_whose_identity_matches_and_changes_nothing()
+    public async Task Re_identification_keeps_the_link_of_a_file_identified_as_its_track_and_changes_nothing()
     {
         var track = await AddTrackAsync("Song", "Artist");
         _identities["a.mp3"] = () => Identified(" song ", "ARTIST");
@@ -530,9 +530,9 @@ public sealed class CatalogReconciliationTests : IDisposable
 
         var summary = await RunAsync(executionId: "1", reIdentifyAll: true);
 
-        Assert.Equal(new CatalogReconciliationSummary(1, 0, 0, 0, 0, 0, Confirmed: 1), summary);
+        Assert.Equal(new CatalogReconciliationSummary(1, 0, 0, 0, 0, 0, Retained: 1), summary);
         var outcome = Assert.Single(await OutcomesAsync("1"));
-        Assert.Equal((IdentificationDecision.Confirmed, (int?)track, (int?)id), (outcome.Decision, outcome.TrackId, outcome.FileId));
+        Assert.Equal((IdentificationDecision.Identified, (int?)track, (int?)id), (outcome.Decision, outcome.TrackId, outcome.FileId));
         using var db = CreateDb();
         Assert.Equal(track, (await db.Files.SingleAsync(f => f.Id == id)).TrackId);
         Assert.Empty(await db.AppliedIdentifications.ToListAsync());
@@ -540,25 +540,31 @@ public sealed class CatalogReconciliationTests : IDisposable
     }
 
     [Fact]
-    public async Task Re_identification_never_replaces_a_link_and_records_a_differing_candidate_with_its_evidence()
+    public async Task Re_identification_replaces_an_automatic_link_when_the_identification_justifies_another_track()
     {
-        var current = await AddTrackAsync("Song", "Artist");
+        _identities["a.mp3"] = () => Identified("Song", "Artist");
+        var id = await AddFileAsync("a.mp3");
+        await RunAsync(executionId: "1");
         _identities["a.mp3"] = () => IdentificationResult.Identified(
             new ProposedRecordingIdentity("Another", ["Someone"], null), [new("musicbrainz", "x")],
             [Method("musicbrainz", IdentificationMethodStatus.Found, "\"Another\" by Someone")]);
-        var id = await AddFileAsync("a.mp3", trackId: current);
 
-        var summary = await RunAsync(executionId: "1", reIdentifyAll: true);
+        var summary = await RunAsync(executionId: "2", reIdentifyAll: true);
 
-        Assert.Equal(new CatalogReconciliationSummary(1, 0, 0, 0, 0, 0, Differing: 1), summary);
-        var outcome = Assert.Single(await OutcomesAsync("1"));
-        Assert.Equal(IdentificationDecision.Differs, outcome.Decision);
-        Assert.Contains("\"Another\" by Someone", outcome.Reason);
+        Assert.Equal(new CatalogReconciliationSummary(1, 0, 1, 0, 0, 0, Replaced: 1), summary);
+        var outcome = Assert.Single(await OutcomesAsync("2"));
+        Assert.Equal(IdentificationDecision.Identified, outcome.Decision);
+        Assert.Contains("replaces the automatic link", outcome.Reason);
         Assert.Contains("\"\\u0022Another\\u0022 by Someone\"", outcome.MethodsJson);
+        Assert.Equal(IdentificationDecision.Identified, Assert.Single(await OutcomesAsync("1")).Decision);
         using var db = CreateDb();
-        Assert.Equal(current, (await db.Files.SingleAsync(f => f.Id == id)).TrackId);
-        Assert.Equal(1, await db.Tracks.CountAsync());
-        Assert.Empty(await db.AppliedIdentifications.ToListAsync());
+        var file = await db.Files.SingleAsync(f => f.Id == id);
+        Assert.Equal(outcome.TrackId, file.TrackId);
+        Assert.Equal("Another", (await db.Tracks.SingleAsync(t => t.Id == file.TrackId)).Title);
+        Assert.Equal(2, await db.Tracks.CountAsync());
+        Assert.Equal(
+            [IdentificationSource.Automatic, IdentificationSource.Automatic],
+            (await db.AppliedIdentifications.OrderBy(a => a.Id).ToListAsync()).Select(a => a.Source));
     }
 
     [Fact]
@@ -573,9 +579,11 @@ public sealed class CatalogReconciliationTests : IDisposable
 
         var summary = await RunAsync(executionId: "2", reIdentifyAll: true);
 
-        Assert.Equal(1, summary.Differing);
+        Assert.Equal((0, 1), (summary.Replaced, summary.Retained));
         Assert.Equal(IdentificationDecision.Identified, Assert.Single(await OutcomesAsync("1")).Decision);
-        Assert.Equal(IdentificationDecision.Differs, Assert.Single(await OutcomesAsync("2")).Decision);
+        var retained = Assert.Single(await OutcomesAsync("2"));
+        Assert.Equal((IdentificationDecision.Identified, (int?)manual), (retained.Decision, retained.TrackId));
+        Assert.Contains("a person confirmed", retained.Reason);
         using var check = CreateDb();
         Assert.Equal(manual, (await check.Files.SingleAsync(f => f.Id == id)).TrackId);
         Assert.Equal(
@@ -592,7 +600,7 @@ public sealed class CatalogReconciliationTests : IDisposable
 
         var summary = await RunAsync(executionId: "1", reIdentifyAll: true);
 
-        Assert.Equal(new CatalogReconciliationSummary(1, 0, 0, 1, 0, 0), summary);
+        Assert.Equal(new CatalogReconciliationSummary(1, 0, 0, 0, 0, 0, Retained: 1), summary);
         Assert.Equal(IdentificationDecision.NoMatch, Assert.Single(await OutcomesAsync("1")).Decision);
         using var db = CreateDb();
         Assert.Equal(track, (await db.Files.SingleAsync(f => f.Id == id)).TrackId);
@@ -610,7 +618,7 @@ public sealed class CatalogReconciliationTests : IDisposable
         var second = await RunAsync(reIdentifyAll: true);
 
         Assert.Equal(new CatalogReconciliationSummary(2, 1, 1, 1, 0, 0), first);
-        Assert.Equal(new CatalogReconciliationSummary(2, 0, 0, 1, 0, 0, Confirmed: 1), second);
+        Assert.Equal(new CatalogReconciliationSummary(2, 0, 0, 1, 0, 0, Retained: 1), second);
         using var db = CreateDb();
         Assert.Equal(1, await db.Tracks.CountAsync());
         Assert.Equal(1, await db.AppliedIdentifications.CountAsync());

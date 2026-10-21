@@ -27,10 +27,10 @@ export function summaryHeadline(summary: TaskSummary) {
 
 // Only a run that re-identified linked files has these; they are not shown for a default run.
 function reIdentifiedFacts(summary: JobSummary): [string, string][] {
-  if (summary.confirmed + summary.differing === 0) return []
+  if (summary.replaced + summary.retained === 0) return []
   return [
-    ["Confirmed", plural(summary.confirmed, "file", "files")],
-    ["Differs from link", plural(summary.differing, "file", "files")],
+    ["Link replaced", plural(summary.replaced, "file", "files")],
+    ["Link kept", plural(summary.retained, "file", "files")],
   ]
 }
 
