@@ -11,6 +11,12 @@ import {
   parseArtistHash,
   type ArtistRoute,
 } from "@/lib/artist-route"
+import type { AudioFilter } from "@/lib/catalog-api"
+import {
+  formatDownloadStatus,
+  parseDownloadStatus,
+  type DownloadStatusFilter,
+} from "@/lib/downloads-api"
 
 // Where the app can be. Search, Library and Downloads are the music destinations,
 // Settings groups the operational screens, Player is the phone's playback page, and
@@ -47,6 +53,9 @@ export interface AppLocation {
   playerView: PlayerView
   // The artist page's artist and where it was opened from; set when `tab` is "artist".
   artist: ArtistRoute | null
+  // The Library's wanted/missing filter, and the Downloads status filter.
+  audio: AudioFilter
+  downloadStatus: DownloadStatusFilter
 }
 
 const isTab = (value: string): value is TabId =>
@@ -59,11 +68,14 @@ const isTab = (value: string): value is TabId =>
 // screens went. An artist link that names no artist opens Search.
 export function parseLocation(hash: string): AppLocation {
   const [tab, sub] = hash.replace(/^#\/?/, "").split("?")[0].split("/")
+  const params = new URLSearchParams(hash.split("?")[1] ?? "")
   const location: AppLocation = {
     tab: "search",
     screen: null,
     playerView: "now-playing",
     artist: null,
+    audio: "all",
+    downloadStatus: "all",
   }
   if (tab === "more") {
     if (sub === "library" || sub === "downloads") return { ...location, tab: sub }
@@ -82,8 +94,17 @@ export function parseLocation(hash: string): AppLocation {
     tab,
     screen: tab === "settings" ? parseSettingsSection(sub) : null,
     playerView: tab === "player" && sub === "queue" ? "queue" : "now-playing",
+    audio: tab === "library" ? parseAudio(params.get("audio")) : "all",
+    downloadStatus:
+      tab === "downloads" ? parseDownloadStatus(params.get("status")) : "all",
   }
 }
+
+const parseAudio = (value: string | null): AudioFilter =>
+  value === "with" || value === "without" ? value : "all"
+
+const withQuery = (hash: string, name: string, value: string) =>
+  value === "all" ? hash : `${hash}?${new URLSearchParams({ [name]: value })}`
 
 export function isSearchHash(hash: string): boolean {
   return parseLocation(hash).tab === "search"
@@ -115,8 +136,7 @@ export function parseJobsFilter(hash: string): JobFilter {
 }
 
 export function formatJobsHash(filter: JobFilter): string {
-  const hash = formatSettingsHash("jobs")
-  return filter === "all" ? hash : `${hash}?${new URLSearchParams({ state: filter })}`
+  return withQuery(formatSettingsHash("jobs"), "state", filter)
 }
 
 // Keeps the hash in step with the history filter while Jobs shows, without a history entry.
@@ -124,15 +144,19 @@ export function syncJobsHash(filter: JobFilter) {
   window.history.replaceState(null, "", formatJobsHash(filter))
 }
 
-// `searchQuery` is the term Search reopens with.
+// `searchQuery` is the term Search reopens with. Library and Downloads carry their
+// filter (`#/library?audio=without`, `#/downloads?status=failed`).
 export function formatLocation(
-  { tab, screen, playerView, artist }: AppLocation,
+  { tab, screen, playerView, artist, audio, downloadStatus }: AppLocation,
   searchQuery = ""
 ): string {
   if (tab === "search") return formatSearchHash(searchQuery)
   if (tab === "artist" && artist) return formatArtistHash(artist)
   if (tab === "settings") return screen ? formatSettingsHash(screen) : "#/settings"
   if (tab === "player" && playerView === "queue") return "#/player/queue"
+  if (tab === "library") return withQuery("#/library", "audio", audio)
+  if (tab === "downloads")
+    return withQuery("#/downloads", "status", formatDownloadStatus(downloadStatus))
   return `#/${tab}`
 }
 
@@ -141,7 +165,14 @@ export function locationOf(
   screen: SettingsSectionId | null = null,
   playerView: PlayerView = "now-playing"
 ): AppLocation {
-  return { tab, screen, playerView, artist: null }
+  return {
+    tab,
+    screen,
+    playerView,
+    artist: null,
+    audio: "all",
+    downloadStatus: "all",
+  }
 }
 
 // The navigation entry that shows as current. An artist page belongs to the page it

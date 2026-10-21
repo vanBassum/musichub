@@ -104,14 +104,6 @@ public sealed class FileIngestionService(
         return record;
     }
 
-    /// <summary>Lists persisted file registrations, newest first (Id breaks ties).</summary>
-    public async Task<IReadOnlyList<FileRecord>> ListAsync(CancellationToken cancellationToken) =>
-        await db.Files
-            .AsNoTracking()
-            .OrderByDescending(f => f.StartedAt)
-            .ThenByDescending(f => f.Id)
-            .ToListAsync(cancellationToken);
-
     /// <summary>
     /// Opens the stored bytes of registration <paramref name="id"/> for reading.
     /// Returns null when the registration does not exist or is not Stored.

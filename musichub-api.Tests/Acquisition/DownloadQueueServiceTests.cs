@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
@@ -162,13 +163,14 @@ public sealed class DownloadQueueServiceTests : IDisposable
     }
 
     [Fact]
-    public void The_transition_table_allows_no_move_out_of_a_final_status_and_no_skipping()
+    public void The_transition_table_allows_no_move_out_of_completed_only_a_manual_retry_out_of_failed_and_no_skipping()
     {
         var all = Enum.GetValues<DownloadRequestStatus>();
         foreach (var to in all)
         {
             Assert.False(DownloadRequestStatuses.CanTransition(DownloadRequestStatus.Completed, to));
-            Assert.False(DownloadRequestStatuses.CanTransition(DownloadRequestStatus.Failed, to));
+            Assert.Equal(to == DownloadRequestStatus.Queued,
+                DownloadRequestStatuses.CanTransition(DownloadRequestStatus.Failed, to));
             Assert.False(DownloadRequestStatuses.CanTransition(to, to));
         }
 
@@ -284,6 +286,178 @@ public sealed class DownloadQueueServiceTests : IDisposable
             typeof(DownloadRequestView).GetProperties().Select(p => p.Name));
         Assert.DoesNotContain(nameof(DownloadRequest.RemotePath),
             typeof(DownloadRequestView).GetProperties().Select(p => p.Name));
+    }
+
+    private async Task<int> EnqueueFailedAsync(int? trackId = null, AcquisitionCandidate? candidate = null)
+    {
+        var id = await EnqueueAsync(trackId, candidate);
+        await using var db = CreateDb();
+        var queue = Queue(db);
+        Assert.NotNull(await queue.ClaimNextAsync(default));
+        Assert.True(await queue.FailAsync(id, AcquisitionFailure.TransferFailed, "The peer went away.", null, default));
+        return id;
+    }
+
+    [Fact]
+    public async Task Retrying_a_failed_request_queues_it_again_with_its_real_state()
+    {
+        var id = await EnqueueFailedAsync();
+        await using var db = CreateDb();
+        var queue = Queue(db);
+
+        var result = await queue.RetryAsync(id, default);
+
+        Assert.Equal(RetryOutcome.Retried, result.Outcome);
+        Assert.Equal(DownloadRequestStatus.Queued, result.Request!.Status);
+        Assert.Equal(0, result.Request.AttemptCount);
+        Assert.Null(result.Request.Error);
+        Assert.Null(result.Request.FinishedAt);
+        var claim = await queue.ClaimNextAsync(default);
+        Assert.Equal(id, claim!.RequestId);
+        Assert.Equal(1, claim.AttemptNumber);
+    }
+
+    [Fact]
+    public async Task Retrying_twice_or_at_once_queues_it_once()
+    {
+        var id = await EnqueueFailedAsync();
+
+        var outcomes = await Task.WhenAll(Enumerable.Range(0, 5).Select(async _ =>
+        {
+            await using var db = CreateDb();
+            return (await Queue(db).RetryAsync(id, default)).Outcome;
+        }));
+
+        Assert.Equal(1, outcomes.Count(o => o == RetryOutcome.Retried));
+        Assert.All(outcomes.Where(o => o != RetryOutcome.Retried), o => Assert.Equal(RetryOutcome.NotFailed, o));
+        await using var check = CreateDb();
+        Assert.Equal(1, await check.DownloadRequests.CountAsync(r => r.Status == DownloadRequestStatus.Queued));
+    }
+
+    [Fact]
+    public async Task Only_a_failed_request_can_be_retried()
+    {
+        var queued = await EnqueueAsync();
+        await using var db = CreateDb();
+        var queue = Queue(db);
+
+        Assert.Equal(RetryOutcome.NotFailed, (await queue.RetryAsync(queued, default)).Outcome);
+        Assert.NotNull(await queue.ClaimNextAsync(default));
+        Assert.Equal(RetryOutcome.NotFailed, (await queue.RetryAsync(queued, default)).Outcome);
+        Assert.True(await queue.MarkDownloadedAsync(queued, null, default));
+        Assert.Equal(RetryOutcome.NotFailed, (await queue.RetryAsync(queued, default)).Outcome);
+        Assert.True(await queue.MarkCompletedAsync(queued, default));
+        Assert.Equal(RetryOutcome.NotFailed, (await queue.RetryAsync(queued, default)).Outcome);
+        Assert.Equal(RetryOutcome.NotFound, (await queue.RetryAsync(9999, default)).Outcome);
+        Assert.Equal(DownloadRequestStatus.Completed, (await queue.GetAsync(queued, default))!.Status);
+    }
+
+    [Fact]
+    public async Task A_failed_request_is_not_retried_while_its_track_or_candidate_has_an_active_request()
+    {
+        var failed = await EnqueueFailedAsync();
+        var newer = await EnqueueAsync();
+        await using var db = CreateDb();
+
+        var result = await Queue(db).RetryAsync(failed, default);
+
+        Assert.Equal(RetryOutcome.AlreadyActive, result.Outcome);
+        Assert.Equal(DownloadRequestStatus.Failed, result.Request!.Status);
+        await using var check = CreateDb();
+        Assert.Equal([newer], await check.DownloadRequests
+            .Where(r => r.Status == DownloadRequestStatus.Queued).Select(r => r.Id).ToListAsync());
+    }
+
+    [Fact]
+    public async Task Removing_a_failed_or_completed_request_hides_it_and_keeps_the_row_the_history_and_the_wishlist()
+    {
+        var failed = await EnqueueFailedAsync();
+        var completed = await EnqueueAsync(_otherTrackId, Candidate("two.mp3", "peer2"));
+        await using var db = CreateDb();
+        var queue = Queue(db);
+        Assert.NotNull(await queue.ClaimNextAsync(default));
+        Assert.True(await queue.MarkDownloadedAsync(completed, null, default));
+        Assert.True(await queue.MarkCompletedAsync(completed, default));
+
+        Assert.Equal(RemoveOutcome.Removed, await queue.RemoveAsync(failed, default));
+        Assert.Equal(RemoveOutcome.Removed, await queue.RemoveAsync(completed, default));
+
+        Assert.Empty((await queue.ListAsync(null, 1, 25, default)).Items);
+        Assert.Null(await queue.GetAsync(failed, default));
+        Assert.Equal(RemoveOutcome.NotFound, await queue.RemoveAsync(failed, default));
+        Assert.Equal(RetryOutcome.NotFound, (await queue.RetryAsync(failed, default)).Outcome);
+        await using var check = CreateDb();
+        var stored = await check.DownloadRequests.SingleAsync(r => r.Id == failed);
+        Assert.Equal("The peer went away.", stored.Error);
+        Assert.NotNull(stored.RemovedAt);
+        Assert.Equal(2, await check.Tracks.CountAsync());
+    }
+
+    [Fact]
+    public async Task An_active_request_cannot_be_removed()
+    {
+        var id = await EnqueueAsync();
+        await using var db = CreateDb();
+        var queue = Queue(db);
+
+        Assert.Equal(RemoveOutcome.NotRemovable, await queue.RemoveAsync(id, default));
+        Assert.NotNull(await queue.ClaimNextAsync(default));
+        Assert.Equal(RemoveOutcome.NotRemovable, await queue.RemoveAsync(id, default));
+        Assert.True(await queue.MarkDownloadedAsync(id, null, default));
+        Assert.Equal(RemoveOutcome.NotRemovable, await queue.RemoveAsync(id, default));
+        Assert.NotNull(await queue.GetAsync(id, default));
+    }
+
+    [Fact]
+    public async Task A_retry_that_wins_the_race_stops_the_removal()
+    {
+        var id = await EnqueueFailedAsync();
+        await using var removing = CreateDb();
+        await using var retrying = CreateDb();
+        var stale = await removing.DownloadRequests.SingleAsync(r => r.Id == id);
+        Assert.Equal(RetryOutcome.Retried, (await Queue(retrying).RetryAsync(id, default)).Outcome);
+
+        // The removal read Failed before the retry; saving it must now be refused.
+        stale.RemovedAt = DateTimeOffset.UtcNow;
+        await Assert.ThrowsAsync<DbUpdateConcurrencyException>(() => removing.SaveChangesAsync());
+
+        await using var check = CreateDb();
+        var stored = await check.DownloadRequests.SingleAsync(r => r.Id == id);
+        Assert.Equal(DownloadRequestStatus.Queued, stored.Status);
+        Assert.Null(stored.RemovedAt);
+    }
+
+    [Fact]
+    public async Task The_api_retries_and_removes_and_answers_a_conflict_for_the_wrong_state()
+    {
+        var failed = await EnqueueFailedAsync();
+        var active = await EnqueueAsync(_otherTrackId, Candidate("two.mp3", "peer2"));
+        await using var db = CreateDb();
+        var controller = new DownloadsController(Queue(db));
+
+        Assert.Equal(StatusCodes.Status409Conflict,
+            Assert.IsType<ObjectResult>(await controller.Remove(active, default)).StatusCode);
+        Assert.Equal(StatusCodes.Status409Conflict,
+            Assert.IsType<ObjectResult>(await controller.Retry(active, default)).StatusCode);
+        var retried = Assert.IsType<DownloadRequestView>(Assert.IsType<OkObjectResult>(
+            await controller.Retry(failed, default)).Value);
+        Assert.Equal(DownloadRequestStatus.Queued, retried.Status);
+        Assert.Equal(StatusCodes.Status409Conflict,
+            Assert.IsType<ObjectResult>(await controller.Retry(failed, default)).StatusCode);
+        Assert.IsType<NotFoundResult>(await controller.Retry(9999, default));
+        Assert.IsType<NotFoundResult>(await controller.Remove(9999, default));
+    }
+
+    [Fact]
+    public async Task The_api_removes_a_failed_request_with_no_content()
+    {
+        var failed = await EnqueueFailedAsync();
+        await using var db = CreateDb();
+        var controller = new DownloadsController(Queue(db));
+
+        Assert.IsType<NoContentResult>(await controller.Remove(failed, default));
+        Assert.IsType<NotFoundResult>(await controller.Remove(failed, default));
+        Assert.IsType<NotFoundResult>(await controller.Get(failed, default));
     }
 
     private sealed class FixedTime(DateTimeOffset now) : TimeProvider

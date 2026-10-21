@@ -22,6 +22,7 @@ builder.Services.Configure<FileIngestionOptions>(
 builder.Services.AddSingleton<ActiveUploadTracker>();
 builder.Services.AddScoped<FileIngestionService>();
 builder.Services.AddScoped<FileDeletionService>();
+builder.Services.AddScoped<FileListing>();
 builder.Services.AddScoped<LibraryTracks>();
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddScoped<StaleUploadCleanup>();

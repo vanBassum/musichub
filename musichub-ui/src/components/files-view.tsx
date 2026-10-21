@@ -1,6 +1,19 @@
-import { Pause, Play, RefreshCw, Trash2, Upload, X } from "lucide-react"
+import {
+  ChevronRight,
+  Pause,
+  Play,
+  RefreshCw,
+  Trash2,
+  Upload,
+  X,
+} from "lucide-react"
 import { Fragment, useRef, useState } from "react"
 
+import {
+  FileIdentificationDetails,
+  IdentificationBadge,
+} from "@/components/file-identification"
+import { FilesFilters, FilesResultBar } from "@/components/files-filters"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
@@ -23,6 +36,7 @@ import {
   type FileRegistration,
   type FileStatus,
 } from "@/lib/files-api"
+import { isFilesFiltered } from "@/lib/files-filter"
 import { formatBytes } from "@/lib/format"
 import { MAX_CONCURRENCY, MIN_CONCURRENCY } from "@/lib/upload-queue"
 import type {
@@ -76,7 +90,10 @@ export function FilesView({
   className?: string
 }) {
   const {
-    files,
+    files: page,
+    counts,
+    filter,
+    setFilter,
     loadError,
     refreshing,
     uploads,
@@ -95,7 +112,11 @@ export function FilesView({
   const input = useRef<HTMLInputElement>(null)
   const [confirming, setConfirming] = useState<string | null>(null)
   const [confirmingBulk, setConfirmingBulk] = useState(false)
-  const failedCount = files?.filter((file) => file.status === "Failed").length ?? 0
+  const [expanded, setExpanded] = useState<string | null>(null)
+  const files = page?.items
+  // Every failed file, not only those on this page or matching the filters.
+  const failedCount = counts?.statuses.Failed ?? 0
+  const filtered = isFilesFiltered(filter)
 
   const onSelect = (selected: FileList | null) => {
     if (!selected) return
@@ -197,6 +218,8 @@ export function FilesView({
         )}
       </div>
 
+      <FilesFilters filter={filter} counts={counts} onChange={setFilter} />
+
       {uploads.length > 0 && (
         <ul
           aria-label="Uploads"
@@ -222,6 +245,8 @@ export function FilesView({
         </p>
       )}
 
+      <FilesResultBar filter={filter} page={page} onChange={setFilter} />
+
       <div className="min-h-0 flex-1 overflow-auto border-t [&_[data-slot=table-container]]:overflow-visible">
         <Table className="table-fixed text-sm sm:table-auto">
           <TableHeader className="sticky top-0 z-10 bg-card">
@@ -229,6 +254,7 @@ export function FilesView({
               <TableHead className="pl-4">Filename</TableHead>
               <TableHead className="hidden sm:table-cell">Size</TableHead>
               <TableHead className="w-24 sm:w-auto">Status</TableHead>
+              <TableHead className="hidden md:table-cell">Identification</TableHead>
               <TableHead className="hidden sm:table-cell">Started</TableHead>
               <TableHead className="w-14 pr-4 sm:w-auto">
                 <span className="sr-only">Actions</span>
@@ -244,6 +270,11 @@ export function FilesView({
                     <span className="block truncate text-xs text-muted-foreground sm:hidden">
                       {fileSize(file.sizeBytes)} · {new Date(file.startedAt).toLocaleString()}
                     </span>
+                    {file.identification && (
+                      <span className="mt-1 block md:hidden">
+                        <IdentificationBadge identification={file.identification} />
+                      </span>
+                    )}
                   </TableCell>
                   <TableCell className="hidden sm:table-cell">
                     {fileSize(file.sizeBytes)}
@@ -260,11 +291,34 @@ export function FilesView({
                       {file.status}
                     </Badge>
                   </TableCell>
+                  <TableCell className="hidden md:table-cell">
+                    {file.identification && (
+                      <IdentificationBadge identification={file.identification} />
+                    )}
+                  </TableCell>
                   <TableCell className="hidden sm:table-cell">
                     {new Date(file.startedAt).toLocaleString()}
                   </TableCell>
                   <TableCell className="pr-4">
                     <span className="flex items-center justify-end gap-1">
+                      {file.identification && (
+                        <Button
+                          variant="ghost"
+                          size="icon-sm"
+                          aria-expanded={expanded === file.id}
+                          aria-label={`Identification details of ${file.originalFilename}`}
+                          onClick={() =>
+                            setExpanded(expanded === file.id ? null : file.id)
+                          }
+                        >
+                          <ChevronRight
+                            className={cn(
+                              "transition-transform",
+                              expanded === file.id && "rotate-90"
+                            )}
+                          />
+                        </Button>
+                      )}
                       {file.status === "Stored" &&
                         isAudioFilename(file.originalFilename) && (
                           <PlayControl file={file} />
@@ -276,6 +330,16 @@ export function FilesView({
                     </span>
                   </TableCell>
                 </TableRow>
+                {expanded === file.id && file.identification && (
+                  <TableRow className="hover:bg-transparent">
+                    <TableCell colSpan={6} className="px-4 whitespace-normal">
+                      <FileIdentificationDetails
+                        fileId={file.id}
+                        identification={file.identification}
+                      />
+                    </TableCell>
+                  </TableRow>
+                )}
                 {deleteStatusKind(deletions[file.id], confirming === file.id) && (
                   <TableRow className="sm:hidden">
                     <TableCell colSpan={3} className="px-4 whitespace-normal">
@@ -287,8 +351,10 @@ export function FilesView({
             ))}
             {files?.length === 0 && (
               <TableRow className="hover:bg-transparent">
-                <TableCell colSpan={5}className="p-6 text-center text-muted-foreground">
-                  No files yet. Upload one to see it here.
+                <TableCell colSpan={6} className="p-6 text-center text-muted-foreground">
+                  {filtered
+                    ? "No files match the filters."
+                    : "No files yet. Upload one to see it here."}
                 </TableCell>
               </TableRow>
             )}

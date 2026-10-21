@@ -18,6 +18,36 @@ public enum EnqueueOutcome
 
 public sealed record EnqueueResult(EnqueueOutcome Outcome, DownloadRequestView? Request);
 
+public enum RetryOutcome
+{
+    /// <summary>The failed request is queued again.</summary>
+    Retried,
+
+    /// <summary>There is no such visible request.</summary>
+    NotFound,
+
+    /// <summary>The request is not Failed (any more); nothing changed.</summary>
+    NotFailed,
+
+    /// <summary>The track or the candidate has another active request; nothing changed.</summary>
+    AlreadyActive,
+}
+
+public enum RemoveOutcome
+{
+    /// <summary>The request left the visible queue.</summary>
+    Removed,
+
+    /// <summary>There is no such visible request (also: it was removed already).</summary>
+    NotFound,
+
+    /// <summary>The request is active (or became active); nothing changed.</summary>
+    NotRemovable,
+}
+
+/// <summary>The request as it is now, for the caller to report; null when it is not visible.</summary>
+public sealed record RetryResult(RetryOutcome Outcome, DownloadRequestView? Request);
+
 /// <summary>A request as a worker needs it: what to download and which attempt this is.</summary>
 public sealed record ClaimedDownload(int RequestId, int? TrackId, AcquisitionCandidate Candidate, int AttemptNumber);
 
@@ -65,6 +95,18 @@ public interface IDownloadQueueService
 
     /// <summary>A page of requests, newest first; all of them, or only those in <paramref name="status"/>.</summary>
     Task<DownloadRequestPage> ListAsync(DownloadRequestStatus? status, int page, int pageSize, CancellationToken ct);
+
+    /// <summary>
+    /// The user's manual retry (Failed to Queued, attempts counted afresh): the worker picks it up like any queued
+    /// request. Repeating it, also concurrently, queues it once; the other calls find it no longer Failed.
+    /// </summary>
+    Task<RetryResult> RetryAsync(int id, CancellationToken ct);
+
+    /// <summary>
+    /// Takes a Failed or Completed request out of the visible queue. Only the queue entry goes: the wishlist, the catalog,
+    /// the stored files and the attempt history stay. An active request is never removed.
+    /// </summary>
+    Task<RemoveOutcome> RemoveAsync(int id, CancellationToken ct);
 
     /// <summary>Takes the oldest request that may start now (Queued to Downloading), or null when there is none.</summary>
     Task<ClaimedDownload?> ClaimNextAsync(CancellationToken ct);
