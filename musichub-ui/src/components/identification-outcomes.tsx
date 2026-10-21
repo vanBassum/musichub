@@ -64,25 +64,7 @@ function Counts({ outcomes }: { outcomes: FileOutcome[] }) {
   )
 }
 
-// Where a recorded outcome comes from. The execution is only a label: Hangfire may have dropped it long ago.
-function Provenance({ outcome }: { outcome: FileOutcome }) {
-  return (
-    <p className="mb-2 text-xs text-muted-foreground">
-      Recorded {new Date(outcome.recordedAt).toLocaleString()} · execution{" "}
-      {outcome.jobExecutionId || "not recorded"} · {outcomeSubject(outcome)} ·{" "}
-      {outcome.trackId === null ? "no track linked" : `track ${outcome.trackId}`}
-      {outcome.pipelineVersion && ` · methods of build ${outcome.pipelineVersion}`}
-    </p>
-  )
-}
-
-export function FileOutcomeItem({
-  outcome,
-  showProvenance = false,
-}: {
-  outcome: FileOutcome
-  showProvenance?: boolean
-}) {
+export function FileOutcomeItem({ outcome }: { outcome: FileOutcome }) {
   return (
     <ResultRow
       title={outcome.fileName || outcomeSubject(outcome)}
@@ -93,7 +75,6 @@ export function FileOutcomeItem({
         </Badge>
       }
     >
-      {showProvenance && <Provenance outcome={outcome} />}
       {outcome.methods.length === 0 ? (
         <p className="text-sm text-muted-foreground">
           No identification method produced a result for this attempt.

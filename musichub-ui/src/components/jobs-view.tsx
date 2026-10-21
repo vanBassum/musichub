@@ -1,20 +1,19 @@
-import { Database, Play, RefreshCw } from "lucide-react"
-import type { ReactNode } from "react"
+import { ArrowLeft, Database, Play, RefreshCw } from "lucide-react"
+import { useState, type ReactNode } from "react"
 
-import { IdentificationHistory } from "@/components/identification-history"
 import { IdentificationOutcomes } from "@/components/identification-outcomes"
 import { MissingMusicResults } from "@/components/missing-music-results"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Skeleton } from "@/components/ui/skeleton"
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
+import { Skeleton } from "@/components/ui/skeleton"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import type { JobExecution, JobSchedule, JobTask } from "@/lib/jobs-api"
 import { formatElapsed } from "@/lib/format"
 import {
@@ -23,7 +22,7 @@ import {
   summaryFailures,
   summaryHeadline,
 } from "@/lib/job-summary"
-import type { JobsState } from "@/lib/use-jobs"
+import type { JobsState, JobsTab } from "@/lib/use-jobs"
 import { cn } from "@/lib/utils"
 
 type Outcome = "waiting" | "retrying" | "running" | "completed" | "partial" | "failed" | "deleted"
@@ -47,6 +46,9 @@ const outcomeClassNames: Record<Outcome, string> = {
   failed: "bg-destructive text-white",
   deleted: "bg-muted text-muted-foreground",
 }
+
+const allStatuses = "all"
+type StatusFilter = Outcome | typeof allStatuses
 
 // A run that Succeeded but could not process some files is shown as Partial.
 function outcomeOf(execution: JobExecution): Outcome {
@@ -151,6 +153,7 @@ function TaskCard({
   )
 }
 
+// One page scroll holds everything: the tabs, the run list and the run details never scroll on their own.
 export function JobsView({
   state,
   className,
@@ -158,18 +161,7 @@ export function JobsView({
   state: JobsState
   className?: string
 }) {
-  const {
-    tasks,
-    executions,
-    loadError,
-    refreshing,
-    selectedId,
-    select,
-    starting,
-    startError,
-    refresh,
-    start,
-  } = state
+  const { tab, setTab, refresh, refreshing, loadError, startError } = state
 
   return (
     <section
@@ -185,17 +177,16 @@ export function JobsView({
             View and start the background tasks of MusicHub
           </p>
         </div>
-        <div className="ml-auto flex items-center gap-2">
-          <Button
-            variant="outline"
-            size="lg"
-            onClick={() => void refresh()}
-            disabled={refreshing}
-          >
-            <RefreshCw data-icon="inline-start" />
-            Refresh
-          </Button>
-        </div>
+        <Button
+          variant="outline"
+          size="lg"
+          className="ml-auto"
+          onClick={() => void refresh()}
+          disabled={refreshing}
+        >
+          <RefreshCw data-icon="inline-start" />
+          Refresh
+        </Button>
       </div>
 
       {startError && (
@@ -209,87 +200,127 @@ export function JobsView({
         </p>
       )}
 
-      <div className="shrink-0">
-        {tasks === null ? (
-          <Skeleton className="h-28 w-full max-w-xl rounded-xl" />
-        ) : (
-          <ul aria-label="Tasks" className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-            {tasks.map((item) => (
-              <TaskCard key={item.id} task={item} starting={starting} start={start} />
+      <Tabs
+        value={tab}
+        onValueChange={(value) => setTab(value as JobsTab)}
+        className="shrink-0 gap-4"
+      >
+        <TabsList className="w-full sm:w-fit">
+          <TabsTrigger value="tasks" className="px-4">
+            Tasks
+          </TabsTrigger>
+          <TabsTrigger value="history" className="px-4">
+            History
+          </TabsTrigger>
+        </TabsList>
+        <TabsContent value="tasks" className="text-sm">
+          <TasksTab state={state} />
+        </TabsContent>
+        <TabsContent value="history" className="text-sm">
+          <HistoryTab state={state} />
+        </TabsContent>
+      </Tabs>
+    </section>
+  )
+}
+
+function TasksTab({ state }: { state: JobsState }) {
+  const { tasks, starting, start } = state
+  if (tasks === null) return <Skeleton className="h-28 w-full max-w-xl rounded-xl" />
+  return (
+    <ul aria-label="Tasks" className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+      {tasks.map((item) => (
+        <TaskCard key={item.id} task={item} starting={starting} start={start} />
+      ))}
+    </ul>
+  )
+}
+
+// Master-detail on desktop; on a narrow screen the list and the opened run replace each other.
+function HistoryTab({ state }: { state: JobsState }) {
+  const { detailOpen } = state
+  return (
+    <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
+      <RunList state={state} className={cn(detailOpen && "hidden lg:flex")} />
+      <RunDetails state={state} className={cn(!detailOpen && "hidden lg:flex")} />
+    </div>
+  )
+}
+
+function RunList({ state, className }: { state: JobsState; className?: string }) {
+  const { executions, selectedId, select } = state
+  const [status, setStatus] = useState<StatusFilter>(allStatuses)
+  const shown = executions?.filter(
+    (execution) => status === allStatuses || outcomeOf(execution) === status
+  )
+
+  return (
+    <section
+      aria-labelledby="executions-heading"
+      className={cn("flex min-w-0 flex-col gap-3 rounded-xl border bg-card p-4", className)}
+    >
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h2 id="executions-heading" className="text-lg font-semibold">
+          Runs
+        </h2>
+        <Select value={status} onValueChange={(value) => setStatus(value as StatusFilter)}>
+          <SelectTrigger aria-label="Filter by status">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value={allStatuses}>All statuses</SelectItem>
+            {(Object.keys(outcomeLabels) as Outcome[]).map((item) => (
+              <SelectItem key={item} value={item}>
+                {outcomeLabels[item]}
+              </SelectItem>
             ))}
-          </ul>
-        )}
+          </SelectContent>
+        </Select>
       </div>
-
-      <div className="grid min-h-0 flex-1 gap-4 lg:grid-cols-[minmax(0,1fr)_24rem]">
-        <section
-          aria-labelledby="executions-heading"
-          className="flex min-h-64 min-w-0 flex-col overflow-hidden rounded-xl border bg-card"
-        >
-          <h2 id="executions-heading" className="shrink-0 p-4 text-lg font-semibold">
-            Recent executions
-          </h2>
-          <div className="min-h-0 flex-1 overflow-auto border-t [&_[data-slot=table-container]]:overflow-visible">
-            <Table className="table-fixed text-sm sm:table-auto">
-              <TableHeader className="sticky top-0 z-10 bg-card">
-                <TableRow className="hover:bg-transparent">
-                  <TableHead className="pl-4">Started</TableHead>
-                  <TableHead className="hidden sm:table-cell">Duration</TableHead>
-                  <TableHead className="w-28 pr-4 sm:w-auto sm:pr-2">Status</TableHead>
-                  <TableHead className="hidden pr-4 sm:table-cell">Result</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {executions?.map((execution) => {
-                  const result = describeResult(execution)
-                  const selected = execution.id === selectedId
-                  return (
-                    <TableRow
-                      key={execution.id}
-                      data-state={selected ? "selected" : undefined}
-                    >
-                      <TableCell className="pl-4">
-                        <Button
-                          variant="link"
-                          aria-current={selected ? "true" : undefined}
-                          onClick={() => select(execution.id)}
-                          className="h-auto p-0 text-left text-foreground"
-                        >
-                          {when(execution.startedAt ?? execution.createdAt)}
-                        </Button>
-                        <p className="mt-0.5 text-xs whitespace-normal text-muted-foreground sm:hidden">
-                          {elapsed(execution)} · {result.main}
-                        </p>
-                      </TableCell>
-                      <TableCell className="hidden sm:table-cell">{elapsed(execution)}</TableCell>
-                      <TableCell className="pr-4 sm:pr-2">
-                        <StatusBadge execution={execution} />
-                      </TableCell>
-                      <TableCell className="hidden max-w-72 pr-4 whitespace-normal sm:table-cell">
-                        <p>{result.main}</p>
-                        {result.sub && (
-                          <p className="text-muted-foreground">{result.sub}</p>
-                        )}
-                      </TableCell>
-                    </TableRow>
-                  )
-                })}
-                {executions?.length === 0 && (
-                  <TableRow className="hover:bg-transparent">
-                    <TableCell colSpan={4} className="p-6 text-center text-muted-foreground">
-                      No executions yet. Start a task to see it here.
-                    </TableCell>
-                  </TableRow>
-                )}
-              </TableBody>
-            </Table>
-          </div>
-        </section>
-
-        <ExecutionDetails state={state} />
-      </div>
-
-      <IdentificationHistory />
+      {shown === undefined ? (
+        <Skeleton className="h-24 w-full" />
+      ) : shown.length === 0 ? (
+        <p className="text-muted-foreground">
+          {executions?.length === 0
+            ? "No runs yet. Start a task to see it here."
+            : "No runs have this status."}
+        </p>
+      ) : (
+        <ul aria-label="Runs" className="flex flex-col gap-2">
+          {shown.map((execution) => {
+            const result = describeResult(execution)
+            const selected = execution.id === selectedId
+            return (
+              <li key={execution.id}>
+                <button
+                  type="button"
+                  aria-current={selected ? "true" : undefined}
+                  onClick={() => select(execution.id)}
+                  className={cn(
+                    "flex w-full flex-col gap-1 rounded-lg border p-3 text-left hover:bg-muted/60",
+                    selected && "border-primary bg-muted/60"
+                  )}
+                >
+                  <span className="flex items-center justify-between gap-2">
+                    <span className="font-medium">
+                      {when(execution.startedAt ?? execution.createdAt)}
+                    </span>
+                    <StatusBadge execution={execution} />
+                  </span>
+                  <span className="break-words text-muted-foreground">
+                    {elapsed(execution)} · {result.main}
+                  </span>
+                  {result.sub && (
+                    <span className="line-clamp-2 break-words text-muted-foreground">
+                      {result.sub}
+                    </span>
+                  )}
+                </button>
+              </li>
+            )
+          })}
+        </ul>
+      )}
     </section>
   )
 }
@@ -308,39 +339,46 @@ function DetailsPlaceholder({
   detailsError,
 }: Pick<JobsState, "selectedId" | "detailsError">) {
   if (selectedId === null)
-    return (
-      <p className="text-sm text-muted-foreground">
-        Select an execution to see its details.
-      </p>
-    )
+    return <p className="text-muted-foreground">Select a run to see its details.</p>
   if (detailsError)
     return (
-      <p role="alert" className="text-sm text-destructive">
+      <p role="alert" className="text-destructive">
         {detailsError}
       </p>
     )
   return <Skeleton className="h-32 w-full" />
 }
 
-function ExecutionDetails({ state }: { state: JobsState }) {
-  const { details, detailsRevision, detailsError, selectedId } = state
+function RunDetails({ state, className }: { state: JobsState; className?: string }) {
+  const { details, detailsRevision, detailsError, selectedId, closeDetails } = state
   const version = details ? executionVersion(details.execution, detailsRevision) : ""
   return (
     <section
       aria-labelledby="details-heading"
-      className="flex min-h-64 min-w-0 flex-col gap-4 overflow-auto rounded-xl border bg-card p-4"
+      className={cn("flex min-w-0 flex-col gap-4 rounded-xl border bg-card p-4", className)}
     >
       <div className="flex items-center justify-between gap-2">
-        <h2 id="details-heading" className="text-lg font-semibold">
-          Execution details
-        </h2>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="icon"
+            aria-label="Back to runs"
+            className="lg:hidden"
+            onClick={closeDetails}
+          >
+            <ArrowLeft />
+          </Button>
+          <h2 id="details-heading" className="text-lg font-semibold">
+            Run details
+          </h2>
+        </div>
         {details && <StatusBadge execution={details.execution} />}
       </div>
       {!details ? (
         <DetailsPlaceholder selectedId={selectedId} detailsError={detailsError} />
       ) : (
         <>
-          <dl className="flex flex-col gap-2 text-sm">
+          <dl className="flex flex-col gap-2">
             <Fact label="Started">{when(details.execution.startedAt)}</Fact>
             <Fact label="Finished">{when(details.execution.finishedAt)}</Fact>
             <Fact label="Duration">{elapsed(details.execution)}</Fact>
@@ -352,7 +390,7 @@ function ExecutionDetails({ state }: { state: JobsState }) {
               ))}
           </dl>
           {details.execution.error && (
-            <p role="alert" className="text-sm break-words text-destructive">
+            <p role="alert" className="break-words text-destructive">
               {details.errorType ? `${details.errorType}: ` : ""}
               {details.execution.error}
             </p>

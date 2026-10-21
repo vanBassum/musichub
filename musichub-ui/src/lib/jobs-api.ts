@@ -224,31 +224,6 @@ export const getDownloads = (id: string, signal?: AbortSignal) =>
     signal
   )
 
-export interface OutcomePage {
-  items: FileOutcome[]
-  total: number
-  page: number
-  pageSize: number
-}
-
-// GET /api/identification-history: recorded outcomes across executions, newest first. Without a decision only the
-// unresolved ones; with one, that decision.
-export const getIdentificationHistory = (
-  query: { decision: IdentificationDecision | null; page: number; pageSize: number },
-  signal?: AbortSignal
-) => {
-  const params = new URLSearchParams({
-    page: String(query.page),
-    pageSize: String(query.pageSize),
-  })
-  if (query.decision) params.set("decision", query.decision)
-  return getJson<OutcomePage>(
-    `/api/identification-history?${params}`,
-    "The identification history",
-    signal
-  )
-}
-
 // POST /api/jobs/{taskId}/start: 202 with the new execution; 409 while a run is already active (or, for a search
 // for missing music, while no acquisition provider is configured).
 export async function startJob(taskId: string) {
