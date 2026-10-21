@@ -1,4 +1,4 @@
-import { FolderOpen, ListChecks, TriangleAlert } from "lucide-react"
+import { FolderOpen, ListChecks } from "lucide-react"
 
 // The management screens grouped under Settings, each with its own purpose.
 export const settingsSections = [
@@ -13,12 +13,6 @@ export const settingsSections = [
     label: "Jobs",
     description: "Scheduled background tasks and their run history",
     icon: ListChecks,
-  },
-  {
-    id: "problems",
-    label: "Problems",
-    description: "Files that could not be identified and failed tasks",
-    icon: TriangleAlert,
   },
 ] as const
 

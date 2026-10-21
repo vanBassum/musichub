@@ -27,7 +27,6 @@ import { useFiles } from "@/lib/use-files"
 import { useJobs } from "@/lib/use-jobs"
 import { useLocation } from "@/lib/use-location"
 import { useIsDesktop } from "@/lib/use-media-query"
-import { problemCount, useProblems } from "@/lib/use-problems"
 
 const searchDelayMs = 300
 
@@ -51,7 +50,6 @@ export function App() {
   const filesState = useFiles()
   const jobsState = useJobs()
   const downloadsState = useDownloadQueue()
-  const problemsState = useProblems()
 
   useEffect(() => {
     const term = searchInput.trim()
@@ -73,11 +71,6 @@ export function App() {
   // A navigation is a history entry, so browser back returns to where it came from.
   const navigate = (next: AppLocation) => {
     window.location.hash = formatLocation(next, searchQuery)
-  }
-
-  const openExecution = (executionId: string) => {
-    jobsState.select(executionId)
-    navigate(locationOf("settings", "jobs"))
   }
 
   const changeAudio =(value: AudioFilter) => {
@@ -147,8 +140,6 @@ export function App() {
           filesState={filesState}
           jobsState={jobsState}
           downloadsState={downloadsState}
-          problemsState={problemsState}
-          onOpenExecution={openExecution}
           searchQuery={searchQuery}
           onSearchQueryChange={setSearchQuery}
           onSelectTrack={selectSearchTrack}
@@ -166,7 +157,6 @@ export function App() {
       <AppHeader
         active={activeNav(location)}
         onNavigate={(id) => navigate(locationOf(id))}
-        problems={problemCount(problemsState)}
       />
       {tab === "library" ? (
         <main className="grid min-h-0 flex-1 gap-4 p-4 lg:grid-rows-[minmax(0,1fr)] lg:grid-cols-[15rem_minmax(0,1fr)_20rem] xl:grid-cols-[17rem_minmax(0,1fr)_24rem]">
@@ -194,8 +184,6 @@ export function App() {
               onSectionChange={(id) => navigate(locationOf("settings", id))}
               filesState={filesState}
               jobsState={jobsState}
-              problemsState={problemsState}
-              onOpenExecution={openExecution}
               className="min-h-0"
             />
           ) : (

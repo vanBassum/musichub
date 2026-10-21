@@ -1,15 +1,12 @@
 import { Music } from "lucide-react"
 
 import { BuildInfoSheet } from "@/components/build-info-sheet"
-import { ProblemCountBadge } from "@/components/problem-count-badge"
 import { Button } from "@/components/ui/button"
 import { destinations, primaryNav, type NavId } from "@/lib/navigation"
 
 interface AppHeaderProps {
   active: NavId
   onNavigate: (id: NavId) => void
-  // The recorded problems, shown on Settings so they stay discoverable.
-  problems: number
 }
 
 const activeClassName = "bg-primary/15 text-primary hover:bg-primary/20"
@@ -19,7 +16,6 @@ function NavButton({
   active,
   onNavigate,
   hideLabelOnNarrow,
-  problems,
 }: AppHeaderProps & { id: NavId; hideLabelOnNarrow?: boolean }) {
   const { label, icon: Icon } = destinations[id]
   const isActive = id === active
@@ -35,12 +31,11 @@ function NavButton({
       <span className={hideLabelOnNarrow ? "hidden sm:inline" : undefined}>
         {label}
       </span>
-      {id === "settings" && <ProblemCountBadge count={problems} />}
     </Button>
   )
 }
 
-export function AppHeader({ active, onNavigate, problems }: AppHeaderProps) {
+export function AppHeader({ active, onNavigate }: AppHeaderProps) {
   return (
     <header className="flex h-14 shrink-0 items-center gap-6 border-b px-4 lg:px-6">
       <div className="flex items-center gap-2 text-base font-semibold">
@@ -54,7 +49,6 @@ export function AppHeader({ active, onNavigate, problems }: AppHeaderProps) {
             id={id}
             active={active}
             onNavigate={onNavigate}
-            problems={problems}
           />
         ))}
       </nav>
@@ -65,7 +59,6 @@ export function AppHeader({ active, onNavigate, problems }: AppHeaderProps) {
             id="settings"
             active={active}
             onNavigate={onNavigate}
-            problems={problems}
             hideLabelOnNarrow
           />
         </nav>
