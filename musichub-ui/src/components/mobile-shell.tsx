@@ -101,7 +101,7 @@ function PageHeader({
 }
 
 // Below `lg` the phone's navigation bar has Search, Library, Downloads, Player (Now
-// Playing and Queue) and Settings (Files, Jobs, Problems). An artist page opens from
+// Playing and Queue) and Settings (Files, Jobs). An artist page opens from
 // Search or the Library and shows under the one it came from. The location is the URL
 // hash. Outside the Player page a compact player sits above the navigation.
 export function MobileShell({
