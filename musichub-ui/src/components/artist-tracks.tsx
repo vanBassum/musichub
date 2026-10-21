@@ -1,13 +1,16 @@
+import { useState } from "react"
 import { EllipsisVertical, ExternalLink, Play } from "lucide-react"
 
 import { AvailabilityBadge } from "@/components/availability-badge"
 import { CoverArt } from "@/components/cover-art"
 import { SectionBody } from "@/components/section-body"
 import { Button } from "@/components/ui/button"
+import { Checkbox } from "@/components/ui/checkbox"
 import { Skeleton } from "@/components/ui/skeleton"
 import { AddToLibraryButton } from "@/components/add-to-library-button"
 import type { ArtistInfo, ArtistTracks, SectionState } from "@/lib/artist"
 import { addExternalTrackToLibrary } from "@/lib/catalog-api"
+import { presentTracks } from "@/lib/track-version"
 
 interface ArtistTracksProps {
   artist: SectionState<ArtistInfo>
@@ -18,22 +21,31 @@ interface ArtistTracksProps {
 const unavailableHint = "Not available yet"
 
 // Not "Popular tracks": no connected provider supplies popularity data, so the tracks
-// are listed as the sources give them, not ranked.
+// are listed alphabetically, not ranked. Live, remix, demo and similar versions are
+// hidden until "Show all versions".
 export function ArtistTracksSection({
   artist,
   state,
   onRetry,
 }: ArtistTracksProps) {
   const artistName = artist.status === "ready" ? artist.data.name : ""
+  const [showAll, setShowAll] = useState(false)
   return (
     <section aria-labelledby="tracks-heading" className="min-w-0 space-y-3">
-      <div>
-        <h2 id="tracks-heading" className="text-lg font-semibold">
-          Tracks
-        </h2>
-        <p className="text-xs text-muted-foreground">
-          Not ranked: no connected source provides popularity data.
-        </p>
+      <div className="flex flex-wrap items-end justify-between gap-2">
+        <div>
+          <h2 id="tracks-heading" className="text-lg font-semibold">
+            Tracks
+          </h2>
+          <p className="text-xs text-muted-foreground">
+            Alphabetical, not ranked: no connected source provides popularity
+            data.
+          </p>
+        </div>
+        <label className="flex min-h-9 items-center gap-2 text-sm">
+          <Checkbox checked={showAll} onCheckedChange={setShowAll} />
+          Show all versions
+        </label>
       </div>
       <SectionBody
         state={state}
@@ -56,7 +68,7 @@ export function ArtistTracksSection({
               </p>
             )}
             <ul className="space-y-2">
-              {tracks.items.map((track) => (
+              {presentTracks(tracks.items, showAll).map((track) => (
                 <li
                   key={track.key}
                   className="flex items-center gap-3 rounded-lg border bg-card p-2"
