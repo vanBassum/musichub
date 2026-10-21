@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest"
 
 import {
+  formatLocation,
   formatSearchHash,
   parseLocation,
   parseSearchQuery,
@@ -12,6 +13,31 @@ describe("removed Artists screen", () => {
       tab: "search",
       screen: null,
     })
+  })
+})
+
+describe("settings location", () => {
+  it("opens the section named in the hash", () => {
+    const location = parseLocation("#/settings/jobs")
+    expect(location).toMatchObject({
+      tab: "more",
+      screen: "settings",
+      settingsSection: "jobs",
+    })
+    expect(formatLocation(location)).toBe("#/settings/jobs")
+  })
+
+  it("redirects the former More links to Settings", () => {
+    expect(parseLocation("#/more/problems")).toMatchObject({
+      tab: "more",
+      screen: "settings",
+      settingsSection: "problems",
+    })
+    expect(parseLocation("#/more/downloads").screen).toBe("downloads")
+  })
+
+  it("falls back to the first section", () => {
+    expect(parseLocation("#/settings").settingsSection).toBe("files")
   })
 })
 

@@ -8,6 +8,10 @@ export interface ProblemsState {
   refresh: () => Promise<void>
 }
 
+// How many problems are recorded, for the badge that keeps them discoverable.
+export const problemCount = (state: ProblemsState) =>
+  state.problems?.items.length ?? 0
+
 // Loads the problem overview once and again on demand.
 export function useProblems(): ProblemsState {
   const { data, error, refreshing, refresh } = useLoader(listProblems)

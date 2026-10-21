@@ -2,6 +2,7 @@ import { ArtistLinks } from "@/components/artist-links"
 import { AudioBadge } from "@/components/audio-badge"
 import { TrackPlayControl } from "@/components/track-play-control"
 import { Button } from "@/components/ui/button"
+import { Skeleton } from "@/components/ui/skeleton"
 import {
   Table,
   TableBody,
@@ -44,6 +45,8 @@ export function TrackTable({
 }: TrackTableProps) {
   const tracks = data?.items ?? []
   const lastPage = data ? Math.max(1, Math.ceil(data.total / data.pageSize)) : 1
+  const firstShown = data ? (data.page - 1) * data.pageSize + 1 : 0
+  const lastShown = data ? firstShown + tracks.length - 1 : 0
 
   return (
     <section
@@ -83,14 +86,14 @@ export function TrackTable({
           status === "loading" && data && "opacity-60"
         )}
       >
-        <Table className="table-fixed text-sm sm:table-auto">
+        <Table className="table-fixed text-sm">
           <TableHeader className="sticky top-0 z-10 bg-card">
             <TableRow className="hover:bg-transparent">
               <TableHead className="pl-4">Title</TableHead>
-              <TableHead className="hidden sm:table-cell">Artist</TableHead>
-              <TableHead className="w-24 sm:w-auto sm:pr-2">Audio</TableHead>
-              <TableHead className="hidden sm:table-cell">Added</TableHead>
-              <TableHead className="w-20 pr-4">
+              <TableHead className="hidden w-1/4 lg:table-cell">Artist</TableHead>
+              <TableHead className="w-24 lg:w-28">Audio</TableHead>
+              <TableHead className="hidden w-32 xl:table-cell">Added</TableHead>
+              <TableHead className="w-24 pr-4 lg:w-20">
                 <span className="sr-only">Play</span>
               </TableHead>
             </TableRow>
@@ -118,7 +121,7 @@ export function TrackTable({
                     selected && "bg-primary/20 hover:bg-primary/25"
                   )}
                 >
-                  <TableCell className="truncate pl-4 font-medium sm:max-w-64">
+                  <TableCell className="truncate pl-4 font-medium max-lg:h-14">
                     {track.title}
                     {track.version && (
                       <span className="font-normal text-muted-foreground">
@@ -126,11 +129,15 @@ export function TrackTable({
                         ({track.version})
                       </span>
                     )}
-                    <span className="block truncate text-xs font-normal text-muted-foreground sm:hidden">
-                      {artistNames(track) || "No artist"} · {formatDate(track.createdAt)}
+                    <span className="block truncate text-xs font-normal text-muted-foreground lg:hidden">
+                      {artistNames(track) || "No artist"}
+                      <span className="xl:hidden">
+                        {" "}
+                        · {formatDate(track.createdAt)}
+                      </span>
                     </span>
                   </TableCell>
-                  <TableCell className="hidden max-w-56 truncate sm:table-cell">
+                  <TableCell className="hidden max-w-56 truncate lg:table-cell">
                     {track.artists.length === 0 ? (
                       <span className="text-muted-foreground">No artist</span>
                     ) : (
@@ -140,10 +147,10 @@ export function TrackTable({
                       />
                     )}
                   </TableCell>
-                  <TableCell className="sm:pr-2">
+                  <TableCell>
                     <AudioBadge hasAudio={track.hasAudio} />
                   </TableCell>
-                  <TableCell className="hidden sm:table-cell">
+                  <TableCell className="hidden xl:table-cell">
                     {formatDate(track.createdAt)}
                   </TableCell>
                   <TableCell className="pr-4">
@@ -155,12 +162,15 @@ export function TrackTable({
           </TableBody>
         </Table>
         {status === "loading" && !data && (
-          <p role="status" className="p-4 text-sm text-muted-foreground">
-            Loading tracks…
-          </p>
+          <div role="status" className="flex flex-col gap-3 p-4">
+            <span className="sr-only">Loading tracks…</span>
+            {Array.from({ length: 6 }, (_, index) => (
+              <Skeleton key={index} className="h-10 w-full" />
+            ))}
+          </div>
         )}
         {status === "ready" && tracks.length === 0 && (
-          <p className="p-4 text-sm text-muted-foreground">
+          <p role="status" className="p-4 text-sm text-muted-foreground">
             {filtered
               ? "No tracks match the search or filter."
               : "The catalog has no tracks yet."}
@@ -170,7 +180,8 @@ export function TrackTable({
       {data && data.total > 0 && (
         <div className="flex items-center gap-2 border-t p-3 text-sm">
           <span className="text-muted-foreground">
-            Page {data.page} of {lastPage}
+            {firstShown}–{lastShown} of {data.total} · Page {data.page} of{" "}
+            {lastPage}
           </span>
           <div className="ml-auto flex items-center gap-2">
             <Button

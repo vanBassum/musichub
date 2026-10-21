@@ -5,8 +5,6 @@ import { ArtistPage } from "@/components/artist-page"
 import { BuildInfoSheet } from "@/components/build-info-sheet"
 import { CompactPlayer } from "@/components/compact-player"
 import { DownloadsView } from "@/components/downloads-view"
-import { FilesView } from "@/components/files-view"
-import { JobsView } from "@/components/jobs-view"
 import { MobileNav } from "@/components/mobile-nav"
 import {
   formatLocation,
@@ -19,8 +17,10 @@ import {
   type PlayerView,
 } from "@/components/mobile-pages"
 import { NowPlaying, QueueList } from "@/components/player-panel"
-import { ProblemsView } from "@/components/problems-view"
+import { ProblemCountBadge } from "@/components/problem-count-badge"
 import { SearchPage } from "@/components/search-page"
+import { SettingsView } from "@/components/settings-view"
+import type { SettingsSectionId } from "@/components/settings-sections"
 import { Button } from "@/components/ui/button"
 import {
   Sheet,
@@ -33,13 +33,15 @@ import { openArtist, parseArtistHash } from "@/lib/artist-route"
 import type { DownloadQueueState } from "@/lib/use-download-queue"
 import type { FilesState } from "@/lib/use-files"
 import type { JobsState } from "@/lib/use-jobs"
-import type { ProblemsState } from "@/lib/use-problems"
 import { useHash } from "@/lib/use-hash"
+import { problemCount, type ProblemsState } from "@/lib/use-problems"
 import { cn } from "@/lib/utils"
 
 interface MobileShellProps {
   // The catalog's track count, once known.
   total: number | undefined
+  // Whether a search or filter narrows the Library, shown on the Filters button.
+  filtersActive: boolean
   filters: ReactNode
   table: ReactNode
   filesState: FilesState
@@ -83,11 +85,13 @@ function Page({
 }
 
 // Below `lg` the phone has three destinations: Search, Player (Now Playing and
-// Queue) and More (Library, Files, Jobs, Downloads, Problems). An artist page opens
-// from Search or the Library and shows over the tab it came from. The location is the
-// URL hash. Outside the Player page a compact player sits above the navigation.
+// Queue) and More (Library, Downloads, Settings with Files, Jobs and Problems). An
+// artist page opens from Search or the Library and shows over the tab it came from.
+// The location is the URL hash. Outside the Player page a compact player sits above
+// the navigation.
 export function MobileShell({
   total,
+  filtersActive,
   filters,
   table,
   filesState,
@@ -101,7 +105,7 @@ export function MobileShell({
   const hash = useHash()
   const location = useMemo(() => parseLocation(hash), [hash])
   const artist = useMemo(() => parseArtistHash(hash), [hash])
-  const { screen, playerView } = location
+  const { screen, playerView, settingsSection } = location
   // An artist page counts as part of the tab it was opened from.
   const tab: MobileTabId = artist
     ? artist.source === "library"
@@ -111,13 +115,15 @@ export function MobileShell({
 
   const navigate = (id: MobileTabId) => {
     if (id === "search") openSearchHash(searchQuery)
-    else go({ tab: id, screen: null, playerView: "now-playing" })
+    else go({ ...location, tab: id, screen: null, playerView: "now-playing" })
   }
   const openScreen = (id: MoreScreenId) =>
-    go({ tab: "more", screen: id, playerView })
+    go({ ...location, tab: "more", screen: id })
+  const openSettingsSection = (id: SettingsSectionId) =>
+    go({ ...location, tab: "more", screen: "settings", settingsSection: id })
   const openExecution = (executionId: string) => {
     jobsState.select(executionId)
-    openScreen("jobs")
+    openSettingsSection("jobs")
   }
   const showMore = (id: MoreScreenId) =>
     !artist && tab === "more" && screen === id
@@ -156,7 +162,12 @@ export function MobileShell({
         <Tabs
           value={playerView}
           onValueChange={(value) =>
-            go({ tab: "player", screen: null, playerView: value as PlayerView })
+            go({
+              ...location,
+              tab: "player",
+              screen: null,
+              playerView: value as PlayerView,
+            })
           }
           className="p-2 pb-0"
         >
@@ -196,6 +207,9 @@ export function MobileShell({
               >
                 <Icon />
                 <span className="flex-1 text-left">{label}</span>
+                {id === "settings" && (
+                  <ProblemCountBadge count={problemCount(problemsState)} />
+                )}
                 <ChevronRight className="text-muted-foreground" />
               </Button>
             </li>
@@ -224,12 +238,20 @@ export function MobileShell({
                     <Button
                       variant="outline"
                       size="icon-lg"
-                      aria-label="Filters"
-                      className="ml-auto"
+                      aria-label={
+                        filtersActive ? "Filters (active)" : "Filters"
+                      }
+                      className="relative ml-auto"
                     />
                   }
                 >
                   <SlidersHorizontal />
+                  {filtersActive && (
+                    <span
+                      aria-hidden="true"
+                      className="absolute top-1 right-1 size-2 rounded-full bg-primary"
+                    />
+                  )}
                 </SheetTrigger>
                 <SheetContent side="bottom" className="h-[85dvh]">
                   <SheetTitle className="sr-only">Filters</SheetTitle>
@@ -239,16 +261,16 @@ export function MobileShell({
             )}
           </div>
           {id === "library" && table}
-          {id === "files" && (
-            <FilesView state={filesState} className="flex-1" />
-          )}
-          {id === "jobs" && <JobsView state={jobsState} className="flex-1" />}
           {id === "downloads" && (
             <DownloadsView state={downloadsState} className="flex-1" />
           )}
-          {id === "problems" && (
-            <ProblemsView
-              state={problemsState}
+          {id === "settings" && (
+            <SettingsView
+              section={settingsSection}
+              onSectionChange={openSettingsSection}
+              filesState={filesState}
+              jobsState={jobsState}
+              problemsState={problemsState}
               onOpenExecution={openExecution}
               className="flex-1"
             />

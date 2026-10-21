@@ -3,18 +3,19 @@ import { useEffect, useMemo, useState } from "react"
 import { AppHeader, type AppView } from "@/components/app-header"
 import { ArtistPage } from "@/components/artist-page"
 import { DownloadsView } from "@/components/downloads-view"
-import { FilesView } from "@/components/files-view"
 import { FilterSidebar } from "@/components/filter-sidebar"
-import { JobsView } from "@/components/jobs-view"
 import { MobileShell } from "@/components/mobile-shell"
 import {
   isSearchHash,
+  parseLocation,
   parseSearchQuery,
   syncSearchHash,
+  syncSettingsHash,
 } from "@/components/mobile-pages"
 import { PlayerPanel } from "@/components/player-panel"
-import { ProblemsView } from "@/components/problems-view"
 import { SearchPage } from "@/components/search-page"
+import type { SettingsSectionId } from "@/components/settings-sections"
+import { SettingsView } from "@/components/settings-view"
 import { TrackDetailsSheet } from "@/components/track-details-sheet"
 import { TrackTable } from "@/components/track-table"
 import {
@@ -29,7 +30,7 @@ import { useFiles } from "@/lib/use-files"
 import { useJobs } from "@/lib/use-jobs"
 import { useHash } from "@/lib/use-hash"
 import { useIsDesktop } from "@/lib/use-media-query"
-import { useProblems } from "@/lib/use-problems"
+import { problemCount, useProblems } from "@/lib/use-problems"
 
 const searchDelayMs = 300
 
@@ -37,8 +38,14 @@ export function App() {
   const [selectedId, setSelectedId] = useState<number | null>(null)
   // Which page the selected track was opened from; its artists' pages return there.
   const [selectedSource, setSelectedSource] = useState<ArtistSource>("library")
-  const [view, setView] = useState<AppView>(
-    isSearchHash(window.location.hash) ? "search" : "library"
+  const [view, setView] = useState<AppView>(() => {
+    const { screen } = parseLocation(window.location.hash)
+    if (screen === "settings") return "settings"
+    return isSearchHash(window.location.hash) ? "search" : "library"
+  })
+  // The open Settings section (Files, Jobs or Problems), carried in the URL hash.
+  const [settingsSection, setSettingsSection] = useState<SettingsSectionId>(
+    () => parseLocation(window.location.hash).settingsSection
   )
   // The global search page's term, shared by the desktop page and the phone's tab.
   const [searchQuery, setSearchQuery] = useState(() =>
@@ -82,6 +89,10 @@ export function App() {
     return () => clearTimeout(timer)
   }, [isDesktop, view, artistOpen, searchQuery])
 
+  useEffect(() => {
+    if (isDesktop) syncSettingsHash(settingsSection, view === "settings")
+  }, [isDesktop, view, settingsSection])
+
   // Leaves the artist page (its hash) for a view; Search then writes its own hash.
   const navigate = (next: AppView) => {
     setView(next)
@@ -90,7 +101,8 @@ export function App() {
 
   const openExecution = (executionId: string) => {
     jobsState.select(executionId)
-    setView("jobs")
+    setSettingsSection("jobs")
+    navigate("settings")
   }
 
   const changeAudio =(value: AudioFilter) => {
@@ -114,6 +126,8 @@ export function App() {
   }
   const selectSearchTrack = (id: number) => selectTrack(id, "search")
 
+  const filtered = search !== "" || audio !== "all"
+
   const table = (showHeader: boolean) => (
     <TrackTable
       showHeader={showHeader}
@@ -122,7 +136,7 @@ export function App() {
       error={catalog.error}
       onRetry={catalog.retry}
       onPageChange={setPage}
-      filtered={search !== "" || audio !== "all"}
+      filtered={filtered}
       selectedId={selectedId}
       onSelect={(id) => selectTrack(id, "library")}
       onSelectArtist={(id) =>
@@ -148,6 +162,7 @@ export function App() {
       <>
         <MobileShell
           total={catalog.data?.total}
+          filtersActive={filtered}
           filters={filters(
             "flex-1 rounded-none border-0 bg-transparent pt-12"
           )}
@@ -167,7 +182,11 @@ export function App() {
 
   return (
     <div className="flex min-h-svh flex-col lg:h-svh">
-      <AppHeader view={artist ? artist.source : view} onNavigate={navigate} />
+      <AppHeader
+        view={artist ? artist.source : view}
+        onNavigate={navigate}
+        problems={problemCount(problemsState)}
+      />
       {view === "library" && !artist ? (
         <main className="grid min-h-0 flex-1 gap-4 p-4 lg:grid-rows-[minmax(0,1fr)] lg:grid-cols-[15rem_minmax(0,1fr)_20rem] xl:grid-cols-[17rem_minmax(0,1fr)_24rem]">
           {filters()}
@@ -194,18 +213,18 @@ export function App() {
               autoFocus
               className="min-h-0"
             />
-          ) : view === "files" ? (
-            <FilesView state={filesState} className="min-h-0" />
-          ) : view === "jobs" ? (
-            <JobsView state={jobsState} className="min-h-0" />
-          ) : view === "downloads" ? (
-            <DownloadsView state={downloadsState} className="min-h-0" />
-          ) : (
-            <ProblemsView
-              state={problemsState}
+          ) : view === "settings" ? (
+            <SettingsView
+              section={settingsSection}
+              onSectionChange={setSettingsSection}
+              filesState={filesState}
+              jobsState={jobsState}
+              problemsState={problemsState}
               onOpenExecution={openExecution}
               className="min-h-0"
             />
+          ) : (
+            <DownloadsView state={downloadsState} className="min-h-0" />
           )}
           <PlayerPanel />
         </main>
