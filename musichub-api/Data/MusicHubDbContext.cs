@@ -20,8 +20,33 @@ public class MusicHubDbContext(DbContextOptions<MusicHubDbContext> options) : Db
 
     public DbSet<AcquisitionDownload> AcquisitionDownloads => Set<AcquisitionDownload>();
 
+    public DbSet<DownloadRequest> DownloadRequests => Set<DownloadRequest>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
+        modelBuilder.Entity<DownloadRequest>(request =>
+        {
+            request.Property(r => r.Provider).HasMaxLength(AcquisitionDownload.ProviderMaxLength);
+            request.Property(r => r.Source).HasMaxLength(AcquisitionDownload.SourceMaxLength);
+            request.Property(r => r.RemotePath).HasMaxLength(AcquisitionDownload.RemotePathMaxLength);
+            request.Property(r => r.Format).HasMaxLength(DownloadRequest.FormatMaxLength);
+            request.Property(r => r.JobExecutionId).HasMaxLength(AcquisitionDownload.JobExecutionIdMaxLength);
+            request.Property(r => r.Error).HasMaxLength(DownloadRequest.ErrorMaxLength);
+            request.Property(r => r.Status).HasConversion<string>().HasMaxLength(20).IsConcurrencyToken();
+            request.Property(r => r.Failure).HasConversion<string>().HasMaxLength(30);
+            // The queue outlives its track and its attempt records: deleting either only empties the reference.
+            request.HasOne(r => r.Track).WithMany()
+                .HasForeignKey(r => r.TrackId).OnDelete(DeleteBehavior.SetNull);
+            request.HasOne(r => r.AcquisitionDownload).WithMany()
+                .HasForeignKey(r => r.AcquisitionDownloadId).OnDelete(DeleteBehavior.SetNull);
+            // The database settles concurrent enqueues: one active request per track and per candidate.
+            var active = $"\"Status\" IN ({string.Join(", ", DownloadRequestStatuses.Active.Select(s => $"'{s}'"))})";
+            request.HasIndex(r => r.TrackId).IsUnique().HasFilter(active);
+            request.HasIndex(r => new { r.Provider, r.Source, r.RemotePath }).IsUnique().HasFilter(active);
+            request.HasIndex(r => r.Status);
+            request.HasIndex(r => r.AcquisitionDownloadId);
+        });
+
         modelBuilder.Entity<AcquisitionDownload>(download =>
         {
             download.Property(d => d.Provider).HasMaxLength(AcquisitionDownload.ProviderMaxLength);

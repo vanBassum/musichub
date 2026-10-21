@@ -14,6 +14,7 @@ public static class AcquisitionServiceCollectionExtensions
     {
         services.AddScoped<AcquisitionHandoff>();
         services.AddScoped<AcquisitionHistory>();
+        services.AddScoped<IDownloadQueueService, DownloadQueueService>();
         services.Configure<MissingMusicOptions>(configuration.GetSection(MissingMusicOptions.SectionName));
         services.AddScoped<MissingMusicAcquisition>();
         services.Configure<SlskdOptions>(configuration.GetSection(SlskdOptions.SectionName));
