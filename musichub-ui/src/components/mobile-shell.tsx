@@ -1,26 +1,14 @@
 import { ChevronLeft, ChevronRight, SlidersHorizontal } from "lucide-react"
-import { useMemo, useSyncExternalStore, type ReactNode } from "react"
+import type { ReactNode } from "react"
 
 import { ArtistPage } from "@/components/artist-page"
 import { BuildInfoSheet } from "@/components/build-info-sheet"
 import { CompactPlayer } from "@/components/compact-player"
 import { DownloadsView } from "@/components/downloads-view"
-import { FilesView } from "@/components/files-view"
-import { JobsView } from "@/components/jobs-view"
 import { MobileNav } from "@/components/mobile-nav"
-import {
-  formatLocation,
-  moreScreens,
-  openSearchHash,
-  parseLocation,
-  type MobileLocation,
-  type MobileTabId,
-  type MoreScreenId,
-  type PlayerView,
-} from "@/components/mobile-pages"
 import { NowPlaying, QueueList } from "@/components/player-panel"
-import { ProblemsView } from "@/components/problems-view"
 import { SearchPage } from "@/components/search-page"
+import { SettingsScreen, type SettingsStates } from "@/components/settings-page"
 import { Button } from "@/components/ui/button"
 import {
   Sheet,
@@ -30,40 +18,32 @@ import {
 } from "@/components/ui/sheet"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import type { ArtistRef } from "@/lib/artist"
+import {
+  activeNav,
+  locationOf,
+  settingsScreens,
+  type AppLocation,
+  type PlayerView,
+} from "@/lib/navigation"
 import type { DownloadQueueState } from "@/lib/use-download-queue"
-import type { FilesState } from "@/lib/use-files"
-import type { JobsState } from "@/lib/use-jobs"
-import type { ProblemsState } from "@/lib/use-problems"
 import { cn } from "@/lib/utils"
 
-interface MobileShellProps {
+interface MobileShellProps extends SettingsStates {
+  location: AppLocation
+  onNavigate: (location: AppLocation) => void
   // The catalog's track count, once known.
   total: number | undefined
   filters: ReactNode
   table: ReactNode
-  filesState: FilesState
-  jobsState: JobsState
   downloadsState: DownloadQueueState
-  problemsState: ProblemsState
   artistRef: ArtistRef | null
   searchQuery: string
   onSearchQueryChange: (query: string) => void
   onSelectTrack: (trackId: number) => void
-  onSelectArtist: (artist: ArtistRef) => void
+  onOpenArtist: (artist: ArtistRef) => void
 }
 
 const pageClassName = "flex min-h-0 flex-1 flex-col overflow-hidden"
-
-function subscribe(onChange: () => void) {
-  window.addEventListener("hashchange", onChange)
-  return () => window.removeEventListener("hashchange", onChange)
-}
-
-const getHash = () => window.location.hash
-
-function go(location: MobileLocation) {
-  window.location.hash = formatLocation(location)
-}
 
 // A page that isn't showing stays mounted (so uploads, jobs and search keep their
 // state) but is hidden and inert, so keyboard focus can't land in it.
@@ -90,38 +70,54 @@ function Page({
   )
 }
 
-// Below `lg` the phone has three destinations: Search, Player (Now Playing and
-// Queue) and More (Library, Files, Jobs, Artists). The location is the URL hash.
-// Outside the Player page a compact player sits above the navigation.
+// The title row of a page, with a way back when the page is a level down.
+function PageHeader({
+  title,
+  backLabel,
+  onBack,
+  children,
+}: {
+  title: string
+  backLabel?: string
+  onBack?: () => void
+  children?: ReactNode
+}) {
+  return (
+    <div className="flex items-center gap-2">
+      {onBack && (
+        <Button
+          variant="ghost"
+          size="icon-lg"
+          aria-label={backLabel}
+          onClick={onBack}
+        >
+          <ChevronLeft />
+        </Button>
+      )}
+      <h1 className="text-xl font-semibold">{title}</h1>
+      {children}
+    </div>
+  )
+}
+
+// Below `lg` the phone's navigation bar has Search, Library, Downloads, Player (Now
+// Playing and Queue) and Settings (Files, Jobs, Problems). The location is the URL
+// hash. Outside the Player page a compact player sits above the navigation.
 export function MobileShell({
+  location,
+  onNavigate,
   total,
   filters,
   table,
-  filesState,
-  jobsState,
   downloadsState,
-  problemsState,
   artistRef,
   searchQuery,
   onSearchQueryChange,
   onSelectTrack,
-  onSelectArtist,
+  onOpenArtist,
+  ...settings
 }: MobileShellProps) {
-  const hash = useSyncExternalStore(subscribe, getHash)
-  const location = useMemo(() => parseLocation(hash), [hash])
   const { tab, screen, playerView } = location
-
-  const navigate = (id: MobileTabId) => {
-    if (id === "search") openSearchHash(searchQuery)
-    else go({ tab: id, screen: null, playerView: "now-playing" })
-  }
-  const openScreen = (id: MoreScreenId) =>
-    go({ tab: "more", screen: id, playerView })
-  const openExecution = (executionId: string) => {
-    jobsState.select(executionId)
-    openScreen("jobs")
-  }
-  const showMore =(id: MoreScreenId) => tab === "more" && screen === id
 
   return (
     <div className="flex h-dvh flex-col overflow-hidden">
@@ -130,18 +126,45 @@ export function MobileShell({
           query={searchQuery}
           onQueryChange={onSearchQueryChange}
           onSelectTrack={onSelectTrack}
-          onSelectArtist={(artist) => {
-            onSelectArtist(artist)
-            openScreen("artists")
-          }}
+          onSelectArtist={onOpenArtist}
           className="flex-1"
         />
+      </Page>
+      <Page show={tab === "library"} label="Library" className="gap-3 p-3">
+        <PageHeader title="Library">
+          {total !== undefined && (
+            <span className="text-muted-foreground">{total} tracks</span>
+          )}
+          <Sheet>
+            <SheetTrigger
+              render={
+                <Button
+                  variant="outline"
+                  size="icon-lg"
+                  aria-label="Filters"
+                  className="ml-auto"
+                />
+              }
+            >
+              <SlidersHorizontal />
+            </SheetTrigger>
+            <SheetContent side="bottom" className="h-[85dvh]">
+              <SheetTitle className="sr-only">Filters</SheetTitle>
+              {filters}
+            </SheetContent>
+          </Sheet>
+        </PageHeader>
+        {table}
+      </Page>
+      <Page show={tab === "downloads"} label="Downloads" className="gap-3 p-3">
+        <PageHeader title="Downloads" />
+        <DownloadsView state={downloadsState} className="flex-1" />
       </Page>
       <Page show={tab === "player"} label="Player">
         <Tabs
           value={playerView}
           onValueChange={(value) =>
-            go({ tab: "player", screen: null, playerView: value as PlayerView })
+            onNavigate(locationOf("player", null, value as PlayerView))
           }
           className="p-2 pb-0"
         >
@@ -163,21 +186,20 @@ export function MobileShell({
         </div>
       </Page>
       <Page
-        show={tab === "more" && screen === null}
-        label="More"
+        show={tab === "settings" && screen === null}
+        label="Settings"
         className="gap-3 p-3"
       >
-        <div className="flex items-center gap-2">
-          <h1 className="text-xl font-semibold">More</h1>
+        <PageHeader title="Settings">
           <BuildInfoSheet className="ml-auto" />
-        </div>
+        </PageHeader>
         <ul className="flex flex-col gap-1">
-          {moreScreens.map(({ id, label, icon: Icon }) => (
+          {settingsScreens.map(({ id, label, icon: Icon }) => (
             <li key={id}>
               <Button
                 variant="ghost"
                 className="h-12 w-full justify-start gap-3 text-base"
-                onClick={() => openScreen(id)}
+                onClick={() => onNavigate(locationOf("settings", id))}
               >
                 <Icon />
                 <span className="flex-1 text-left">{label}</span>
@@ -187,64 +209,34 @@ export function MobileShell({
           ))}
         </ul>
       </Page>
-      {moreScreens.map(({ id, label }) => (
-        <Page key={id} show={showMore(id)} label={label} className="gap-3 p-3">
-          <div className="flex items-center gap-2">
-            <Button
-              variant="ghost"
-              size="icon-lg"
-              aria-label="Back to More"
-              onClick={() => navigate("more")}
-            >
-              <ChevronLeft />
-            </Button>
-            <h1 className="text-xl font-semibold">{label}</h1>
-            {id === "library" && total !== undefined && (
-              <span className="text-muted-foreground">{total} tracks</span>
-            )}
-            {id === "library" && (
-              <Sheet>
-                <SheetTrigger
-                  render={
-                    <Button
-                      variant="outline"
-                      size="icon-lg"
-                      aria-label="Filters"
-                      className="ml-auto"
-                    />
-                  }
-                >
-                  <SlidersHorizontal />
-                </SheetTrigger>
-                <SheetContent side="bottom" className="h-[85dvh]">
-                  <SheetTitle className="sr-only">Filters</SheetTitle>
-                  {filters}
-                </SheetContent>
-              </Sheet>
-            )}
-          </div>
-          {id === "library" && table}
-          {id === "files" && (
-            <FilesView state={filesState} className="flex-1" />
-          )}
-          {id === "jobs" && <JobsView state={jobsState} className="flex-1" />}
-          {id === "downloads" && (
-            <DownloadsView state={downloadsState} className="flex-1" />
-          )}
-          {id === "problems" && (
-            <ProblemsView
-              state={problemsState}
-              onOpenExecution={openExecution}
-              className="flex-1"
-            />
-          )}
-          {id === "artists" && <ArtistPage artistRef={artistRef} className="flex-1" />}
+      {settingsScreens.map(({ id, label }) => (
+        <Page
+          key={id}
+          show={tab === "settings" && screen === id}
+          label={label}
+          className="gap-3 p-3"
+        >
+          <PageHeader
+            title={label}
+            backLabel="Back to Settings"
+            onBack={() => onNavigate(locationOf("settings"))}
+          />
+          <SettingsScreen id={id} className="flex-1" {...settings} />
         </Page>
       ))}
-      {tab !== "player" && (
-        <CompactPlayer />
-      )}
-      <MobileNav active={tab} onNavigate={navigate} />
+      <Page show={tab === "artist"} label="Artist" className="gap-3 p-3">
+        <PageHeader
+          title="Artist"
+          backLabel="Back to Search"
+          onBack={() => onNavigate(locationOf("search"))}
+        />
+        <ArtistPage artistRef={artistRef} className="flex-1" />
+      </Page>
+      {tab !== "player" && <CompactPlayer />}
+      <MobileNav
+        active={activeNav(tab)}
+        onNavigate={(id) => onNavigate(locationOf(id))}
+      />
     </div>
   )
 }
