@@ -1,29 +1,31 @@
 import { useEffect, useState } from "react"
 
-import { AppHeader, type AppView } from "@/components/app-header"
+import { AppHeader } from "@/components/app-header"
 import { ArtistPage } from "@/components/artist-page"
 import { DownloadsView } from "@/components/downloads-view"
 import { FilterSidebar } from "@/components/filter-sidebar"
 import { MobileShell } from "@/components/mobile-shell"
-import {
-  isSearchHash,
-  parseLocation,
-  parseSearchQuery,
-  syncSearchHash,
-  syncSettingsHash,
-} from "@/components/mobile-pages"
 import { PlayerPanel } from "@/components/player-panel"
 import { SearchPage } from "@/components/search-page"
-import type { SettingsSectionId } from "@/components/settings-sections"
+import { defaultSettingsSection } from "@/components/settings-sections"
 import { SettingsView } from "@/components/settings-view"
 import { TrackDetailsSheet } from "@/components/track-details-sheet"
 import { TrackTable } from "@/components/track-table"
 import type { ArtistRef } from "@/lib/artist"
 import type { AudioFilter } from "@/lib/catalog-api"
+import {
+  activeNav,
+  formatLocation,
+  locationOf,
+  parseSearchQuery,
+  syncSearchHash,
+  type AppLocation,
+} from "@/lib/navigation"
 import { useTracks } from "@/lib/use-catalog"
 import { useDownloadQueue } from "@/lib/use-download-queue"
 import { useFiles } from "@/lib/use-files"
 import { useJobs } from "@/lib/use-jobs"
+import { useLocation } from "@/lib/use-location"
 import { useIsDesktop } from "@/lib/use-media-query"
 import { problemCount, useProblems } from "@/lib/use-problems"
 
@@ -31,15 +33,7 @@ const searchDelayMs = 300
 
 export function App() {
   const [selectedId, setSelectedId] = useState<number | null>(null)
-  const [view, setView] = useState<AppView>(() => {
-    const { screen } = parseLocation(window.location.hash)
-    if (screen === "settings") return "settings"
-    return isSearchHash(window.location.hash) ? "search" : "library"
-  })
-  // The open Settings section (Files, Jobs or Problems), carried in the URL hash.
-  const [settingsSection, setSettingsSection] = useState<SettingsSectionId>(
-    () => parseLocation(window.location.hash).settingsSection
-  )
+  const location = useLocation()
   // The global search page's term, shared by the desktop page and the phone's tab.
   const [searchQuery, setSearchQuery] = useState(() =>
     parseSearchQuery(window.location.hash)
@@ -71,26 +65,24 @@ export function App() {
   // The URL hash carries the search (#/search?q=...), so it can be shared and
   // reloaded. Updated once typing pauses; Safari limits how often it may change.
   useEffect(() => {
-    const timer = setTimeout(
-      () => syncSearchHash(searchQuery, isDesktop, view === "search"),
-      searchDelayMs
-    )
+    if (location.tab !== "search") return
+    const timer = setTimeout(() => syncSearchHash(searchQuery), searchDelayMs)
     return () => clearTimeout(timer)
-  }, [isDesktop, view, searchQuery])
+  }, [location.tab, searchQuery])
 
-  useEffect(() => {
-    if (isDesktop) syncSettingsHash(settingsSection, view === "settings")
-  }, [isDesktop, view, settingsSection])
+  // A navigation is a history entry, so browser back returns to where it came from.
+  const navigate = (next: AppLocation) => {
+    window.location.hash = formatLocation(next, searchQuery)
+  }
 
-  const openArtist =(artist: ArtistRef) => {
+  const openArtist = (artist: ArtistRef) => {
     setArtistRef(artist)
-    setView("artists")
+    navigate(locationOf("artist"))
   }
 
   const openExecution = (executionId: string) => {
     jobsState.select(executionId)
-    setSettingsSection("jobs")
-    setView("settings")
+    navigate(locationOf("settings", "jobs"))
   }
 
   const changeAudio =(value: AudioFilter) => {
@@ -136,6 +128,8 @@ export function App() {
     return (
       <>
         <MobileShell
+          location={location}
+          onNavigate={navigate}
           total={catalog.data?.total}
           filtersActive={filtered}
           filters={filters(
@@ -146,25 +140,29 @@ export function App() {
           jobsState={jobsState}
           downloadsState={downloadsState}
           problemsState={problemsState}
+          onOpenExecution={openExecution}
           artistRef={artistRef}
           searchQuery={searchQuery}
           onSearchQueryChange={setSearchQuery}
           onSelectTrack={setSelectedId}
-          onSelectArtist={setArtistRef}
+          onOpenArtist={openArtist}
         />
         {details}
       </>
     )
   }
 
+  // The phone's Player page has no desktop counterpart: the player is docked.
+  const tab = location.tab === "player" ? "library" : location.tab
+
   return (
     <div className="flex min-h-svh flex-col lg:h-svh">
       <AppHeader
-        view={view}
-        onNavigate={setView}
+        active={activeNav(tab)}
+        onNavigate={(id) => navigate(locationOf(id))}
         problems={problemCount(problemsState)}
       />
-      {view === "library" ? (
+      {tab === "library" ? (
         <main className="grid min-h-0 flex-1 gap-4 p-4 lg:grid-rows-[minmax(0,1fr)] lg:grid-cols-[15rem_minmax(0,1fr)_20rem] xl:grid-cols-[17rem_minmax(0,1fr)_24rem]">
           {filters()}
           {table(true)}
@@ -173,7 +171,7 @@ export function App() {
       ) : (
         // The player stays docked beside every view, so playback can be controlled anywhere.
         <main className="grid min-h-0 flex-1 gap-4 p-4 lg:grid-rows-[minmax(0,1fr)] lg:grid-cols-[minmax(0,1fr)_20rem] xl:grid-cols-[minmax(0,1fr)_24rem]">
-          {view === "search" ? (
+          {tab === "search" ? (
             <SearchPage
               query={searchQuery}
               onQueryChange={setSearchQuery}
@@ -182,18 +180,18 @@ export function App() {
               autoFocus
               className="min-h-0"
             />
-          ) : view === "settings" ? (
+          ) : tab === "downloads" ? (
+            <DownloadsView state={downloadsState} className="min-h-0" />
+          ) : tab === "settings" ? (
             <SettingsView
-              section={settingsSection}
-              onSectionChange={setSettingsSection}
+              section={location.screen ?? defaultSettingsSection}
+              onSectionChange={(id) => navigate(locationOf("settings", id))}
               filesState={filesState}
               jobsState={jobsState}
               problemsState={problemsState}
               onOpenExecution={openExecution}
               className="min-h-0"
             />
-          ) : view === "downloads" ? (
-            <DownloadsView state={downloadsState} className="min-h-0" />
           ) : (
             <ArtistPage artistRef={artistRef} className="min-h-0" />
           )}

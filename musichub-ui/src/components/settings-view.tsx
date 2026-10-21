@@ -12,13 +12,17 @@ import type { JobsState } from "@/lib/use-jobs"
 import { problemCount, type ProblemsState } from "@/lib/use-problems"
 import { cn } from "@/lib/utils"
 
-interface SettingsViewProps {
-  section: SettingsSectionId
-  onSectionChange: (section: SettingsSectionId) => void
+// The state Settings' sections show, held by the App so it survives navigation.
+export interface SettingsStates {
   filesState: FilesState
   jobsState: JobsState
   problemsState: ProblemsState
   onOpenExecution: (executionId: string) => void
+}
+
+interface SettingsViewProps extends SettingsStates {
+  section: SettingsSectionId
+  onSectionChange: (section: SettingsSectionId) => void
   className?: string
 }
 
