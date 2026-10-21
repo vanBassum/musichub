@@ -10,6 +10,9 @@ import {
 import { trackTitle, type CatalogTrack } from "@/lib/catalog-api"
 import { isAudible, isLoaded, isPlayable, usePlayer } from "@/lib/use-player"
 
+// Touch-sized below the desktop breakpoint, compact in the dense desktop table.
+const touchTarget = "max-lg:size-10 max-lg:[&_svg]:size-5"
+
 // Plays a catalog track through its own linked Stored file in the shared player, and puts
 // it in the current queue: the button plays it now (the loaded track toggles pause), the
 // menu also plays it next or adds it to the end. Missing Music has no file, so both are
@@ -32,6 +35,7 @@ export function TrackPlayControl({ track }: { track: CatalogTrack }) {
       <Button
         variant="ghost"
         size="icon-sm"
+        className={touchTarget}
         disabled={!playable}
         aria-label={playable ? label : `${label}: no stored audio`}
         title={playable ? undefined : "No stored audio"}
@@ -49,6 +53,7 @@ export function TrackPlayControl({ track }: { track: CatalogTrack }) {
             <Button
               variant="ghost"
               size="icon-sm"
+              className={touchTarget}
               disabled={!playable}
               aria-label={`Queue options for ${title}`}
               title={playable ? undefined : "No stored audio"}

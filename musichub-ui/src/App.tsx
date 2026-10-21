@@ -96,6 +96,8 @@ export function App() {
     />
   )
 
+  const filtered = search !== "" || audio !== "all"
+
   const table = (showHeader: boolean) => (
     <TrackTable
       showHeader={showHeader}
@@ -104,7 +106,7 @@ export function App() {
       error={catalog.error}
       onRetry={catalog.retry}
       onPageChange={setPage}
-      filtered={search !== "" || audio !== "all"}
+      filtered={filtered}
       selectedId={selectedId}
       onSelect={setSelectedId}
     />
@@ -123,6 +125,7 @@ export function App() {
       <>
         <MobileShell
           total={catalog.data?.total}
+          filtersActive={filtered}
           filters={filters(
             "flex-1 rounded-none border-0 bg-transparent pt-12"
           )}

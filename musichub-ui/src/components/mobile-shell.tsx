@@ -39,6 +39,8 @@ import { cn } from "@/lib/utils"
 interface MobileShellProps {
   // The catalog's track count, once known.
   total: number | undefined
+  // Whether a search or filter narrows the Library, shown on the Filters button.
+  filtersActive: boolean
   filters: ReactNode
   table: ReactNode
   filesState: FilesState
@@ -95,6 +97,7 @@ function Page({
 // Outside the Player page a compact player sits above the navigation.
 export function MobileShell({
   total,
+  filtersActive,
   filters,
   table,
   filesState,
@@ -209,12 +212,20 @@ export function MobileShell({
                     <Button
                       variant="outline"
                       size="icon-lg"
-                      aria-label="Filters"
-                      className="ml-auto"
+                      aria-label={
+                        filtersActive ? "Filters (active)" : "Filters"
+                      }
+                      className="relative ml-auto"
                     />
                   }
                 >
                   <SlidersHorizontal />
+                  {filtersActive && (
+                    <span
+                      aria-hidden="true"
+                      className="absolute top-1 right-1 size-2 rounded-full bg-primary"
+                    />
+                  )}
                 </SheetTrigger>
                 <SheetContent side="bottom" className="h-[85dvh]">
                   <SheetTitle className="sr-only">Filters</SheetTitle>
