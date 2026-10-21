@@ -170,6 +170,9 @@ when `Slskd__BaseUrl` is set (the `Slskd` configuration section):
 | `Slskd__RequestTimeoutSeconds` | `30` (each request to slskd) |
 | `Slskd__DownloadTimeoutSeconds` | `600` (queued until finished; then cancelled in slskd) |
 | `Slskd__PollIntervalMs` | `1000` |
+| `Slskd__RateLimitMaxRetries` | `4` (repeats of a request slskd answered with 429) |
+| `Slskd__RateLimitBaseDelayMs` | `1000` (first wait without `Retry-After`; doubles) |
+| `Slskd__RateLimitMaxDelayMs` | `30000` (longest wait between attempts) |
 
 slskd's API doesn't serve downloaded files, so the stack mounts slskd's downloads folder
 read-only into the API container and points `Slskd__DownloadsPath` at it; without it a

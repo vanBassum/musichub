@@ -1,5 +1,6 @@
 using System.Net;
 using System.Text;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using MusicHub.Api.Acquisition;
 using MusicHub.Api.Acquisition.Slskd;
@@ -47,10 +48,13 @@ public sealed class SlskdAcquisitionProviderTests : IDisposable
             RequestTimeoutSeconds = 5,
             DownloadTimeoutSeconds = 5,
             PollIntervalMs = 1,
+            RateLimitBaseDelayMs = 1,
+            RateLimitMaxDelayMs = 50,
         };
         configure?.Invoke(options);
         return new SlskdAcquisitionProvider(
-            new HttpClient(fake) { BaseAddress = new Uri("http://slskd:5030/") }, Options.Create(options));
+            new HttpClient(fake) { BaseAddress = new Uri("http://slskd:5030/") }, Options.Create(options),
+            NullLogger<SlskdAcquisitionProvider>.Instance);
     }
 
     private static readonly AcquisitionQuery Query = new("An Artist", "A Title");
@@ -151,7 +155,8 @@ public sealed class SlskdAcquisitionProviderTests : IDisposable
     {
         var provider = new SlskdAcquisitionProvider(
             new HttpClient(new SlowHandler()) { BaseAddress = new Uri("http://slskd:5030/") },
-            Options.Create(new SlskdOptions { RequestTimeoutSeconds = 1, SearchTimeoutSeconds = 1, PollIntervalMs = 1 }));
+            Options.Create(new SlskdOptions { RequestTimeoutSeconds = 1, SearchTimeoutSeconds = 1, PollIntervalMs = 1 }),
+            NullLogger<SlskdAcquisitionProvider>.Instance);
 
         var e = await Assert.ThrowsAsync<AcquisitionUnavailableException>(
             () => provider.SearchAsync(Query, CancellationToken.None));
@@ -362,6 +367,169 @@ public sealed class SlskdAcquisitionProviderTests : IDisposable
 
         Assert.Equal(AcquisitionFailure.Unavailable, outcome.Failure);
         Assert.Contains("Slskd__ApiKey", outcome.Detail);
+    }
+
+    private static HttpResponseMessage TooManyRequests(int? retryAfterSeconds = null)
+    {
+        var response = Empty(HttpStatusCode.TooManyRequests);
+        if (retryAfterSeconds is { } seconds)
+        {
+            response.Headers.RetryAfter = new System.Net.Http.Headers.RetryConditionHeaderValue(TimeSpan.FromSeconds(seconds));
+        }
+        return response;
+    }
+
+    [Fact]
+    public async Task A_search_that_slskd_throttles_once_is_repeated_with_the_same_search_id_and_succeeds()
+    {
+        var posts = 0;
+        var fake = new FakeSlskd((call, _) => call.Method == HttpMethod.Post && posts++ == 0
+            ? TooManyRequests()
+            : SearchScript(call, 0));
+
+        var candidates = await Provider(fake).SearchAsync(Query, CancellationToken.None);
+
+        Assert.Equal(2, candidates.Count);
+        var sent = fake.Calls.Where(c => c.Method == HttpMethod.Post).ToList();
+        Assert.Equal(2, sent.Count);
+        Assert.Equal(sent[0].Body, sent[1].Body);
+        Assert.Equal(1, fake.Count(HttpMethod.Delete, "/api/v0/searches/"));
+    }
+
+    [Fact]
+    public async Task A_search_that_slskd_keeps_throttling_fails_after_the_retry_budget_and_names_the_operation()
+    {
+        var fake = new FakeSlskd((_, _) => TooManyRequests());
+
+        var e = await Assert.ThrowsAsync<AcquisitionUnavailableException>(
+            () => Provider(fake, o => o.RateLimitMaxRetries = 3).SearchAsync(Query, CancellationToken.None));
+
+        Assert.Contains("429", e.Message);
+        Assert.Contains("POST searches", e.Message);
+        Assert.DoesNotContain("secret-key", e.Message);
+        Assert.Equal(4, fake.Count(HttpMethod.Post, "/api/v0/searches"));
+    }
+
+    [Fact]
+    public async Task A_429_is_not_retried_when_retries_are_switched_off()
+    {
+        var fake = new FakeSlskd((_, _) => TooManyRequests());
+
+        await Assert.ThrowsAsync<AcquisitionUnavailableException>(
+            () => Provider(fake, o => o.RateLimitMaxRetries = 0).SearchAsync(Query, CancellationToken.None));
+
+        Assert.Equal(1, fake.Calls.Count(c => c.Method == HttpMethod.Post));
+    }
+
+    [Fact]
+    public async Task Retry_After_sets_the_wait_before_the_repeat()
+    {
+        var posts = 0;
+        var fake = new FakeSlskd((call, _) => call.Method == HttpMethod.Post && posts++ == 0
+            ? TooManyRequests(retryAfterSeconds: 1)
+            : SearchScript(call, 0));
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+
+        await Provider(fake, o => o.RateLimitMaxDelayMs = 5000).SearchAsync(Query, CancellationToken.None);
+
+        Assert.True(clock.Elapsed >= TimeSpan.FromMilliseconds(900), $"waited only {clock.Elapsed}");
+    }
+
+    [Fact]
+    public async Task A_huge_Retry_After_is_capped_at_the_maximum_delay()
+    {
+        var posts = 0;
+        var fake = new FakeSlskd((call, _) => call.Method == HttpMethod.Post && posts++ == 0
+            ? TooManyRequests(retryAfterSeconds: 3600)
+            : SearchScript(call, 0));
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+
+        await Provider(fake).SearchAsync(Query, CancellationToken.None);
+
+        Assert.True(clock.Elapsed < TimeSpan.FromSeconds(5), $"waited {clock.Elapsed}");
+    }
+
+    [Fact]
+    public async Task A_search_cancelled_while_waiting_to_retry_stops_at_once_and_removes_the_search()
+    {
+        using var cts = new CancellationTokenSource();
+        var fake = new FakeSlskd((call, _) =>
+        {
+            if (call.Method == HttpMethod.Post)
+            {
+                cts.CancelAfter(50);
+                return TooManyRequests(retryAfterSeconds: 3600);
+            }
+            return SearchScript(call, 0);
+        });
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => Provider(fake, o => o.RateLimitMaxDelayMs = 60_000).SearchAsync(Query, cts.Token));
+
+        Assert.Equal(1, fake.Calls.Count(c => c.Method == HttpMethod.Post));
+        Assert.Equal(1, fake.Count(HttpMethod.Delete, "/api/v0/searches/"));
+    }
+
+    [Fact]
+    public async Task A_download_that_slskd_throttles_is_queued_once_and_completes()
+    {
+        StoreDownloadedFile();
+        FakeSlskd? self = null;
+        self = new FakeSlskd((call, _) =>
+        {
+            var posts = self!.Count(HttpMethod.Post, "/api/v0/transfers/downloads/peer1");
+            return call.Method switch
+            {
+                { Method: "POST" } => posts <= 2 ? TooManyRequests() : Empty(HttpStatusCode.Created),
+                { Method: "DELETE" } => Empty(),
+                _ => posts < 3 ? Json(NoTransfers) : Json(Transfers("t1", "Completed, Succeeded", Candidate.Path)),
+            };
+        });
+        var fake = self;
+
+        var outcome = await Provider(fake).DownloadAsync(Candidate, CancellationToken.None);
+
+        Assert.NotNull(outcome.File);
+        Assert.Equal(3, fake.Count(HttpMethod.Post, "/api/v0/transfers/downloads/peer1"));
+        Assert.Equal(0, fake.Count(HttpMethod.Delete, "/api/v0/transfers/downloads/"));
+    }
+
+    [Fact]
+    public async Task A_download_slskd_keeps_throttling_fails_as_unavailable_and_leaves_no_transfer()
+    {
+        var fake = new FakeSlskd((call, _) => call.Method == HttpMethod.Post ? TooManyRequests() : Json(NoTransfers));
+
+        var outcome = await Provider(fake, o => o.RateLimitMaxRetries = 2).DownloadAsync(Candidate, CancellationToken.None);
+
+        Assert.Equal(AcquisitionFailure.Unavailable, outcome.Failure);
+        Assert.Contains("429", outcome.Detail);
+        Assert.Equal(3, fake.Count(HttpMethod.Post, "/api/v0/transfers/downloads/peer1"));
+    }
+
+    [Fact]
+    public async Task Concurrent_searches_each_repeat_only_their_own_throttled_request()
+    {
+        var firstSeen = new HashSet<string>();
+        var fake = new FakeSlskd((call, _) =>
+        {
+            if (call.Method == HttpMethod.Post)
+            {
+                lock (firstSeen)
+                {
+                    return firstSeen.Add(call.Body!) ? TooManyRequests() : Json("{}");
+                }
+            }
+            return SearchScript(call, 0);
+        });
+        var provider = Provider(fake);
+
+        await Task.WhenAll(Enumerable.Range(0, 4).Select(i =>
+            provider.SearchAsync(new AcquisitionQuery("Artist " + i, "Title"), CancellationToken.None)));
+
+        var posts = fake.Calls.Where(c => c.Method == HttpMethod.Post).ToList();
+        Assert.Equal(8, posts.Count);
+        Assert.Equal(4, posts.Select(p => p.Body).Distinct().Count());
+        Assert.Equal(4, fake.Count(HttpMethod.Delete, "/api/v0/searches/"));
     }
 
     [Fact]
