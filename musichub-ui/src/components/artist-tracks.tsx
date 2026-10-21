@@ -1,7 +1,7 @@
 import { useState } from "react"
-import { EllipsisVertical, ExternalLink, Play } from "lucide-react"
+import { Play } from "lucide-react"
 
-import { AvailabilityBadge } from "@/components/availability-badge"
+import { ProviderTrackRow } from "@/components/provider-track-row"
 import { CoverArt } from "@/components/cover-art"
 import { SectionBody } from "@/components/section-body"
 import { Button } from "@/components/ui/button"
@@ -67,65 +67,42 @@ export function ArtistTracksSection({
                 {tracks.warning}
               </p>
             )}
-            <ul className="space-y-2">
+            <ul className="divide-y rounded-lg border bg-card">
               {presentTracks(tracks.items, showAll).map((track) => (
-                <li
+                <ProviderTrackRow
                   key={track.key}
-                  className="flex items-center gap-3 rounded-lg border bg-card p-2"
-                >
-                  <CoverArt
-                    track={{ album: track.title, artist: artistName }}
-                    className="size-10 text-xs"
-                  />
-                  <div className="min-w-0 flex-1">
-                    <div className="truncate font-medium">{track.title}</div>
-                    {track.detail && (
-                      <div className="truncate text-xs text-muted-foreground">
-                        {track.detail}
-                      </div>
-                    )}
-                  </div>
-                  {track.provenance && (
-                    <a
-                      href={track.provenance.url}
-                      target="_blank"
-                      rel="noreferrer"
-                      aria-label={`Open ${track.title} on ${track.provenance.label}`}
-                      className="hidden items-center gap-1 text-xs text-muted-foreground hover:text-foreground sm:flex"
-                    >
-                      {track.provenance.label}
-                      <ExternalLink className="size-3" aria-hidden="true" />
-                    </a>
-                  )}
-                  <AvailabilityBadge availability={track.availability} />
-                  <div className="flex shrink-0 items-center gap-1">
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      disabled
-                      title={unavailableHint}
-                      aria-label={`Play ${track.title}`}
-                    >
-                      <Play />
-                    </Button>
-                    <AddToLibraryButton
-                      onAdd={
-                        track.addable
-                          ? () => addExternalTrackToLibrary(track.addable!)
-                          : undefined
-                      }
+                  title={track.title}
+                  subtitle={track.detail || undefined}
+                  availability={track.availability}
+                  source={track.provenance ?? { label: "My Music" }}
+                  leading={
+                    <CoverArt
+                      track={{ album: track.title, artist: artistName }}
+                      className="size-9 text-xs"
                     />
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      disabled
-                      title={unavailableHint}
-                      aria-label={`More actions for ${track.title}`}
-                    >
-                      <EllipsisVertical />
-                    </Button>
-                  </div>
-                </li>
+                  }
+                  actions={
+                    <>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="max-sm:size-9"
+                        disabled
+                        title={unavailableHint}
+                        aria-label={`Play ${track.title}: ${unavailableHint}`}
+                      >
+                        <Play />
+                      </Button>
+                      <AddToLibraryButton
+                        onAdd={
+                          track.addable
+                            ? () => addExternalTrackToLibrary(track.addable!)
+                            : undefined
+                        }
+                      />
+                    </>
+                  }
+                />
               ))}
             </ul>
           </div>
