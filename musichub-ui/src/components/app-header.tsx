@@ -1,5 +1,6 @@
 import {
   Database,
+  Download,
   FolderOpen,
   ListChecks,
   ListMusic,
@@ -13,7 +14,7 @@ import {
 import { BuildInfoSheet } from "@/components/build-info-sheet"
 import { Button } from "@/components/ui/button"
 
-export type AppView = "search" | "library" | "files" | "artists" | "jobs" | "problems"
+export type AppView = "search" | "library" | "files" | "artists" | "jobs" | "downloads" | "problems"
 
 interface AppHeaderProps {
   view: AppView
@@ -83,6 +84,16 @@ export function AppHeader({ view, onNavigate }: AppHeaderProps) {
         >
           <ListChecks data-icon="inline-start" />
           Jobs
+        </Button>
+        <Button
+          variant={view === "downloads" ? "secondary" : "ghost"}
+          size="lg"
+          aria-current={view === "downloads" ? "page" : undefined}
+          className={view === "downloads" ? activeClassName : undefined}
+          onClick={() => onNavigate("downloads")}
+        >
+          <Download data-icon="inline-start" />
+          Downloads
         </Button>
         <Button
           variant={view === "problems" ? "secondary" : "ghost"}

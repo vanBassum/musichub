@@ -1,4 +1,5 @@
 import {
+  Download,
   Ellipsis,
   FolderOpen,
   Library,
@@ -23,6 +24,7 @@ export const moreScreens = [
   { id: "library", label: "Library", icon: Library },
   { id: "files", label: "Files", icon: FolderOpen },
   { id: "jobs", label: "Jobs", icon: ListChecks },
+  { id: "downloads", label: "Downloads", icon: Download },
   { id: "problems", label: "Problems", icon: TriangleAlert },
   { id: "artists", label: "Artists", icon: UserRound },
 ] as const
