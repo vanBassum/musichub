@@ -35,6 +35,15 @@ public sealed class SlskdOptions
     /// <summary>How often a running search or download is checked.</summary>
     public int PollIntervalMs { get; set; } = 1000;
 
+    /// <summary>How often a request that slskd answered with 429 is repeated before the 429 is reported.</summary>
+    public int RateLimitMaxRetries { get; set; } = 4;
+
+    /// <summary>The first wait after a 429 without <c>Retry-After</c>; it doubles on each retry.</summary>
+    public int RateLimitBaseDelayMs { get; set; } = 1000;
+
+    /// <summary>The longest wait between two attempts, also when <c>Retry-After</c> asks for more.</summary>
+    public int RateLimitMaxDelayMs { get; set; } = 30000;
+
     /// <summary>Throws, naming the key, when the options cannot work, so a bad setup is loud.</summary>
     public void Validate()
     {
@@ -47,7 +56,8 @@ public sealed class SlskdOptions
             throw new InvalidOperationException("Slskd is not configured: Slskd__ApiKey is required when Slskd__BaseUrl is set.");
         }
         if (SearchTimeoutSeconds < 1 || MaxCandidates < 1 || RequestTimeoutSeconds < 1
-            || DownloadTimeoutSeconds < 1 || PollIntervalMs < 1)
+            || DownloadTimeoutSeconds < 1 || PollIntervalMs < 1
+            || RateLimitMaxRetries < 0 || RateLimitBaseDelayMs < 0 || RateLimitMaxDelayMs < 0)
         {
             throw new InvalidOperationException("Slskd has an out-of-range numeric setting.");
         }

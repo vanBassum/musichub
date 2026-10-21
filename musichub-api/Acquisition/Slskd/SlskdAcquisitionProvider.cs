@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Net;
+using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
 using Microsoft.Extensions.Options;
@@ -13,7 +14,8 @@ namespace MusicHub.Api.Acquisition.Slskd;
 /// for a download, with a detail that names the setting or the step to check. Requests, searches and downloads are
 /// each bounded by their own configured timeout.
 /// </summary>
-public sealed class SlskdAcquisitionProvider(HttpClient http, IOptions<SlskdOptions> options) : IAcquisitionProvider
+public sealed class SlskdAcquisitionProvider(
+    HttpClient http, IOptions<SlskdOptions> options, ILogger<SlskdAcquisitionProvider> logger) : IAcquisitionProvider
 {
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
 
@@ -241,8 +243,66 @@ public sealed class SlskdAcquisitionProvider(HttpClient http, IOptions<SlskdOpti
         }
     }
 
-    /// <summary>One request; any answer but a success is an <see cref="AcquisitionUnavailableException"/>.</summary>
+    /// <summary>
+    /// One request; any answer but a success is an <see cref="AcquisitionUnavailableException"/>. A 429 means slskd
+    /// refused the request before acting on it, so it is repeated (same body, so the same search id or transfer) after
+    /// <c>Retry-After</c> or an exponential backoff, within the configured attempts and maximum delay.
+    /// </summary>
     private async Task<HttpResponseMessage> SendAsync(HttpMethod method, string path, object? body, CancellationToken ct)
+    {
+        for (var retry = 0; ; retry++)
+        {
+            var response = await SendOnceAsync(method, path, body, ct);
+            if (response.IsSuccessStatusCode)
+            {
+                return response;
+            }
+
+            var status = response.StatusCode;
+            var retryAfter = response.Headers.RetryAfter;
+            response.Dispose();
+            if (status != HttpStatusCode.TooManyRequests)
+            {
+                throw new AcquisitionUnavailableException(status is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden
+                    ? $"slskd rejected the API key ({(int)status}); check Slskd__ApiKey."
+                    : $"slskd answered with status {(int)status}.");
+            }
+
+            var operation = Operation(method, path);
+            if (retry >= _options.RateLimitMaxRetries)
+            {
+                logger.LogWarning("slskd {Operation} answered 429 and was given up after {Retries} retries.", operation, retry);
+                throw new AcquisitionUnavailableException(
+                    $"slskd answered with status 429 (too many requests) for {operation} and kept doing so after " +
+                    $"{retry} retries; try again later or lower MissingMusic__MaxConcurrentTracks.");
+            }
+
+            var delay = RateLimitDelay(retryAfter, retry);
+            logger.LogWarning("slskd {Operation} answered 429; retry {Retry} of {Max} in {DelayMs} ms.",
+                operation, retry + 1, _options.RateLimitMaxRetries, (int)delay.TotalMilliseconds);
+            await Task.Delay(delay, ct);
+        }
+    }
+
+    /// <summary>The server's <c>Retry-After</c> (seconds or a date) when it gave one, else a doubling backoff; never over the maximum.</summary>
+    private TimeSpan RateLimitDelay(RetryConditionHeaderValue? retryAfter, int retry)
+    {
+        var requested = retryAfter?.Delta
+            ?? (retryAfter?.Date is { } date ? date - DateTimeOffset.UtcNow : (TimeSpan?)null)
+            ?? TimeSpan.FromMilliseconds(_options.RateLimitBaseDelayMs * Math.Pow(2, retry));
+        var max = TimeSpan.FromMilliseconds(_options.RateLimitMaxDelayMs);
+        return requested < TimeSpan.Zero ? TimeSpan.Zero : requested > max ? max : requested;
+    }
+
+    /// <summary>The method and the resource kind only: ids, user names and file names never reach a log.</summary>
+    private static string Operation(HttpMethod method, string path)
+    {
+        var segments = path.Split('?')[0].Split('/', StringSplitOptions.RemoveEmptyEntries).Skip(2).ToArray();
+        var kept = segments.Length > 0 && segments[0] == "transfers" ? 2 : 1;
+        return $"{method.Method} {string.Join('/', segments.Take(kept))}";
+    }
+
+    private async Task<HttpResponseMessage> SendOnceAsync(HttpMethod method, string path, object? body, CancellationToken ct)
     {
         using var request = new HttpRequestMessage(method, path);
         if (body is not null)
@@ -252,10 +312,9 @@ public sealed class SlskdAcquisitionProvider(HttpClient http, IOptions<SlskdOpti
 
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
         timeout.CancelAfter(TimeSpan.FromSeconds(_options.RequestTimeoutSeconds));
-        HttpResponseMessage response;
         try
         {
-            response = await http.SendAsync(request, timeout.Token);
+            return await http.SendAsync(request, timeout.Token);
         }
         catch (OperationCanceledException) when (!ct.IsCancellationRequested)
         {
@@ -266,15 +325,6 @@ public sealed class SlskdAcquisitionProvider(HttpClient http, IOptions<SlskdOpti
             throw new AcquisitionUnavailableException(
                 "slskd could not be reached; check Slskd__BaseUrl and that slskd is running.", e);
         }
-
-        if (response.IsSuccessStatusCode)
-        {
-            return response;
-        }
-        response.Dispose();
-        throw new AcquisitionUnavailableException(response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden
-            ? $"slskd rejected the API key ({(int)response.StatusCode}); check Slskd__ApiKey."
-            : $"slskd answered with status {(int)response.StatusCode}.");
     }
 
     private sealed record SearchState(bool IsComplete);
