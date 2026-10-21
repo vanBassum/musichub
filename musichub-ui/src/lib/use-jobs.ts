@@ -14,6 +14,8 @@ import { useLoader } from "@/lib/use-loader"
 
 const pollMs = 3000
 const pageSize = 25
+// The API returns at most this many runs per request.
+const maxLimit = 100
 
 export type JobsTab = "tasks" | "history"
 
@@ -27,6 +29,8 @@ export interface JobsState {
   total: number | null
   filter: JobFilter
   setFilter: (filter: JobFilter) => void
+  // Whether more runs match than are shown and the API's page size is not reached yet.
+  canShowMore: boolean
   showMore: () => void
   loadError: string | null
   refreshing: boolean
@@ -147,7 +151,7 @@ export function useJobs(): JobsState {
     changeFilter(next)
     setLimit(pageSize)
   }, [])
-  const showMore = useCallback(() => setLimit((current) => current + pageSize), [])
+  const showMore = useCallback(() => setLimit((current) => Math.min(current + pageSize, maxLimit)), [])
 
   return {
     tab,
@@ -157,6 +161,7 @@ export function useJobs(): JobsState {
     total: page?.total ?? null,
     filter,
     setFilter,
+    canShowMore: page !== null && page.items.length < page.total && limit < maxLimit,
     showMore,
     loadError,
     refreshing,

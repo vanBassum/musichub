@@ -270,7 +270,7 @@ function HistoryTab({ state }: { state: JobsState }) {
 }
 
 function RunList({ state, className }: { state: JobsState; className?: string }) {
-  const { executions, total, filter, setFilter, showMore, selectedId, select } = state
+  const { executions, total, filter, setFilter, canShowMore, showMore, selectedId, select } = state
   const changeFilter = (value: JobFilter) => {
     setFilter(value)
     syncJobsHash(value)
@@ -347,7 +347,7 @@ function RunList({ state, className }: { state: JobsState; className?: string })
           })}
         </ul>
       )}
-      {executions !== null && total !== null && executions.length < total && (
+      {canShowMore && (
         <Button variant="outline" onClick={showMore}>
           Show more runs
         </Button>
