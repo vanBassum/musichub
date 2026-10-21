@@ -10,6 +10,7 @@ namespace MusicHub.Api.Jobs;
 /// <param name="Error">The message of the last failure (a failed run, or the attempt that is being retried).</param>
 /// <param name="Kind">The <see cref="JobKind.Id"/> of the task this is a run of.</param>
 /// <param name="Total">How many items the run set out to go through, when its job reports it while running.</param>
+/// <param name="Stuck">Whether the run has been enqueued or processing for longer than <see cref="JobService.StuckAfter"/>.</param>
 public sealed record JobExecution(
     string Id,
     string State,
@@ -19,7 +20,19 @@ public sealed record JobExecution(
     object? Summary,
     string? Error,
     string Kind = "",
-    int? Total = null);
+    int? Total = null,
+    bool Stuck = false);
+
+/// <summary>Which executions the history lists: all of them, the ones that ended Failed, or the ones that look stuck.</summary>
+public enum JobHistoryFilter
+{
+    All,
+    Failed,
+    Stuck,
+}
+
+/// <summary>One page of the history; <paramref name="Total"/> counts every execution that matches the filter, not only this page.</summary>
+public sealed record JobExecutionPage(IReadOnlyList<JobExecution> Items, int Total);
 
 /// <summary>One step of an execution's Hangfire state history, oldest first.</summary>
 public sealed record JobStateEntry(string State, DateTime At, string? Reason);
@@ -31,10 +44,13 @@ public sealed record JobExecutionDetails(JobExecution Execution, IReadOnlyList<J
 /// job returned, the failure message). It is the only way the API reaches the jobs; there is no Hangfire dashboard. A
 /// run of a task is refused while another run of it is enqueued, scheduled for a retry, or processing.
 /// </summary>
-public sealed class JobService(JobEngine engine, JobSchedule schedule)
+public sealed class JobService(JobEngine engine, JobSchedule schedule, TimeProvider? time = null)
 {
     private const string Queue = "default";
-    private const int PerState = 50;
+    private const int StatePageSize = 500;
+
+    /// <summary>How long a run may wait in the queue or process before the history calls it stuck.</summary>
+    public static readonly TimeSpan StuckAfter = TimeSpan.FromHours(1);
     private static readonly string[] FinalStates = ["Succeeded", "Failed", "Deleted"];
     private static readonly SemaphoreSlim StartLock = new(1, 1);
 
@@ -70,32 +86,55 @@ public sealed class JobService(JobEngine engine, JobSchedule schedule)
 
     // An active run is enqueued, scheduled for a retry, or processing. Without a kind: of any task.
     private static IEnumerable<string> ActiveIds(IMonitoringApi monitor, JobKind? kind = null) =>
-        Ids(monitor.EnqueuedJobs(Queue, 0, PerState), j => j.Job, kind)
-            .Concat(Ids(monitor.ProcessingJobs(0, PerState), j => j.Job, kind))
-            .Concat(Ids(monitor.ScheduledJobs(0, PerState), j => j.Job, kind));
+        AllIds((from, count) => monitor.EnqueuedJobs(Queue, from, count), j => j.Job, kind)
+            .Concat(AllIds(monitor.ProcessingJobs, j => j.Job, kind))
+            .Concat(AllIds(monitor.ScheduledJobs, j => j.Job, kind));
 
-    /// <summary>The newest executions of every task, newest first.</summary>
-    public async Task<IReadOnlyList<JobExecution>> ListAsync(int count, CancellationToken cancellationToken)
+    private static IEnumerable<string> FailedIds(IMonitoringApi monitor) =>
+        AllIds(monitor.FailedJobs, j => j.Job);
+
+    private static IEnumerable<string> SucceededIds(IMonitoringApi monitor) =>
+        AllIds(monitor.SucceededJobs, j => j.Job);
+
+    /// <summary>
+    /// One page of the executions of every task, newest first. <see cref="JobExecutionPage.Total"/> is the number of
+    /// executions Hangfire still holds that match <paramref name="filter"/>.
+    /// </summary>
+    public async Task<JobExecutionPage> ListAsync(
+        int take, CancellationToken cancellationToken, JobHistoryFilter filter = JobHistoryFilter.All, int skip = 0)
     {
         var monitor = (await engine.StorageAsync(cancellationToken)).GetMonitoringApi();
-        var ids = ActiveIds(monitor)
-            .Concat(Ids(monitor.SucceededJobs(0, PerState), j => j.Job))
-            .Concat(Ids(monitor.FailedJobs(0, PerState), j => j.Job))
-            .Distinct();
-        return NewestDetails(monitor, ids, count).Select(details => details.Execution).ToList();
+        if (filter == JobHistoryFilter.Stuck)
+        {
+            var stuck = Details(monitor, ActiveIds(monitor).Distinct())
+                .Select(details => details.Execution)
+                .Where(execution => execution.Stuck)
+                .OrderByDescending(execution => IdOrder(execution.Id))
+                .ToList();
+            return new JobExecutionPage(stuck.Skip(skip).Take(take).ToList(), stuck.Count);
+        }
+
+        var ids = (filter == JobHistoryFilter.Failed
+                ? FailedIds(monitor)
+                : ActiveIds(monitor).Concat(SucceededIds(monitor)).Concat(FailedIds(monitor)))
+            .Distinct()
+            .OrderByDescending(IdOrder)
+            .ToList();
+        var items = Details(monitor, ids.Skip(skip).Take(take)).Select(details => details.Execution).ToList();
+        return new JobExecutionPage(items, ids.Count);
     }
 
     /// <summary>The newest executions of every task that ended Failed, newest first.</summary>
     public async Task<IReadOnlyList<JobExecutionDetails>> FailedAsync(int count, CancellationToken cancellationToken)
     {
         var monitor = (await engine.StorageAsync(cancellationToken)).GetMonitoringApi();
-        return NewestDetails(monitor, Ids(monitor.FailedJobs(0, PerState), j => j.Job), count).ToList();
+        return Details(monitor, FailedIds(monitor).OrderByDescending(IdOrder).Take(count)).ToList();
     }
 
     public async Task<JobExecutionDetails?> GetAsync(string id, CancellationToken cancellationToken)
     {
         var details = (await engine.StorageAsync(cancellationToken)).GetMonitoringApi().JobDetails(id);
-        return JobKinds.Of(details?.Job?.Type) is { } kind ? ToDetails(id, details!, kind) : null;
+        return JobKinds.Of(details?.Job?.Type) is { } kind ? ToDetails(id, details!, kind, StuckBefore()) : null;
     }
 
     // The jobs of one kind, or of any kind when none is given.
@@ -105,17 +144,35 @@ public sealed class JobService(JobEngine engine, JobSchedule schedule)
                 : job(pair.Value)?.Type == kind.JobType)
             .Select(pair => pair.Key);
 
-    private static IEnumerable<JobExecutionDetails> NewestDetails(IMonitoringApi monitor, IEnumerable<string> ids, int count) =>
-        ids.OrderByDescending(IdOrder)
-            .Take(count)
-            .Select(id => (Id: id, Details: monitor.JobDetails(id)))
+    // Every job of a state: Hangfire lists a state page by page, until a page comes back short.
+    private static IEnumerable<string> AllIds<T>(
+        Func<int, int, IEnumerable<KeyValuePair<string, T>>> page, Func<T, Job?> job, JobKind? kind = null)
+    {
+        for (var from = 0; ; from += StatePageSize)
+        {
+            var jobs = page(from, StatePageSize).ToList();
+            foreach (var id in Ids(jobs, job, kind))
+                yield return id;
+            if (jobs.Count < StatePageSize)
+                yield break;
+        }
+    }
+
+    private DateTime StuckBefore() => (time ?? TimeProvider.System).GetUtcNow().UtcDateTime - StuckAfter;
+
+    // The executions of the given jobs, in the order given; a job that expired or is not one of ours is left out.
+    private IEnumerable<JobExecutionDetails> Details(IMonitoringApi monitor, IEnumerable<string> ids)
+    {
+        var stuckBefore = StuckBefore();
+        return ids.Select(id => (Id: id, Details: monitor.JobDetails(id)))
             .Where(job => job.Details is not null && JobKinds.Of(job.Details.Job?.Type) is not null)
-            .Select(job => ToDetails(job.Id, job.Details!, JobKinds.Of(job.Details!.Job?.Type)!));
+            .Select(job => ToDetails(job.Id, job.Details!, JobKinds.Of(job.Details!.Job?.Type)!, stuckBefore));
+    }
 
     // Hangfire job ids are increasing numbers, so the biggest is the newest.
     private static long IdOrder(string id) => long.TryParse(id, out var n) ? n : 0;
 
-    private static JobExecutionDetails ToDetails(string id, JobDetailsDto details, JobKind kind)
+    private static JobExecutionDetails ToDetails(string id, JobDetailsDto details, JobKind kind, DateTime stuckBefore)
     {
         var history = details.History
             .OrderBy(h => h.CreatedAt)
@@ -141,7 +198,8 @@ public sealed class JobService(JobEngine engine, JobSchedule schedule)
             Kind: kind.Id,
             Total: details.Properties.TryGetValue(JobProgress.TotalParameter, out var total) && int.TryParse(total, out var count)
                 ? count
-                : null);
+                : null,
+            Stuck: last.StateName is "Enqueued" or "Processing" && last.CreatedAt < stuckBefore);
         return new JobExecutionDetails(execution, history, failed is not null && failed.Data.TryGetValue("ExceptionType", out var type) ? type : null);
     }
 

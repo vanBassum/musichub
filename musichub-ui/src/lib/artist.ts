@@ -1,4 +1,5 @@
 import type { ExternalTrack } from "@/lib/catalog-api"
+import type { VersionKind } from "@/lib/track-version"
 
 // What the artist detail page shows. The page only knows these shapes; lib/artist-api.ts
 // builds them from the catalog and the external provider.
@@ -32,6 +33,7 @@ export interface ArtistTrack {
   key: string
   title: string
   detail: string
+  versionKind: VersionKind
   availability: Availability
   // Set for a track that comes from the provider only.
   provenance: { label: string; url: string } | null

@@ -1,57 +1,58 @@
 import { useEffect, useState } from "react"
 
-import { AppHeader, type AppView } from "@/components/app-header"
+import { AppHeader } from "@/components/app-header"
 import { ArtistPage } from "@/components/artist-page"
 import { DownloadsView } from "@/components/downloads-view"
-import { FilesView } from "@/components/files-view"
 import { FilterSidebar } from "@/components/filter-sidebar"
-import { JobsView } from "@/components/jobs-view"
 import { MobileShell } from "@/components/mobile-shell"
-import {
-  isSearchHash,
-  parseSearchQuery,
-  syncSearchHash,
-} from "@/components/mobile-pages"
 import { PlayerPanel } from "@/components/player-panel"
-import { ProblemsView } from "@/components/problems-view"
 import { SearchPage } from "@/components/search-page"
+import { defaultSettingsSection } from "@/components/settings-sections"
+import { SettingsView } from "@/components/settings-view"
 import { TrackDetailsSheet } from "@/components/track-details-sheet"
 import { TrackTable } from "@/components/track-table"
-import { mockNowPlayingId, mockQueue } from "@/data/mock-tracks"
-import type { ArtistRef } from "@/lib/artist"
+import { openArtist, type ArtistSource } from "@/lib/artist-route"
 import type { AudioFilter } from "@/lib/catalog-api"
+import type { DownloadStatusFilter } from "@/lib/downloads-api"
+import {
+  activeNav,
+  formatLocation,
+  locationOf,
+  parseJobsFilter,
+  parseSearchQuery,
+  syncSearchHash,
+  type AppLocation,
+} from "@/lib/navigation"
 import { useTracks } from "@/lib/use-catalog"
 import { useDownloadQueue } from "@/lib/use-download-queue"
 import { useFiles } from "@/lib/use-files"
 import { useJobs } from "@/lib/use-jobs"
+import { useLocation } from "@/lib/use-location"
 import { useIsDesktop } from "@/lib/use-media-query"
-import { useProblems } from "@/lib/use-problems"
 
 const searchDelayMs = 300
 
 export function App() {
   const [selectedId, setSelectedId] = useState<number | null>(null)
-  const [view, setView] = useState<AppView>(
-    isSearchHash(window.location.hash) ? "search" : "library"
-  )
+  // Which page the selected track was opened from; its artists' pages return there.
+  const [selectedSource, setSelectedSource] = useState<ArtistSource>("library")
+  const location = useLocation()
   // The global search page's term, shared by the desktop page and the phone's tab.
   const [searchQuery, setSearchQuery] = useState(() =>
     parseSearchQuery(window.location.hash)
   )
-  // The artist page shows this artist, found by a local or an external search.
-  const [artistRef, setArtistRef] = useState<ArtistRef | null>(null)
   // What the box shows now, and the term sent to the API once typing pauses.
   const [searchInput, setSearchInput] = useState("")
   const [search, setSearch] = useState("")
-  const [audio, setAudio] = useState<AudioFilter>("all")
+  // The Library's wanted/missing filter lives in the URL hash, so it can be linked to.
+  const { audio } = location
   const [page, setPage] = useState(1)
   const isDesktop = useIsDesktop()
   const catalog = useTracks(search, audio, page)
   // Held here so uploads survive navigation and the desktop/mobile layout swap.
   const filesState = useFiles()
   const jobsState = useJobs()
-  const downloadsState = useDownloadQueue()
-  const problemsState = useProblems()
+  const downloadsState = useDownloadQueue(location.downloadStatus)
 
   useEffect(() => {
     const term = searchInput.trim()
@@ -65,27 +66,32 @@ export function App() {
   // The URL hash carries the search (#/search?q=...), so it can be shared and
   // reloaded. Updated once typing pauses; Safari limits how often it may change.
   useEffect(() => {
-    const timer = setTimeout(
-      () => syncSearchHash(searchQuery, isDesktop, view === "search"),
-      searchDelayMs
-    )
+    if (location.tab !== "search") return
+    const timer = setTimeout(() => syncSearchHash(searchQuery), searchDelayMs)
     return () => clearTimeout(timer)
-  }, [isDesktop, view, searchQuery])
+  }, [location.tab, searchQuery])
 
-  const openArtist =(artist: ArtistRef) => {
-    setArtistRef(artist)
-    setView("artists")
+  // A Jobs link with a filter (#/settings/jobs?state=failed) opens History with that filter applied.
+  const { setFilter: setJobsFilter, setTab: setJobsTab } = jobsState
+  useEffect(() => {
+    if (location.screen !== "jobs") return
+    const filter = parseJobsFilter(window.location.hash)
+    setJobsFilter(filter)
+    if (filter !== "all") setJobsTab("history")
+  }, [location, setJobsFilter, setJobsTab])
+
+  // A navigation is a history entry, so browser back returns to where it came from.
+  const navigate = (next: AppLocation) => {
+    window.location.hash = formatLocation(next, searchQuery)
   }
 
-  const openExecution = (executionId: string) => {
-    jobsState.select(executionId)
-    setView("jobs")
-  }
-
-  const changeAudio =(value: AudioFilter) => {
-    setAudio(value)
+  const changeAudio = (value: AudioFilter) => {
     setPage(1)
+    navigate({ ...locationOf("library"), audio: value })
   }
+
+  const changeDownloadStatus = (value: DownloadStatusFilter) =>
+    navigate({ ...locationOf("downloads"), downloadStatus: value })
 
   const filters = (className?: string) => (
     <FilterSidebar
@@ -97,6 +103,14 @@ export function App() {
     />
   )
 
+  const selectTrack = (id: number, source: ArtistSource) => {
+    setSelectedSource(source)
+    setSelectedId(id)
+  }
+  const selectSearchTrack = (id: number) => selectTrack(id, "search")
+
+  const filtered = search !== "" || audio !== "all"
+
   const table = (showHeader: boolean) => (
     <TrackTable
       showHeader={showHeader}
@@ -105,9 +119,12 @@ export function App() {
       error={catalog.error}
       onRetry={catalog.retry}
       onPageChange={setPage}
-      filtered={search !== "" || audio !== "all"}
+      filtered={filtered}
       selectedId={selectedId}
-      onSelect={setSelectedId}
+      onSelect={(id) => selectTrack(id, "library")}
+      onSelectArtist={(id) =>
+        openArtist({ ref: { kind: "local", id }, source: "library" })
+      }
     />
   )
 
@@ -115,6 +132,10 @@ export function App() {
     <TrackDetailsSheet
       trackId={selectedId}
       onClose={() => setSelectedId(null)}
+      onSelectArtist={(id) => {
+        setSelectedId(null)
+        openArtist({ ref: { kind: "local", id }, source: selectedSource })
+      }}
     />
   )
 
@@ -123,65 +144,79 @@ export function App() {
     return (
       <>
         <MobileShell
+          location={location}
+          onNavigate={navigate}
           total={catalog.data?.total}
+          filtersActive={filtered}
           filters={filters(
             "flex-1 rounded-none border-0 bg-transparent pt-12"
           )}
           table={table(false)}
-          queue={mockQueue}
-          nowPlayingId={mockNowPlayingId}
           filesState={filesState}
           jobsState={jobsState}
           downloadsState={downloadsState}
-          problemsState={problemsState}
-          artistRef={artistRef}
+          onDownloadStatusChange={changeDownloadStatus}
           searchQuery={searchQuery}
           onSearchQueryChange={setSearchQuery}
-          onSelectTrack={setSelectedId}
-          onSelectArtist={setArtistRef}
+          onSelectTrack={selectSearchTrack}
         />
         {details}
       </>
     )
   }
 
+  // The phone's Player page has no desktop counterpart: the player is docked.
+  const tab = location.tab === "player" ? "library" : location.tab
+
   return (
     <div className="flex min-h-svh flex-col lg:h-svh">
-      <AppHeader view={view} onNavigate={setView} />
-      {view === "library" ? (
+      <AppHeader
+        active={activeNav(location)}
+        onNavigate={(id) => navigate(locationOf(id))}
+      />
+      {tab === "library" ? (
         <main className="grid min-h-0 flex-1 gap-4 p-4 lg:grid-rows-[minmax(0,1fr)] lg:grid-cols-[15rem_minmax(0,1fr)_20rem] xl:grid-cols-[17rem_minmax(0,1fr)_24rem]">
           {filters()}
           {table(true)}
-          <PlayerPanel queue={mockQueue} nowPlayingId={mockNowPlayingId} />
+          <PlayerPanel />
         </main>
       ) : (
         // The player stays docked beside every view, so playback can be controlled anywhere.
         <main className="grid min-h-0 flex-1 gap-4 p-4 lg:grid-rows-[minmax(0,1fr)] lg:grid-cols-[minmax(0,1fr)_20rem] xl:grid-cols-[minmax(0,1fr)_24rem]">
-          {view === "search" ? (
+          {tab === "search" ? (
             <SearchPage
               query={searchQuery}
               onQueryChange={setSearchQuery}
-              onSelectTrack={setSelectedId}
-              onSelectArtist={openArtist}
+              onSelectTrack={selectSearchTrack}
+              onSelectArtist={(ref) => openArtist({ ref, source: "search" })}
               autoFocus
               className="min-h-0"
             />
-          ) : view === "files" ? (
-            <FilesView state={filesState} className="min-h-0" />
-          ) : view === "jobs" ? (
-            <JobsView state={jobsState} className="min-h-0" />
-          ) : view === "downloads" ? (
-            <DownloadsView state={downloadsState} className="min-h-0" />
-          ) : view === "problems" ? (
-            <ProblemsView
-              state={problemsState}
-              onOpenExecution={openExecution}
+          ) : tab === "downloads" ? (
+            <DownloadsView
+              state={downloadsState}
+              status={location.downloadStatus}
+              onStatusChange={changeDownloadStatus}
+              className="min-h-0"
+            />
+          ) : tab === "settings" ? (
+            <SettingsView
+              section={location.screen ?? defaultSettingsSection}
+              onSectionChange={(id) => navigate(locationOf("settings", id))}
+              filesState={filesState}
+              jobsState={jobsState}
               className="min-h-0"
             />
           ) : (
-            <ArtistPage artistRef={artistRef} className="min-h-0" />
+            location.artist && (
+              <ArtistPage
+                route={location.artist}
+                onBack={(source) => navigate(locationOf(source))}
+                className="min-h-0"
+              />
+            )
           )}
-          <PlayerPanel queue={mockQueue} nowPlayingId={mockNowPlayingId} />
+          <PlayerPanel />
         </main>
       )}
       {details}

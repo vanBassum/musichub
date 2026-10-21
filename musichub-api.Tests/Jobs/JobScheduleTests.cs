@@ -98,7 +98,7 @@ public class JobScheduleTests
 
         Assert.NotNull(manual);
         Assert.Equal(manual, await host.Jobs.ActiveExecutionIdAsync(Reconciliation, CancellationToken.None));
-        Assert.Single(await host.Jobs.ListAsync(10, CancellationToken.None));
+        Assert.Single((await host.Jobs.ListAsync(10, CancellationToken.None)).Items);
     }
 
     [Fact]

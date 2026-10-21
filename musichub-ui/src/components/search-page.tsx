@@ -1,9 +1,4 @@
-import {
-  ExternalLink,
-  Search,
-  SlidersHorizontal,
-  UserRound,
-} from "lucide-react"
+import { Search, SlidersHorizontal, UserRound } from "lucide-react"
 import { useEffect, useRef, useState, type ReactNode } from "react"
 
 import { Badge } from "@/components/ui/badge"
@@ -18,7 +13,7 @@ import {
 import { Skeleton } from "@/components/ui/skeleton"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { AddToLibraryButton } from "@/components/add-to-library-button"
-import { AvailabilityBadge } from "@/components/availability-badge"
+import { ProviderTrackRow, SourceLink } from "@/components/provider-track-row"
 import { providerLabel, type ArtistRef } from "@/lib/artist"
 import {
   addExternalTrackToLibrary,
@@ -112,22 +107,6 @@ function Group({
 
 const rowClassName = "flex flex-wrap items-center gap-x-2 gap-y-1 px-2 py-1.5 text-sm"
 
-function ProviderLink({ provider, url }: { provider: string; url: string }) {
-  const label = providerLabel(provider)
-  return (
-    <a
-      href={url}
-      target="_blank"
-      rel="noreferrer"
-      aria-label={`Open on ${label}`}
-      className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
-    >
-      {label}
-      <ExternalLink className="size-3" aria-hidden="true" />
-    </a>
-  )
-}
-
 type LocalSearch = ReturnType<typeof useGlobalSearch>
 type ExternalSearch = ReturnType<typeof useExternalSearch>
 
@@ -200,7 +179,10 @@ function ExternalArtistRow({
           {artist.disambiguation}
         </span>
       )}
-      <ProviderLink provider={artist.provider} url={artist.url} />
+      <SourceLink
+        title={artist.name}
+        source={{ label: providerLabel(artist.provider), url: artist.url }}
+      />
     </li>
   )
 }
@@ -213,17 +195,13 @@ function LocalTrackRow({
   onSelect: (trackId: number) => void
 }) {
   return (
-    <li className={rowClassName}>
-      <Badge variant="secondary">My Music</Badge>
-      <RowLink onClick={() => onSelect(track.id)}>
-        {track.title}
-        {track.version && ` (${track.version})`}
-      </RowLink>
-      <span className="max-w-[40%] truncate text-muted-foreground">
-        {artistNames(track)}
-      </span>
-      <AvailabilityBadge availability={catalogAvailability(track.hasAudio)} />
-    </li>
+    <ProviderTrackRow
+      title={`${track.title}${track.version ? ` (${track.version})` : ""}`}
+      subtitle={artistNames(track)}
+      onSelect={() => onSelect(track.id)}
+      availability={catalogAvailability(track.hasAudio)}
+      source={{ label: "My Music" }}
+    />
   )
 }
 
@@ -233,19 +211,19 @@ function ExternalTrackRow({
   track: ExternalSearch["tracks"][number]
 }) {
   return (
-    <li className={rowClassName}>
-      <Badge variant="outline">{providerLabel(track.provider)}</Badge>
-      <span className="min-w-0 flex-1 truncate">
-        {track.disambiguation
+    <ProviderTrackRow
+      title={
+        track.disambiguation
           ? `${track.title} (${track.disambiguation})`
-          : track.title}
-      </span>
-      <span className="max-w-[40%] truncate text-muted-foreground">
-        {track.artists.map((a) => a.name).join(", ")}
-      </span>
-      <ProviderLink provider={track.provider} url={track.url} />
-      <AddToLibraryButton onAdd={() => addExternalTrackToLibrary(track)} />
-    </li>
+          : track.title
+      }
+      subtitle={track.artists.map((a) => a.name).join(", ")}
+      availability="external"
+      source={{ label: providerLabel(track.provider), url: track.url }}
+      actions={
+        <AddToLibraryButton onAdd={() => addExternalTrackToLibrary(track)} />
+      }
+    />
   )
 }
 

@@ -209,20 +209,9 @@ public sealed class CatalogReconciliation(
 
             var previousTrackId = current.TrackId;
             var track = await FindTrackAsync(identity, cancellationToken);
-            if (previousTrackId is not null && track?.Id == previousTrackId)
-                return Retain(attempt, previousTrackId.Value, $"Identified again as its track \"{track.Title}\"; the link stays.");
-            if (previousTrackId is not null && await LatestAppliedAsync(fileId, cancellationToken) is { } applied)
-            {
-                var named = $"\"{identity.Title}\" by {string.Join(", ", identity.Artists)}";
-                if (applied.Source == IdentificationSource.Manual)
-                    return Retain(attempt, previousTrackId.Value,
-                        $"Identified as {named}, which contradicts the identity a person confirmed; the confirmed link stays.");
-                var existing = EvidenceStrength(applied.Attempt?.ReadMethods() ?? []);
-                var proposed = EvidenceStrength(attempt.Methods);
-                if (proposed <= existing)
-                    return Retain(attempt, previousTrackId.Value,
-                        $"Identified as {named}, but with evidence from {proposed} source(s) against {existing} behind the automatic link; the link stays.");
-            }
+            if (previousTrackId is { } linkedTrackId
+                && await RetainReasonAsync(fileId, linkedTrackId, track, identity, attempt.Methods, cancellationToken) is { } retainReason)
+                return Retain(attempt, linkedTrackId, retainReason);
 
             attempt.CreatedTrack = track is null;
             var linkEvidence = $"Credited with this identifier on a recording identified from: {evidence}";
@@ -263,6 +252,28 @@ public sealed class CatalogReconciliation(
         {
             CatalogLock.Release();
         }
+    }
+
+    // Why an existing link stays instead of being replaced, or null when the new identity may replace it: the same
+    // track, a person's confirmation, or evidence that is not stronger than what the automatic link was decided on.
+    private async Task<string?> RetainReasonAsync(
+        int fileId, int linkedTrackId, Track? track, ProposedRecordingIdentity identity,
+        IReadOnlyList<IdentificationMethodResult> methods, CancellationToken cancellationToken)
+    {
+        if (track?.Id == linkedTrackId)
+            return $"Identified again as its track \"{track.Title}\"; the link stays.";
+        if (await LatestAppliedAsync(fileId, cancellationToken) is not { } applied)
+            return null;
+
+        var named = $"\"{identity.Title}\" by {string.Join(", ", identity.Artists)}";
+        if (applied.Source == IdentificationSource.Manual)
+            return $"Identified as {named}, which contradicts the identity a person confirmed; the confirmed link stays.";
+
+        var existing = EvidenceStrength(applied.Attempt?.ReadMethods() ?? []);
+        var proposed = EvidenceStrength(methods);
+        return proposed <= existing
+            ? $"Identified as {named}, but with evidence from {proposed} source(s) against {existing} behind the automatic link; the link stays."
+            : null;
     }
 
     // The attempt names the identity the engine established and the link that stays; the file does not change.

@@ -48,7 +48,7 @@ public class CatalogReconciliationJobServiceTests
         Assert.Null(details.Execution.Error);
         Assert.Contains("Processing", details.History.Select(h => h.State));
         Assert.Equal("Succeeded", details.History[^1].State);
-        Assert.Equal(id, Assert.Single(await host.Jobs.ListAsync(10, CancellationToken.None)).Id);
+        Assert.Equal(id, Assert.Single((await host.Jobs.ListAsync(10, CancellationToken.None)).Items).Id);
         Assert.Null(await host.Jobs.ActiveExecutionIdAsync(JobKinds.CatalogReconciliation, CancellationToken.None));
     }
 
@@ -152,7 +152,7 @@ public class CatalogReconciliationJobServiceTests
         Assert.NotNull(first);
         Assert.Null(second);
         Assert.Equal(first, await host.Jobs.ActiveExecutionIdAsync(JobKinds.CatalogReconciliation, CancellationToken.None));
-        var execution = Assert.Single(await host.Jobs.ListAsync(10, CancellationToken.None));
+        var execution = Assert.Single((await host.Jobs.ListAsync(10, CancellationToken.None)).Items);
         Assert.Equal("Enqueued", execution.State);
         Assert.Null(execution.StartedAt);
     }
@@ -191,7 +191,9 @@ public class CatalogReconciliationJobServiceTests
 
         Assert.Null(await host.Jobs.GetAsync(ping, CancellationToken.None));
         Assert.Null(await host.Jobs.GetAsync("999999", CancellationToken.None));
-        Assert.Empty(await host.Jobs.ListAsync(10, CancellationToken.None));
+        var page = await host.Jobs.ListAsync(10, CancellationToken.None);
+        Assert.Empty(page.Items);
+        Assert.Equal(0, page.Total);
     }
 
     [Fact]
@@ -232,7 +234,7 @@ public class CatalogReconciliationJobServiceTests
         foreach (var result in new[]
         {
             await controller.List(CancellationToken.None),
-            await controller.Executions(CancellationToken.None),
+            await controller.Executions(cancellationToken: CancellationToken.None),
             await controller.StartCatalogReconciliation(CancellationToken.None),
         })
             Assert.Equal(StatusCodes.Status503ServiceUnavailable, Assert.IsType<ObjectResult>(result).StatusCode);

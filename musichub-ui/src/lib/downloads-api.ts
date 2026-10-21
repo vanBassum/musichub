@@ -1,97 +1,117 @@
-// The persistent download queue, as the Downloads page reads it. The queue read API is not built yet, so this is
-// the agreed shape (GET /api/downloads, newest first) and `listDownloadQueue` serves the sample below until the
-// endpoint exists: then it becomes `getJson<DownloadQueueItem[]>("/api/downloads", "The downloads", signal)`.
-export type DownloadQueueStatus = "queued" | "downloading" | "completed" | "failed"
+import { getJson, problemDetail } from "@/lib/jobs-api"
+
+// The persistent download queue, as GET /api/downloads returns it (newest first).
+export type DownloadQueueStatus =
+  | "Queued"
+  | "Downloading"
+  | "Downloaded"
+  | "Completed"
+  | "Failed"
 
 export interface DownloadQueueItem {
-  id: string
-  trackTitle: string
-  artist: string
+  id: number
+  trackTitle: string | null
+  artists: string[]
+  fileName: string
   status: DownloadQueueStatus
   // 0 to 100 while the transfer reports it, otherwise null.
   progressPercent: number | null
-  // Why a request failed, otherwise null.
+  // Why a request failed (or the last attempt failed), otherwise null.
   error: string | null
   createdAt: string
   updatedAt: string
   finishedAt: string | null
 }
 
-// Whether the request is still going to change, so the page keeps polling for it.
-export const isDownloadActive = (item: DownloadQueueItem) =>
-  item.status === "queued" || item.status === "downloading"
-
-// Every endpoint-less value in this file is sample data: the page says so while it shows it.
-export const downloadQueueIsSample = true
-
-const minutesAgo = (minutes: number) =>
-  new Date(Date.now() - minutes * 60_000).toISOString()
-
-function sampleQueue(): DownloadQueueItem[] {
-  return [
-    {
-      id: "5",
-      trackTitle: "Teardrop",
-      artist: "Massive Attack",
-      status: "queued",
-      progressPercent: null,
-      error: null,
-      createdAt: minutesAgo(1),
-      updatedAt: minutesAgo(1),
-      finishedAt: null,
-    },
-    {
-      id: "4",
-      trackTitle: "Glory Box",
-      artist: "Portishead",
-      status: "downloading",
-      progressPercent: 42,
-      error: null,
-      createdAt: minutesAgo(6),
-      updatedAt: minutesAgo(0),
-      finishedAt: null,
-    },
-    {
-      id: "3",
-      trackTitle: "Angel",
-      artist: "Massive Attack",
-      status: "downloading",
-      progressPercent: null,
-      error: null,
-      createdAt: minutesAgo(9),
-      updatedAt: minutesAgo(2),
-      finishedAt: null,
-    },
-    {
-      id: "2",
-      trackTitle: "Roads",
-      artist: "Portishead",
-      status: "completed",
-      progressPercent: 100,
-      error: null,
-      createdAt: minutesAgo(50),
-      updatedAt: minutesAgo(44),
-      finishedAt: minutesAgo(44),
-    },
-    {
-      id: "1",
-      trackTitle: "Karma Police",
-      artist: "Radiohead",
-      status: "failed",
-      progressPercent: 17,
-      error: "The user went offline before the transfer finished.",
-      createdAt: minutesAgo(120),
-      updatedAt: minutesAgo(115),
-      finishedAt: minutesAgo(115),
-    },
-  ]
+export interface DownloadQueuePage {
+  items: DownloadQueueItem[]
+  total: number
 }
 
-export const listDownloadQueue = (signal?: AbortSignal) =>
-  new Promise<DownloadQueueItem[]>((resolve, reject) => {
-    if (signal?.aborted) {
-      reject(new DOMException("Aborted", "AbortError"))
-      return
-    }
-    resolve(sampleQueue())
-  })
+// Whether the request is still going to change, so the page keeps polling for it.
+export const isDownloadActive = (item: DownloadQueueItem) =>
+  item.status === "Queued" ||
+  item.status === "Downloading" ||
+  item.status === "Downloaded"
+
+// What the Downloads page narrows the queue to: every request, or one status.
+export type DownloadStatusFilter = "all" | DownloadQueueStatus
+
+export const downloadStatuses: DownloadQueueStatus[] = [
+  "Queued",
+  "Downloading",
+  "Downloaded",
+  "Completed",
+  "Failed",
+]
+
+// The filter as a deep link carries it (`#/downloads?status=failed`).
+export const formatDownloadStatus = (filter: DownloadStatusFilter) =>
+  filter.toLowerCase()
+
+// Anything that names no status is "all".
+export const parseDownloadStatus = (value: string | null): DownloadStatusFilter =>
+  downloadStatuses.find((status) => status.toLowerCase() === value) ?? "all"
+
+// A page of the queue and the filter it was loaded for.
+export interface FilteredDownloadQueuePage extends DownloadQueuePage {
+  filter: DownloadStatusFilter
+}
+
+// The manual actions the API allows, which it checks again itself: only a failed request is retried, and
+// only a failed or completed one is removed (an active transfer cannot be cancelled).
+export const canRetryDownload = (item: DownloadQueueItem) =>
+  item.status === "Failed"
+
+export const canRemoveDownload = (item: DownloadQueueItem) =>
+  item.status === "Failed" || item.status === "Completed"
+
+async function sendDownloadAction(
+  url: string,
+  method: "POST" | "DELETE",
+  failure: string,
+  acceptedStatus?: number
+) {
+  const response = await fetch(url, { method })
+  if (response.ok || response.status === acceptedStatus) return
+  throw new Error(
+    (await problemDetail(response)) ?? `${failure} (HTTP ${response.status}).`
+  )
+}
+
+// POST /api/downloads/{id}/retry: queues a failed request again. 409 (no longer failed, or the track already
+// has an active download) is thrown with the API's explanation; nothing was changed then.
+export const retryDownload = (id: number) =>
+  sendDownloadAction(
+    `/api/downloads/${id}/retry`,
+    "POST",
+    "The download could not be retried"
+  )
+
+// DELETE /api/downloads/{id}: takes the request out of the queue only. Safe to repeat: 404 means it is
+// already gone, which is what was asked for.
+export const removeDownload = (id: number) =>
+  sendDownloadAction(
+    `/api/downloads/${id}`,
+    "DELETE",
+    "The download could not be removed",
+    404
+  )
+
+// The newest requests: the API caps a page at 100.
+const pageSize = 100
+
+// `total` counts the requests matching the filter, not the whole queue.
+export const listDownloadQueue = async (
+  filter: DownloadStatusFilter,
+  signal?: AbortSignal
+): Promise<FilteredDownloadQueuePage> => {
+  const query = new URLSearchParams({ page: "1", pageSize: String(pageSize) })
+  if (filter !== "all") query.set("status", filter)
+  const page = await getJson<DownloadQueuePage>(
+    `/api/downloads?${query}`,
+    "The downloads",
+    signal
+  )
+  return { ...page, filter }
+}

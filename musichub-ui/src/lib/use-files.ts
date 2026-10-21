@@ -11,12 +11,16 @@ import {
 import {
   deleteFailedFiles,
   deleteFile,
+  getFileCounts,
   listFiles,
   uploadFile,
   UploadCancelled,
   type FailedFilesDeletion,
-  type FileRegistration,
+  type FileCounts,
+  type FilesPage,
+  type FilesQuery,
 } from "@/lib/files-api"
+import { useFilesFilter } from "@/lib/files-filter"
 
 // An upload made in this session. "queued" waits for a free slot; "sent" means every
 // byte left the browser but the API has not confirmed storage yet. A confirmed upload
@@ -61,7 +65,11 @@ export interface FilesState {
   bulkDeletion: BulkDeleteState | null
   remove: (id: string) => void
   removeFailed: () => void
-  files: FileRegistration[] | null
+  // The page of registrations matching `filter`, and the counts per status and identification state.
+  files: FilesPage | null
+  counts: FileCounts | null
+  filter: FilesQuery
+  setFilter: (filter: FilesQuery) => void
   loadError: string | null
   refreshing: boolean
   uploads: Upload[]
@@ -78,23 +86,32 @@ export interface FilesState {
 // upload keeps its progress and Cancel control when the user navigates or the
 // layout swaps between the desktop and mobile trees.
 export function useFiles(): FilesState {
-  const [files, setFiles] = useState<FileRegistration[] | null>(null)
+  const { filter, setFilter } = useFilesFilter()
+  const [files, setFiles] = useState<FilesPage | null>(null)
+  const [counts, setCounts] = useState<FileCounts | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [refreshing, setRefreshing] = useState(true)
   const [uploads, setUploads] = useState<Upload[]>([])
   const latest = useRef<AbortController | null>(null)
   const nextKey = useRef(0)
 
-  // Only the newest request may write state: starting one aborts the previous.
+  // `load` reads the filter from a ref so it stays stable: the upload queue below is built from `refresh`.
+  const filterRef = useRef(filter)
+
+  // Only the newest request may write state: starting one aborts the previous. The page and the counts load together.
   const load = useCallback(() => {
     latest.current?.abort()
     const controller = new AbortController()
     latest.current = controller
-    return listFiles(controller.signal)
+    return Promise.all([
+      listFiles(filterRef.current, controller.signal),
+      getFileCounts(controller.signal),
+    ])
       .then(
-        (list) => {
+        ([list, totals]) => {
           if (controller.signal.aborted) return
           setFiles(list)
+          setCounts(totals)
           setLoadError(null)
         },
         (error: unknown) => {
@@ -115,13 +132,15 @@ export function useFiles(): FilesState {
   }, [load])
 
   // `refreshing` starts true, so the first load needs no state change up front.
+  // A new filter loads its page.
   useEffect(() => {
+    filterRef.current = filter
     void load()
     return () => {
       latest.current?.abort()
       latest.current = null
     }
-  }, [load])
+  }, [load, filter])
 
   const patch = useCallback(
     (key: number, change: Partial<Upload>) =>
@@ -261,6 +280,9 @@ export function useFiles(): FilesState {
 
   return {
     files,
+    counts,
+    filter,
+    setFilter,
     loadError,
     refreshing,
     uploads,

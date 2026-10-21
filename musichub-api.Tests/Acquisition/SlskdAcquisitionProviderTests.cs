@@ -18,7 +18,13 @@ public sealed class SlskdAcquisitionProviderTests : IDisposable
     /// <summary>A stand-in for slskd's HTTP API: answers with whatever the test's script says and records every call.</summary>
     private sealed class FakeSlskd(Func<Call, int, HttpResponseMessage> respond) : HttpMessageHandler
     {
-        public List<Call> Calls { get; } = [];
+        private readonly List<Call> _calls = [];
+
+        // Concurrent requests record at the same time, so reads take a snapshot under the lock.
+        public IReadOnlyList<Call> Calls
+        {
+            get { lock (_calls) return _calls.ToList(); }
+        }
 
         public int Count(HttpMethod method, string pathStart) =>
             Calls.Count(c => c.Method == method && c.PathAndQuery.StartsWith(pathStart, StringComparison.Ordinal));
@@ -27,8 +33,13 @@ public sealed class SlskdAcquisitionProviderTests : IDisposable
         {
             var call = new Call(request.Method, request.RequestUri!.PathAndQuery,
                 request.Content is null ? null : await request.Content.ReadAsStringAsync(ct));
-            Calls.Add(call);
-            return respond(call, Calls.Count(c => c.Method == call.Method && c.PathAndQuery == call.PathAndQuery));
+            int number;
+            lock (_calls)
+            {
+                _calls.Add(call);
+                number = _calls.Count(c => c.Method == call.Method && c.PathAndQuery == call.PathAndQuery);
+            }
+            return respond(call, number);
         }
     }
 
@@ -321,6 +332,93 @@ public sealed class SlskdAcquisitionProviderTests : IDisposable
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => Provider(fake).DownloadAsync(Candidate, cts.Token));
 
         Assert.Equal(1, fake.Count(HttpMethod.Delete, "/api/v0/transfers/downloads/peer1/t1?remove=true"));
+    }
+
+    private static string TransferWithBytes(string id, string state, long bytes, string path) => $$"""
+        {"username":"peer1","directories":[{"directory":"x","files":[
+          {"id":"{{id}}","filename":{{System.Text.Json.JsonSerializer.Serialize(path)}},"state":"{{state}}","bytesTransferred":{{bytes}}}]}]}
+        """;
+
+    /// <summary>slskd already has a transfer of the file (as after a restart); each poll shows the next state.</summary>
+    private FakeSlskd ExistingTransferScript(params (string State, long Bytes)[] polls)
+    {
+        FakeSlskd? self = null;
+        self = new FakeSlskd((call, _) =>
+        {
+            if (call.Method != HttpMethod.Get)
+            {
+                return Empty();
+            }
+            // The first list is the look before following; each later one is a poll.
+            var poll = Math.Max(self!.Calls.Count(c => IsTransferList(c)) - 2, 0);
+            var (state, bytes) = polls[Math.Min(poll, polls.Length - 1)];
+            return Json(TransferWithBytes("t0", state, bytes, Candidate.Path));
+        });
+        return self;
+    }
+
+    [Fact]
+    public async Task A_resumed_download_follows_the_transfer_slskd_already_has_and_reports_its_progress()
+    {
+        StoreDownloadedFile();
+        var fake = ExistingTransferScript(("InProgress", 1_000), ("InProgress", 3_000), ("Completed, Succeeded", 4_000_000));
+        var progress = new List<long>();
+
+        var outcome = await Provider(fake).ResumeDownloadAsync(
+            Candidate, bytes => { progress.Add(bytes); return Task.CompletedTask; }, CancellationToken.None);
+
+        Assert.NotNull(outcome.File);
+        Assert.Equal([1_000L, 3_000L, 4_000_000L], progress);
+        Assert.Equal(0, fake.Count(HttpMethod.Post, "/api/v0/transfers/downloads/"));
+        Assert.Equal(0, fake.Count(HttpMethod.Delete, "/api/v0/transfers/"));
+    }
+
+    [Fact]
+    public async Task A_resumed_download_finds_an_already_finished_transfer_and_locates_its_file()
+    {
+        StoreDownloadedFile();
+        var fake = ExistingTransferScript(("Completed, Succeeded", 4_000_000));
+
+        var outcome = await Provider(fake).ResumeDownloadAsync(Candidate, _ => Task.CompletedTask, CancellationToken.None);
+
+        Assert.NotNull(outcome.File);
+        Assert.Equal(0, fake.Count(HttpMethod.Post, "/api/v0/transfers/downloads/"));
+    }
+
+    [Fact]
+    public async Task A_resumed_download_queues_the_file_when_slskd_has_no_transfer_for_it()
+    {
+        StoreDownloadedFile();
+        var fake = DownloadScript(Candidate, "InProgress", "Completed, Succeeded");
+
+        var outcome = await Provider(fake).ResumeDownloadAsync(Candidate, _ => Task.CompletedTask, CancellationToken.None);
+
+        Assert.NotNull(outcome.File);
+        Assert.Equal(1, fake.Count(HttpMethod.Post, "/api/v0/transfers/downloads/peer1"));
+    }
+
+    [Fact]
+    public async Task A_resumed_download_that_is_cancelled_leaves_the_transfer_in_slskd()
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(200));
+        var fake = ExistingTransferScript(("InProgress", 10));
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => Provider(fake).ResumeDownloadAsync(Candidate, _ => Task.CompletedTask, cts.Token));
+
+        Assert.Equal(0, fake.Count(HttpMethod.Delete, "/api/v0/transfers/"));
+    }
+
+    [Fact]
+    public async Task A_resumed_download_that_times_out_leaves_a_transfer_it_only_followed()
+    {
+        var fake = ExistingTransferScript(("InProgress", 10));
+
+        var outcome = await Provider(fake, o => o.DownloadTimeoutSeconds = 1)
+            .ResumeDownloadAsync(Candidate, _ => Task.CompletedTask, CancellationToken.None);
+
+        Assert.Equal(AcquisitionFailure.TimedOut, outcome.Failure);
+        Assert.Equal(0, fake.Count(HttpMethod.Delete, "/api/v0/transfers/"));
     }
 
     [Fact]

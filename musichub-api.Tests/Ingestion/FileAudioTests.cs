@@ -21,6 +21,7 @@ public class FileAudioTests
             new FileIngestionService(db, storage, new ActiveUploadTracker()),
             new FileDeletionService(db, storage, new ActiveUploadTracker(),
                 Microsoft.Extensions.Logging.Abstractions.NullLogger<FileDeletionService>.Instance),
+            new FileListing(db),
             Options.Create(new FileIngestionOptions()))
         {
             ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext() },

@@ -1,8 +1,6 @@
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging.Abstractions;
-using Microsoft.Extensions.Options;
 using MusicHub.Api.Acquisition;
 using MusicHub.Api.Catalog;
 using MusicHub.Api.Data;
@@ -54,6 +52,10 @@ public sealed class TrackAcquisitionTests : IDisposable
             Downloaded.Add(candidate.Path);
             return Task.FromResult(Downloads[candidate.Path]());
         }
+
+        public Task<AcquisitionDownloadOutcome> ResumeDownloadAsync(
+            AcquisitionCandidate candidate, Func<long, Task> reportProgress, CancellationToken ct) =>
+            DownloadAsync(candidate, ct);
     }
 
     private sealed class ByNameIdentifier(Dictionary<string, IdentificationResult> identities, List<string> seen) : IRecordingIdentifier
@@ -96,195 +98,23 @@ public sealed class TrackAcquisitionTests : IDisposable
 
     private static byte[] Bytes(int seed) => Enumerable.Range(0, 3000).Select(i => (byte)((i * seed) % 255 + 1)).ToArray();
 
-    private async Task<TrackAcquisitionResult> RunAsync(int trackId, string execution = "7")
+    private async Task<TrackDiscovery> DiscoverAsync(int trackId)
     {
         using var db = CreateDb();
-        var acquisition = new TrackAcquisition(
-            db, new AcquisitionHistory(db, TimeProvider.System), _provider, new ByNameIdentifier(_identities, _identified),
-            new AcquisitionHandoff(new FileIngestionService(db, _storage, new ActiveUploadTracker())),
-            Options.Create(new MissingMusicOptions { MaxDownloadsPerTrack = 3 }), TimeProvider.System,
-            NullLogger<TrackAcquisition>.Instance);
-        return await acquisition.RunAsync(trackId, execution, CancellationToken.None);
+        var acquisition = new TrackAcquisition(db, new AcquisitionHistory(db, TimeProvider.System), _provider);
+        return await acquisition.DiscoverAsync(trackId, CancellationToken.None);
     }
 
     [Fact]
-    public async Task An_identified_candidate_is_imported_linked_and_recorded_with_hashes_and_provenance()
-    {
-        var trackId = await AddTrackAsync();
-        var bytes = Bytes(3);
-        Offer(@"Oasis\Wonderwall.mp3", bytes, Identified("Wonderwall", "Oasis"));
-
-        var result = await RunAsync(trackId);
-
-        Assert.Equal(TrackAcquisitionOutcome.Imported, result.Outcome);
-        using var db = CreateDb();
-        var file = await db.Files.SingleAsync();
-        Assert.Equal(trackId, file.TrackId);
-        Assert.Equal(FileStatus.Stored, file.Status);
-        Assert.Equal("acquisition:slskd", file.Source);
-        var download = await db.AcquisitionDownloads.SingleAsync();
-        Assert.Equal(DownloadStatus.Imported, download.Status);
-        Assert.Equal(file.Id, download.FileId);
-        Assert.Equal(file.ContentHash, download.ContentHash);
-        Assert.Equal(Mp3AudioPayload.Version, download.AudioHashVersion);
-        Assert.NotNull(download.AudioHashStatus);
-        Assert.Equal(("slskd", "peer", @"Oasis\Wonderwall.mp3"), (download.Provider, download.Source, download.RemotePath));
-        Assert.Equal("7", download.JobExecutionId);
-
-        var attempt = await db.IdentificationOutcomes.SingleAsync();
-        Assert.Equal(download.Id, attempt.DownloadId);
-        Assert.Null(attempt.FileId);
-        Assert.Equal(IdentificationDecision.Identified, attempt.Decision);
-        Assert.Equal(trackId, attempt.TrackId);
-        Assert.Equal("acoustid", Assert.Single(attempt.ReadMethods()).Source);
-        Assert.False(string.IsNullOrEmpty(attempt.PipelineVersion));
-        var applied = await db.AppliedIdentifications.SingleAsync();
-        Assert.Equal((file.Id, trackId, attempt.Id), (applied.FileId, applied.TrackId, applied.AttemptId));
-    }
-
-    [Fact]
-    public async Task A_file_stored_by_an_import_that_stopped_before_linking_is_linked_not_stored_again()
-    {
-        var trackId = await AddTrackAsync();
-        var bytes = Bytes(3);
-        Offer(@"Oasis\Wonderwall.mp3", bytes, Identified("Wonderwall", "Oasis"));
-        using (var seed = CreateDb())
-        {
-            seed.Files.Add(new FileRecord
-            {
-                OriginalFilename = "Wonderwall.mp3", StorageLocation = "default", StorageKey = "library/ab/orphan",
-                Status = FileStatus.Stored, Source = AcquisitionHandoff.SourceOf("slskd"), StartedAt = DateTimeOffset.UtcNow,
-                ContentHash = Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(bytes)), SizeBytes = bytes.Length,
-            });
-            await seed.SaveChangesAsync();
-        }
-
-        var result = await RunAsync(trackId);
-
-        Assert.Equal(TrackAcquisitionOutcome.Imported, result.Outcome);
-        using var db = CreateDb();
-        var file = await db.Files.SingleAsync();
-        Assert.Equal(trackId, file.TrackId);
-        Assert.Equal(file.Id, (await db.AcquisitionDownloads.SingleAsync()).FileId);
-    }
-
-    [Fact]
-    public async Task A_candidate_identified_as_another_recording_never_enters_the_library_and_is_not_downloaded_again()
-    {
-        var trackId = await AddTrackAsync();
-        Offer(@"Oasis\Wonderwall.mp3", Bytes(3), Identified("Wonderwall", "Mike Flowers Pops"));
-
-        var first = await RunAsync(trackId, "1");
-        var second = await RunAsync(trackId, "2");
-
-        Assert.Equal(TrackAcquisitionOutcome.NoAcceptableCandidate, first.Outcome);
-        Assert.Equal(TrackAcquisitionOutcome.NothingFound, second.Outcome);
-        Assert.Single(_provider.Downloaded);
-        using var db = CreateDb();
-        Assert.Empty(await db.Files.ToListAsync());
-        var download = await db.AcquisitionDownloads.SingleAsync();
-        Assert.Equal(DownloadStatus.Rejected, download.Status);
-        Assert.NotNull(download.ContentHash);
-        Assert.Contains("Mike Flowers Pops", download.Reason);
-        var attempt = await db.IdentificationOutcomes.SingleAsync();
-        Assert.Equal(IdentificationDecision.Mismatch, attempt.Decision);
-        Assert.Equal(download.Id, attempt.DownloadId);
-    }
-
-    [Fact]
-    public async Task An_unidentified_candidate_is_rejected_with_the_methods_that_were_tried()
-    {
-        var trackId = await AddTrackAsync();
-        Offer(@"Oasis\Wonderwall.mp3", Bytes(3), IdentificationResult.Unresolved("no match", [],
-            [new IdentificationMethodResult("acoustid", IdentificationMethodStatus.NothingFound, "none", [])]));
-
-        var result = await RunAsync(trackId);
-
-        Assert.Equal(TrackAcquisitionOutcome.NoAcceptableCandidate, result.Outcome);
-        using var db = CreateDb();
-        Assert.Empty(await db.Files.ToListAsync());
-        Assert.Equal(IdentificationDecision.NoMatch, (await db.IdentificationOutcomes.SingleAsync()).Decision);
-    }
-
-    [Fact]
-    public async Task A_lower_bitrate_is_accepted_when_the_better_candidate_is_the_wrong_recording()
-    {
-        var trackId = await AddTrackAsync();
-        Offer(@"A\Oasis - Wonderwall.mp3", Bytes(3), Identified("Wonderwall", "Somebody Else"), bitrate: 320);
-        Offer(@"B\Oasis_Wonderwall.mp3", Bytes(5), Identified("Wonderwall", "Oasis"), bitrate: 128, source: "other");
-
-        var result = await RunAsync(trackId);
-
-        Assert.Equal(TrackAcquisitionOutcome.Imported, result.Outcome);
-        using var db = CreateDb();
-        Assert.Equal([DownloadStatus.Rejected, DownloadStatus.Imported], (await db.AcquisitionDownloads.OrderBy(d => d.Id).ToListAsync()).Select(d => d.Status));
-        Assert.Equal(128, (await db.AcquisitionDownloads.SingleAsync(d => d.Outcome == AcquisitionOutcome.Accepted)).BitrateKbps);
-    }
-
-    [Fact]
-    public async Task The_same_bytes_rejected_before_are_rejected_again_without_identifying_them()
-    {
-        var trackId = await AddTrackAsync();
-        var bytes = Bytes(3);
-        Offer(@"A\Oasis - Wonderwall.mp3", bytes, Identified("Wonderwall", "Somebody Else"), bitrate: 320);
-        Offer(@"B\Oasis_Wonderwall.mp3", bytes, Identified("Wonderwall", "Oasis"), bitrate: 128, source: "reupload");
-
-        var result = await RunAsync(trackId);
-
-        Assert.Equal(TrackAcquisitionOutcome.NoAcceptableCandidate, result.Outcome);
-        Assert.Single(_identified);
-        using var db = CreateDb();
-        var second = await db.AcquisitionDownloads.OrderBy(d => d.Id).LastAsync();
-        Assert.Equal(DownloadStatus.Rejected, second.Status);
-        Assert.Contains("already rejected", second.Reason);
-        Assert.NotNull(second.ContentHash);
-    }
-
-    [Fact]
-    public async Task A_failed_download_is_recorded_and_may_be_tried_again_later()
-    {
-        var trackId = await AddTrackAsync();
-        Offer(@"Oasis\Wonderwall.mp3", Bytes(3), Identified("Wonderwall", "Oasis"));
-        var good = _provider.Downloads[@"Oasis\Wonderwall.mp3"];
-        _provider.Downloads[@"Oasis\Wonderwall.mp3"] = () =>
-            AcquisitionDownloadOutcome.Failed("slskd", AcquisitionFailure.TransferFailed, "The peer went away.");
-
-        var first = await RunAsync(trackId, "1");
-        _provider.Downloads[@"Oasis\Wonderwall.mp3"] = good;
-        var second = await RunAsync(trackId, "2");
-
-        Assert.Equal(TrackAcquisitionOutcome.NoAcceptableCandidate, first.Outcome);
-        Assert.Equal(TrackAcquisitionOutcome.Imported, second.Outcome);
-        using var db = CreateDb();
-        Assert.Equal([DownloadStatus.Failed, DownloadStatus.Imported], (await db.AcquisitionDownloads.OrderBy(d => d.Id).ToListAsync()).Select(d => d.Status));
-        Assert.Contains("peer went away", (await db.AcquisitionDownloads.OrderBy(d => d.Id).FirstAsync()).Reason);
-    }
-
-    [Fact]
-    public async Task A_track_with_a_version_is_never_confirmed_by_an_identification_without_one()
-    {
-        var trackId = await AddTrackAsync(version: "Live at Wembley");
-        Offer(@"Oasis\Wonderwall (Live at Wembley).mp3", Bytes(3), Identified("Wonderwall", "Oasis"));
-
-        var result = await RunAsync(trackId);
-
-        Assert.Equal(TrackAcquisitionOutcome.NoAcceptableCandidate, result.Outcome);
-        using var db = CreateDb();
-        Assert.Empty(await db.Files.ToListAsync());
-        Assert.Equal(IdentificationDecision.InsufficientEvidence, (await db.IdentificationOutcomes.SingleAsync()).Decision);
-    }
-
-    [Fact]
-    public async Task Nothing_is_downloaded_when_no_plausible_mp3_is_offered_or_the_provider_is_down()
+    public async Task Nothing_is_found_when_no_plausible_mp3_is_offered_or_the_provider_is_down()
     {
         var trackId = await AddTrackAsync();
         _provider.Offers.Add(new AcquisitionCandidate("slskd", "peer", @"Blur\Song 2.mp3", 100, "mp3", 320));
 
-        Assert.Equal(TrackAcquisitionOutcome.NothingFound, (await RunAsync(trackId)).Outcome);
+        Assert.Equal(TrackAcquisitionOutcome.NothingFound, (await DiscoverAsync(trackId)).Stopped!.Outcome);
 
         _provider.SearchFailure = new AcquisitionUnavailableException("slskd could not be reached");
-        var down = await RunAsync(trackId);
-        Assert.Equal(TrackAcquisitionOutcome.ProviderUnavailable, down.Outcome);
+        Assert.Equal(TrackAcquisitionOutcome.ProviderUnavailable, (await DiscoverAsync(trackId)).Stopped!.Outcome);
         Assert.Empty(_provider.Downloaded);
         using var db = CreateDb();
         Assert.Empty(await db.AcquisitionDownloads.ToListAsync());
@@ -304,38 +134,12 @@ public sealed class TrackAcquisitionTests : IDisposable
             await db.SaveChangesAsync();
         }
 
-        Assert.Equal(TrackAcquisitionOutcome.Skipped, (await RunAsync(trackId)).Outcome);
+        Assert.Equal(TrackAcquisitionOutcome.Skipped, (await DiscoverAsync(trackId)).Stopped!.Outcome);
         Assert.Empty(_provider.Offers);
     }
 
     [Fact]
-    public async Task A_cancelled_run_marks_the_download_cancelled_so_it_can_be_tried_again()
-    {
-        var trackId = await AddTrackAsync();
-        Offer(@"Oasis\Wonderwall.mp3", Bytes(3), Identified("Wonderwall", "Oasis"));
-        using var cts = new CancellationTokenSource();
-        _provider.Downloads[@"Oasis\Wonderwall.mp3"] = () =>
-        {
-            cts.Cancel();
-            throw new OperationCanceledException(cts.Token);
-        };
-
-        using (var db = CreateDb())
-        {
-            var acquisition = new TrackAcquisition(
-                db, new AcquisitionHistory(db, TimeProvider.System), _provider, new ByNameIdentifier(_identities, _identified),
-                new AcquisitionHandoff(new FileIngestionService(db, _storage, new ActiveUploadTracker())),
-                Options.Create(new MissingMusicOptions()), TimeProvider.System, NullLogger<TrackAcquisition>.Instance);
-            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => acquisition.RunAsync(trackId, "1", cts.Token));
-        }
-
-        using var read = CreateDb();
-        Assert.Equal(DownloadStatus.Cancelled, (await read.AcquisitionDownloads.SingleAsync()).Status);
-        Assert.Empty(await read.Files.ToListAsync());
-    }
-
-    [Fact]
-    public async Task A_run_goes_through_every_missing_track_and_summarizes_each()
+    public async Task A_run_enqueues_the_best_candidate_of_every_missing_track_without_downloading_and_is_idempotent()
     {
         var found = await AddTrackAsync();
         var absent = await AddTrackAsync("Song 2", "Blur");
@@ -354,6 +158,7 @@ public sealed class TrackAcquisitionTests : IDisposable
         services.AddScoped<FileIngestionService>();
         services.AddScoped<AcquisitionHandoff>();
         services.AddScoped<AcquisitionHistory>();
+        services.AddScoped<IDownloadQueueService, DownloadQueueService>();
         services.AddScoped<TrackAcquisition>();
         services.AddScoped<MissingMusicAcquisition>();
         await using var provider = services.BuildServiceProvider();
@@ -365,10 +170,49 @@ public sealed class TrackAcquisitionTests : IDisposable
 
         Assert.Equal(2, total);
         Assert.Equal(2, summary.Examined);
-        Assert.Equal(1, summary.Imported);
+        Assert.Equal(1, summary.Enqueued);
+        Assert.Equal(0, summary.AlreadyQueued);
         Assert.Equal(1, summary.NothingFound);
         Assert.Equal([found, absent], summary.Tracks.Select(t => t.TrackId));
-        Assert.Equal(TrackAcquisitionOutcome.Imported, summary.Tracks[0].Outcome);
+        Assert.Equal(TrackAcquisitionOutcome.Enqueued, summary.Tracks[0].Outcome);
         Assert.Equal("Oasis", summary.Tracks[0].Artists);
+        Assert.Empty(_provider.Downloaded);
+        using (var db = CreateDb())
+        {
+            var request = await db.DownloadRequests.SingleAsync();
+            Assert.Equal(found, request.TrackId);
+            Assert.Equal(DownloadRequestStatus.Queued, request.Status);
+            Assert.Equal("9", request.JobExecutionId);
+            Assert.Empty(await db.Files.ToListAsync());
+        }
+
+        var again = await scope.ServiceProvider.GetRequiredService<MissingMusicAcquisition>()
+            .RunAsync("10", null, CancellationToken.None);
+
+        Assert.Equal(0, again.Enqueued);
+        Assert.Equal(1, again.AlreadyQueued);
+        Assert.Equal(1, again.NothingFound);
+        using var after = CreateDb();
+        Assert.Single(await after.DownloadRequests.ToListAsync());
+    }
+
+    [Fact]
+    public async Task A_candidate_rejected_before_is_not_enqueued_and_the_next_best_is()
+    {
+        var trackId = await AddTrackAsync();
+        Offer(@"Oasis\Wonderwall.mp3", Bytes(3), Identified("Wonderwall", "Oasis"), bitrate: 320);
+        Offer(@"Oasis\Wonderwall (b).mp3", Bytes(5), Identified("Wonderwall", "Oasis"), bitrate: 256);
+        var first = _provider.Offers[0];
+        using (var db = CreateDb())
+        {
+            var history = new AcquisitionHistory(db, TimeProvider.System);
+            await history.RejectedAsync(await history.BeginAsync(first, trackId, CancellationToken.None), "No.", CancellationToken.None);
+        }
+
+        var discovery = await DiscoverAsync(trackId);
+
+        Assert.Null(discovery.Stopped);
+        Assert.Equal(@"Oasis\Wonderwall (b).mp3", discovery.Fresh[0].Path);
+        Assert.Empty(_provider.Downloaded);
     }
 }

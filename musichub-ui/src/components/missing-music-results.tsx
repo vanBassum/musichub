@@ -31,18 +31,18 @@ const downloadClassNames: Record<DownloadStatus, string> = {
 }
 
 const trackLabels: Record<TrackAcquisitionOutcome, string> = {
-  Imported: "Imported",
+  Enqueued: "Queued",
+  AlreadyQueued: "Already queued",
   NothingFound: "Nothing found",
-  NoAcceptableCandidate: "None accepted",
   ProviderUnavailable: "Provider unavailable",
   Skipped: "Skipped",
   Failed: "Error",
 }
 
 const trackClassNames: Record<TrackAcquisitionOutcome, string> = {
-  Imported: "bg-success text-success-foreground",
+  Enqueued: "bg-primary text-primary-foreground",
+  AlreadyQueued: "bg-muted text-muted-foreground",
   NothingFound: "bg-muted text-muted-foreground",
-  NoAcceptableCandidate: "bg-warning text-warning-foreground",
   ProviderUnavailable: "bg-destructive text-white",
   Skipped: "bg-muted text-muted-foreground",
   Failed: "bg-destructive text-white",
@@ -100,10 +100,7 @@ function TrackRow({ result }: { result: TrackAcquisitionResult }) {
         <Badge className={trackClassNames[result.outcome]}>{trackLabels[result.outcome]}</Badge>
       }
     >
-      <p className="text-xs text-muted-foreground">
-        Track {result.trackId}
-        {result.downloadId !== null && ` · imported from download ${result.downloadId}`}
-      </p>
+      <p className="text-xs text-muted-foreground">Track {result.trackId}</p>
     </ResultRow>
   )
 }

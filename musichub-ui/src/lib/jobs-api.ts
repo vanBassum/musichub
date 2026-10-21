@@ -33,9 +33,9 @@ export interface JobSummary {
 }
 
 export type TrackAcquisitionOutcome =
-  | "Imported"
+  | "Enqueued"
+  | "AlreadyQueued"
   | "NothingFound"
-  | "NoAcceptableCandidate"
   | "ProviderUnavailable"
   | "Skipped"
   | "Failed"
@@ -47,15 +47,14 @@ export interface TrackAcquisitionResult {
   artists: string
   outcome: TrackAcquisitionOutcome
   detail: string
-  downloadId: number | null
 }
 
 // What a Search for Missing Music run did; `tracks` is each track's result (the counts cover all tracks).
 export interface MissingMusicSummary {
   examined: number
-  imported: number
+  enqueued: number
+  alreadyQueued: number
   nothingFound: number
-  noAcceptableCandidate: number
   providerUnavailable: number
   skipped: number
   failed: number
@@ -67,7 +66,7 @@ export type TaskSummary = JobSummary | MissingMusicSummary
 export function isMissingMusicSummary(
   summary: TaskSummary
 ): summary is MissingMusicSummary {
-  return "imported" in summary
+  return "enqueued" in summary
 }
 
 // Hangfire's own state names.
@@ -91,6 +90,18 @@ export interface JobExecution {
   kind: string
   // How many items the run set out to go through, when its job says so while it runs.
   total: number | null
+  // Whether the run has waited in the queue or processed for too long.
+  stuck: boolean
+}
+
+// Which executions the history lists; the values are the `state` query of GET /api/jobs/executions.
+export const jobFilters = ["all", "failed", "stuck"] as const
+export type JobFilter = (typeof jobFilters)[number]
+
+// A page of the history; `total` counts every execution that matches the filter, not only this page.
+export interface JobExecutionPage {
+  items: JobExecution[]
+  total: number
 }
 
 export interface JobStateEntry {
@@ -181,7 +192,7 @@ export interface DownloadItem {
   finishedAt: string | null
 }
 
-async function problemDetail(response: Response) {
+export async function problemDetail(response: Response) {
   try {
     return ((await response.json()) as { detail?: string }).detail
   } catch {
@@ -203,8 +214,17 @@ export async function getJson<T>(url: string, what: string, signal?: AbortSignal
 export const listJobs = (signal?: AbortSignal) =>
   getJson<JobTask[]>("/api/jobs", "The task list", signal)
 
-export const listExecutions = (signal?: AbortSignal) =>
-  getJson<JobExecution[]>("/api/jobs/executions", "The executions", signal)
+// The newest `take` executions that match `filter` (the API caps a page at 100).
+export const listExecutions = (
+  filter: JobFilter,
+  take: number,
+  signal?: AbortSignal
+) =>
+  getJson<JobExecutionPage>(
+    `/api/jobs/executions?${new URLSearchParams({ state: filter, take: String(take) })}`,
+    "The executions",
+    signal
+  )
 
 export const getExecution = (id: string, signal?: AbortSignal) =>
   getJson<JobExecutionDetails>(

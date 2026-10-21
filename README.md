@@ -216,8 +216,27 @@ starts over with what is still missing. Existing files and links are never chang
 
 | Key | Default |
 | --- | --- |
-| `MissingMusic__MaxConcurrentTracks` | `2` (tracks searched and downloaded at the same time) |
-| `MissingMusic__MaxDownloadsPerTrack` | `3` (candidates downloaded per track per run, best first) |
+| `MissingMusic__MaxConcurrentTracks` | `2` (tracks searched at the same time) |
+
+### Download worker
+
+With slskd configured, the `DownloadWorker` background service works off the durable
+download queue (`DownloadRequest`). At start it requeues requests a restart interrupted;
+then it claims queued requests through `IDownloadQueueService` (the database decides who
+gets one, so a request is never processed twice) and `DownloadProcessor` follows the
+transfer: a transfer slskd already has is followed, never queued again, and progress is
+saved on the request. A delivered file moves the request to `Downloaded` (identification
+and import follow it); a failed attempt is recorded as an `AcquisitionDownload` and
+retried with a growing wait until the attempts are used up, then the request is `Failed`
+with its reason (a source that declines, or a file MusicHub cannot read, fails at once).
+Stopping the app never cancels or removes transfers or files in slskd.
+
+| Key | Default |
+| --- | --- |
+| `DownloadWorker__MaxConcurrentDownloads` | `2` (requests processed at the same time) |
+| `DownloadWorker__PollIntervalSeconds` | `5` (how often an idle worker looks for work) |
+| `DownloadWorker__MaxAttempts` | `5` (claims per request before a failure is final) |
+| `DownloadWorker__RetryDelaySeconds` | `60` (wait after the first failed attempt; grows per attempt) |
 
 ## Understanding
 
