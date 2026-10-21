@@ -7,7 +7,8 @@ import { FilterSidebar } from "@/components/filter-sidebar"
 import { MobileShell } from "@/components/mobile-shell"
 import { PlayerPanel } from "@/components/player-panel"
 import { SearchPage } from "@/components/search-page"
-import { SettingsPage } from "@/components/settings-page"
+import { defaultSettingsSection } from "@/components/settings-sections"
+import { SettingsView } from "@/components/settings-view"
 import { TrackDetailsSheet } from "@/components/track-details-sheet"
 import { TrackTable } from "@/components/track-table"
 import type { ArtistRef } from "@/lib/artist"
@@ -26,7 +27,7 @@ import { useFiles } from "@/lib/use-files"
 import { useJobs } from "@/lib/use-jobs"
 import { useLocation } from "@/lib/use-location"
 import { useIsDesktop } from "@/lib/use-media-query"
-import { useProblems } from "@/lib/use-problems"
+import { problemCount, useProblems } from "@/lib/use-problems"
 
 const searchDelayMs = 300
 
@@ -99,6 +100,8 @@ export function App() {
     />
   )
 
+  const filtered = search !== "" || audio !== "all"
+
   const table = (showHeader: boolean) => (
     <TrackTable
       showHeader={showHeader}
@@ -107,7 +110,7 @@ export function App() {
       error={catalog.error}
       onRetry={catalog.retry}
       onPageChange={setPage}
-      filtered={search !== "" || audio !== "all"}
+      filtered={filtered}
       selectedId={selectedId}
       onSelect={setSelectedId}
     />
@@ -128,6 +131,7 @@ export function App() {
           location={location}
           onNavigate={navigate}
           total={catalog.data?.total}
+          filtersActive={filtered}
           filters={filters(
             "flex-1 rounded-none border-0 bg-transparent pt-12"
           )}
@@ -156,6 +160,7 @@ export function App() {
       <AppHeader
         active={activeNav(tab)}
         onNavigate={(id) => navigate(locationOf(id))}
+        problems={problemCount(problemsState)}
       />
       {tab === "library" ? (
         <main className="grid min-h-0 flex-1 gap-4 p-4 lg:grid-rows-[minmax(0,1fr)] lg:grid-cols-[15rem_minmax(0,1fr)_20rem] xl:grid-cols-[17rem_minmax(0,1fr)_24rem]">
@@ -178,9 +183,9 @@ export function App() {
           ) : tab === "downloads" ? (
             <DownloadsView state={downloadsState} className="min-h-0" />
           ) : tab === "settings" ? (
-            <SettingsPage
-              screen={location.screen ?? "files"}
-              onOpenScreen={(id) => navigate(locationOf("settings", id))}
+            <SettingsView
+              section={location.screen ?? defaultSettingsSection}
+              onSectionChange={(id) => navigate(locationOf("settings", id))}
               filesState={filesState}
               jobsState={jobsState}
               problemsState={problemsState}

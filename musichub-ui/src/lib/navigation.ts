@@ -1,13 +1,10 @@
+import { Download, Library, Music, Search, Settings } from "lucide-react"
+
 import {
-  Download,
-  FolderOpen,
-  Library,
-  ListChecks,
-  Music,
-  Search,
-  Settings,
-  TriangleAlert,
-} from "lucide-react"
+  formatSettingsHash,
+  parseSettingsSection,
+  type SettingsSectionId,
+} from "@/components/settings-sections"
 
 // Where the app can be. Search, Library and Downloads are the music destinations,
 // Settings groups the operational screens, Player is the phone's playback page, and
@@ -35,29 +32,18 @@ export const mobileNav = [
   "settings",
 ] as const
 
-// The operational and administrative screens under Settings.
-export const settingsScreens = [
-  { id: "files", label: "Files", icon: FolderOpen },
-  { id: "jobs", label: "Jobs", icon: ListChecks },
-  { id: "problems", label: "Problems", icon: TriangleAlert },
-] as const
-
-export type SettingsScreenId = (typeof settingsScreens)[number]["id"]
-
 export type PlayerView = "now-playing" | "queue"
 
 export interface AppLocation {
   tab: TabId
   // The open Settings screen, if any.
-  screen: SettingsScreenId | null
+  screen: SettingsSectionId | null
   playerView: PlayerView
 }
 
 const isTab = (value: string): value is TabId =>
   value === "artist" || value in destinations
 
-const findScreen = (value: string | undefined) =>
-  settingsScreens.find((s) => s.id === value)?.id ?? null
 
 // The location lives in the URL hash (#/search, #/library, #/downloads, #/player,
 // #/player/queue, #/settings, #/settings/files, #/artist), so browser back and shared
@@ -74,12 +60,12 @@ export function parseLocation(hash: string): AppLocation {
     // The old Artists screen needs an artist that a link can't carry.
     return sub === "artists"
       ? location
-      : { ...location, tab: "settings", screen: findScreen(sub) }
+      : { ...location, tab: "settings", screen: parseSettingsSection(sub) }
   }
   if (!isTab(tab)) return location
   return {
     tab,
-    screen: tab === "settings" ? findScreen(sub) : null,
+    screen: tab === "settings" ? parseSettingsSection(sub) : null,
     playerView: tab === "player" && sub === "queue" ? "queue" : "now-playing",
   }
 }
@@ -111,14 +97,14 @@ export function formatLocation(
   searchQuery = ""
 ): string {
   if (tab === "search") return formatSearchHash(searchQuery)
-  if (tab === "settings") return screen ? `#/settings/${screen}` : "#/settings"
+  if (tab === "settings") return screen ? formatSettingsHash(screen) : "#/settings"
   if (tab === "player" && playerView === "queue") return "#/player/queue"
   return `#/${tab}`
 }
 
 export function locationOf(
   tab: TabId,
-  screen: SettingsScreenId | null = null,
+  screen: SettingsSectionId | null = null,
   playerView: PlayerView = "now-playing"
 ): AppLocation {
   return { tab, screen, playerView }

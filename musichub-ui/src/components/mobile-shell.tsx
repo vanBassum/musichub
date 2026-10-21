@@ -1,4 +1,4 @@
-import { ChevronLeft, ChevronRight, SlidersHorizontal } from "lucide-react"
+import { ChevronLeft, SlidersHorizontal } from "lucide-react"
 import type { ReactNode } from "react"
 
 import { ArtistPage } from "@/components/artist-page"
@@ -8,7 +8,8 @@ import { DownloadsView } from "@/components/downloads-view"
 import { MobileNav } from "@/components/mobile-nav"
 import { NowPlaying, QueueList } from "@/components/player-panel"
 import { SearchPage } from "@/components/search-page"
-import { SettingsScreen, type SettingsStates } from "@/components/settings-page"
+import { defaultSettingsSection } from "@/components/settings-sections"
+import { SettingsView, type SettingsStates } from "@/components/settings-view"
 import { Button } from "@/components/ui/button"
 import {
   Sheet,
@@ -21,7 +22,6 @@ import type { ArtistRef } from "@/lib/artist"
 import {
   activeNav,
   locationOf,
-  settingsScreens,
   type AppLocation,
   type PlayerView,
 } from "@/lib/navigation"
@@ -33,6 +33,8 @@ interface MobileShellProps extends SettingsStates {
   onNavigate: (location: AppLocation) => void
   // The catalog's track count, once known.
   total: number | undefined
+  // Whether a search or filter narrows the Library, shown on the Filters button.
+  filtersActive: boolean
   filters: ReactNode
   table: ReactNode
   downloadsState: DownloadQueueState
@@ -107,6 +109,7 @@ export function MobileShell({
   location,
   onNavigate,
   total,
+  filtersActive,
   filters,
   table,
   downloadsState,
@@ -141,12 +144,18 @@ export function MobileShell({
                 <Button
                   variant="outline"
                   size="icon-lg"
-                  aria-label="Filters"
-                  className="ml-auto"
+                  aria-label={filtersActive ? "Filters (active)" : "Filters"}
+                  className="relative ml-auto"
                 />
               }
             >
               <SlidersHorizontal />
+              {filtersActive && (
+                <span
+                  aria-hidden="true"
+                  className="absolute top-1 right-1 size-2 rounded-full bg-primary"
+                />
+              )}
             </SheetTrigger>
             <SheetContent side="bottom" className="h-[85dvh]">
               <SheetTitle className="sr-only">Filters</SheetTitle>
@@ -185,45 +194,17 @@ export function MobileShell({
           </div>
         </div>
       </Page>
-      <Page
-        show={tab === "settings" && screen === null}
-        label="Settings"
-        className="gap-3 p-3"
-      >
+      <Page show={tab === "settings"} label="Settings" className="gap-3 p-3">
         <PageHeader title="Settings">
           <BuildInfoSheet className="ml-auto" />
         </PageHeader>
-        <ul className="flex flex-col gap-1">
-          {settingsScreens.map(({ id, label, icon: Icon }) => (
-            <li key={id}>
-              <Button
-                variant="ghost"
-                className="h-12 w-full justify-start gap-3 text-base"
-                onClick={() => onNavigate(locationOf("settings", id))}
-              >
-                <Icon />
-                <span className="flex-1 text-left">{label}</span>
-                <ChevronRight className="text-muted-foreground" />
-              </Button>
-            </li>
-          ))}
-        </ul>
+        <SettingsView
+          section={screen ?? defaultSettingsSection}
+          onSectionChange={(id) => onNavigate(locationOf("settings", id))}
+          className="flex-1"
+          {...settings}
+        />
       </Page>
-      {settingsScreens.map(({ id, label }) => (
-        <Page
-          key={id}
-          show={tab === "settings" && screen === id}
-          label={label}
-          className="gap-3 p-3"
-        >
-          <PageHeader
-            title={label}
-            backLabel="Back to Settings"
-            onBack={() => onNavigate(locationOf("settings"))}
-          />
-          <SettingsScreen id={id} className="flex-1" {...settings} />
-        </Page>
-      ))}
       <Page show={tab === "artist"} label="Artist" className="gap-3 p-3">
         <PageHeader
           title="Artist"
