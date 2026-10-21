@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
+using MusicHub.Api.Catalog;
 using MusicHub.Api.Ingestion;
 
 namespace MusicHub.Api.Controllers;
@@ -13,7 +14,8 @@ namespace MusicHub.Api.Controllers;
 [ApiController]
 [Route("api/files")]
 public class FilesController(
-    FileIngestionService ingestion, FileDeletionService deletion, IOptions<FileIngestionOptions> options) : ControllerBase
+    FileIngestionService ingestion, FileDeletionService deletion, FileListing listing,
+    IOptions<FileIngestionOptions> options) : ControllerBase
 {
     /// <summary>
     /// Streams the raw request body into managed storage and returns the registered file record.
@@ -71,14 +73,41 @@ public class FilesController(
         return StatusCode(StatusCodes.Status201Created, ToResponse(record));
     }
 
-    /// <summary>Lists the persisted file registrations, newest first.</summary>
+    /// <summary>
+    /// A page of the persisted file registrations, newest first. <paramref name="status"/> and
+    /// <paramref name="identification"/> narrow it (both optional); <c>total</c> counts every match, not the page.
+    /// </summary>
     [HttpGet]
-    public async Task<IActionResult> List(CancellationToken cancellationToken)
+    public async Task<IActionResult> List(
+        [FromQuery] FileStatus? status,
+        [FromQuery] FileIdentificationFilter? identification,
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = FileListing.DefaultPageSize,
+        CancellationToken cancellationToken = default)
     {
-        var records = await ingestion.ListAsync(cancellationToken);
-        return Ok(records.Select(r => new FileListItem(
-            r.Id, r.OriginalFilename, r.SizeBytes, r.Status.ToString(), r.StartedAt,
-            r.FailureReason?.ToString(), r.StatusDetail, r.DeletionError)));
+        var result = await listing.ListAsync(status, identification, page, pageSize, cancellationToken);
+        return Ok(new FileListResponse(result.Items.Select(FileListItem.From).ToList(), result.Total, result.Page, result.PageSize));
+    }
+
+    /// <summary>How many registrations have each status and how many Stored files are in each identification state, whatever filter a list shows.</summary>
+    [HttpGet("counts")]
+    public async Task<IActionResult> Counts(CancellationToken cancellationToken) =>
+        Ok(await listing.CountAsync(cancellationToken));
+
+    /// <summary>
+    /// Everything recorded about identifying one file: each attempt with its reason and what every method found, and each
+    /// identity applied to it (automatic or manual). Read-only; 404 when there is no such file.
+    /// </summary>
+    [HttpGet("{id:int}/identification")]
+    public async Task<IActionResult> Identification(int id, CancellationToken cancellationToken)
+    {
+        var history = await listing.HistoryAsync(id, cancellationToken);
+        if (history is null)
+            return NotFound();
+        return Ok(new FileIdentificationResponse(
+            history.Attempts.Select(JobsController.FileOutcome.From).ToList(),
+            history.Applied.Select(a => new AppliedIdentificationItem(
+                a.Source, a.TrackId, a.Track?.Title, a.AttemptId, a.AppliedAt)).ToList()));
     }
 
     /// <summary>Streams the original bytes of a Stored file as an attachment named after its original filename.</summary>
