@@ -11,6 +11,8 @@ const pollMs = 5000
 
 export interface DownloadQueueState {
   items: DownloadQueueItem[] | null
+  // All requests in the queue, which can be more than `items` holds.
+  total: number
   error: string | null
   refreshing: boolean
   refresh: () => Promise<void>
@@ -20,12 +22,18 @@ export interface DownloadQueueState {
 export function useDownloadQueue(): DownloadQueueState {
   const { data, error, refreshing, refresh, reload } = useLoader(listDownloadQueue)
 
-  const active = data?.some(isDownloadActive) ?? false
+  const active = data?.items.some(isDownloadActive) ?? false
   useEffect(() => {
     if (!active) return
     const timer = setInterval(() => void reload(), pollMs)
     return () => clearInterval(timer)
   }, [active, reload])
 
-  return { items: data, error, refreshing, refresh }
+  return {
+    items: data?.items ?? null,
+    total: data?.total ?? 0,
+    error,
+    refreshing,
+    refresh,
+  }
 }
