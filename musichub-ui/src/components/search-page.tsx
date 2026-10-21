@@ -18,7 +18,7 @@ import {
 import { Skeleton } from "@/components/ui/skeleton"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { AddToLibraryButton } from "@/components/add-to-library-button"
-import { AvailabilityBadge } from "@/components/availability-badge"
+import { ProviderTrackRow } from "@/components/provider-track-row"
 import { providerLabel, type ArtistRef } from "@/lib/artist"
 import {
   addExternalTrackToLibrary,
@@ -213,17 +213,13 @@ function LocalTrackRow({
   onSelect: (trackId: number) => void
 }) {
   return (
-    <li className={rowClassName}>
-      <Badge variant="secondary">My Music</Badge>
-      <RowLink onClick={() => onSelect(track.id)}>
-        {track.title}
-        {track.version && ` (${track.version})`}
-      </RowLink>
-      <span className="max-w-[40%] truncate text-muted-foreground">
-        {artistNames(track)}
-      </span>
-      <AvailabilityBadge availability={catalogAvailability(track.hasAudio)} />
-    </li>
+    <ProviderTrackRow
+      title={`${track.title}${track.version ? ` (${track.version})` : ""}`}
+      subtitle={artistNames(track)}
+      onSelect={() => onSelect(track.id)}
+      availability={catalogAvailability(track.hasAudio)}
+      source={{ label: "My Music" }}
+    />
   )
 }
 
@@ -233,19 +229,19 @@ function ExternalTrackRow({
   track: ExternalSearch["tracks"][number]
 }) {
   return (
-    <li className={rowClassName}>
-      <Badge variant="outline">{providerLabel(track.provider)}</Badge>
-      <span className="min-w-0 flex-1 truncate">
-        {track.disambiguation
+    <ProviderTrackRow
+      title={
+        track.disambiguation
           ? `${track.title} (${track.disambiguation})`
-          : track.title}
-      </span>
-      <span className="max-w-[40%] truncate text-muted-foreground">
-        {track.artists.map((a) => a.name).join(", ")}
-      </span>
-      <ProviderLink provider={track.provider} url={track.url} />
-      <AddToLibraryButton onAdd={() => addExternalTrackToLibrary(track)} />
-    </li>
+          : track.title
+      }
+      subtitle={track.artists.map((a) => a.name).join(", ")}
+      availability="external"
+      source={{ label: providerLabel(track.provider), url: track.url }}
+      actions={
+        <AddToLibraryButton onAdd={() => addExternalTrackToLibrary(track)} />
+      }
+    />
   )
 }
 
