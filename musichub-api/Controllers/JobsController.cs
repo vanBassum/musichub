@@ -19,7 +19,7 @@ public class JobsController(JobService jobs, MusicHubDbContext db, IServiceProvi
 {
     private const int RecentExecutions = 25;
 
-    /// <summary>The available background tasks; <c>activeExecutionId</c> is the task's run in progress, if any.</summary>
+    /// <summary>The available background tasks; <c>activeExecutionId</c> is the task's run in progress, if any, and <c>schedule</c> its recurring schedule.</summary>
     [HttpGet]
     public async Task<IActionResult> List(CancellationToken cancellationToken)
     {
@@ -28,7 +28,10 @@ public class JobsController(JobService jobs, MusicHubDbContext db, IServiceProvi
 
         var tasks = new List<JobInfo>();
         foreach (var kind in JobKinds.All)
-            tasks.Add(new JobInfo(kind.Id, kind.Name, kind.Description, await jobs.ActiveExecutionIdAsync(kind, cancellationToken)));
+            tasks.Add(new JobInfo(
+                kind.Id, kind.Name, kind.Description,
+                await jobs.ActiveExecutionIdAsync(kind, cancellationToken),
+                await jobs.ScheduleAsync(kind, cancellationToken)));
         return Ok(tasks.ToArray());
     }
 
@@ -152,5 +155,6 @@ public class JobsController(JobService jobs, MusicHubDbContext db, IServiceProvi
             d.StartedAt, d.FinishedAt);
     }
 
-    public sealed record JobInfo(string Id, string Name, string Description, string? ActiveExecutionId);
+    /// <summary><c>Schedule</c> is the recurring schedule with its next run; null for a task that cannot be scheduled.</summary>
+    public sealed record JobInfo(string Id, string Name, string Description, string? ActiveExecutionId, JobScheduleInfo? Schedule);
 }
