@@ -146,16 +146,15 @@ architectural/security violation. These block the merge. Use `[bug]` for
 directly incorrect externally visible behaviour covered by the contracts. Use
 `[convention]` only for non-blocking evidence/documentation quality issues.
 
-Use the summary format in `_common.md`. Each blocking finding names its dimension and
+Use the verdict format in `_common.md`. Each blocking finding names its dimension and
 classification (for example `Features: UNDOCUMENTED`) and cites the projection file
 and heading that supports or contradicts the change. For UNDOCUMENTED, the finding
 says what durable behaviour is missing and which projection should establish it.
 
 A finding that needs a decision from Bas (every UNDOCUMENTED or CONTRADICTED durable
 change, and every change in Claude's PR that needs a decision first) gets
-`Decision:` and makes the title STOP. A finding that a code change fixes (a missing
+`Decision:` and makes the verdict STOP. A finding that a code change fixes (a missing
 check, a path around an existing owner) gets `Fix:`.
 
-For traceability, put the checked understanding commit SHA from the workflow prompt
-in a hidden line directly above the verdict marker, also for PASS:
-`<!-- understanding sha=<UNDERSTANDING SHA> -->`.
+The workflow records the checked understanding commit with your verdict, so you
+don't have to.

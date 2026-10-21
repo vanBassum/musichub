@@ -49,15 +49,16 @@ something through).
      state), **understanding** (is the change allowed by the projections in
      musichub-understanding; does it compose existing capabilities instead of
      building beside them; security) and **smells** (code smells in the new code,
-     from the refactoring.guru catalog). They post inline comments plus one summary
-     comment each, titled PASS, FIX or STOP, ending in a
-     `<!-- claude-review: <reviewer> sha=<SHA> blocking=<N> -->` verdict for the
-     exact head commit. A reviewer's job is green only when it passed that commit
-     with `blocking=0`: red means a blocking finding (read its comment) or no valid
-     verdict (rerun the job). Blocking findings are `[bug]`, `[risk]` and `[smell]`;
-     `[convention]` findings don't block. The job also publishes the verdict as the
-     check run `verdict · <reviewer>`: PASS, FIX (a code change fixes it) or STOP (a
-     decision for Bas), with the blocking findings.
+     from the refactoring.guru catalog). They post inline comments and return their
+     verdict for the exact head commit as structured output: PASS, FIX or STOP, the
+     number of blocking findings and the blocking findings. A reviewer's job is
+     green only when it passed that commit with `blocking=0`: red means a blocking
+     finding (read the review report) or no valid verdict (rerun the job). Blocking
+     findings are `[bug]`, `[risk]` and `[smell]`; `[convention]` findings don't
+     block. The job publishes the verdict as the check run `verdict · <reviewer>`:
+     PASS, FIX (a code change fixes it) or STOP (a decision for Bas), with the
+     blocking findings. Once all four are done, the job `Review report` writes
+     their verdicts into one PR comment, edited in place on each push.
 4. The reviewers run by themselves when a PR is opened, reopened or marked ready for
    review, and again on every push. A newer push cancels the run in progress. The
    workflow runs on `pull_request_target`: the workflow and the reviewer rules
