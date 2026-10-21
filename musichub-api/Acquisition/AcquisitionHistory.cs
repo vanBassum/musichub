@@ -113,10 +113,10 @@ public class AcquisitionHistory(MusicHubDbContext db, TimeProvider time)
     }
 
     /// <summary>A candidate's identity as stored (cut to the column lengths), for both writing and matching.</summary>
-    private static (string Provider, string Source, string RemotePath) StoredIdentity(AcquisitionCandidate candidate) => (
+    internal static (string Provider, string Source, string RemotePath) StoredIdentity(AcquisitionCandidate candidate) => (
         Truncate(candidate.Provider, AcquisitionDownload.ProviderMaxLength),
         Truncate(candidate.Source, AcquisitionDownload.SourceMaxLength),
         Truncate(candidate.Path, AcquisitionDownload.RemotePathMaxLength));
 
-    private static string Truncate(string value, int max) => value.Length <= max ? value : value[..max];
+    internal static string Truncate(string value, int max) => value.Length <= max ? value : value[..max];
 }
