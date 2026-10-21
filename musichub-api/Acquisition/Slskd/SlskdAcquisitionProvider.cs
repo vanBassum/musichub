@@ -59,14 +59,28 @@ public sealed class SlskdAcquisitionProvider(
         }
     }
 
-    public async Task<AcquisitionDownloadOutcome> DownloadAsync(AcquisitionCandidate candidate, CancellationToken ct)
+    public Task<AcquisitionDownloadOutcome> DownloadAsync(AcquisitionCandidate candidate, CancellationToken ct) =>
+        TransferAsync(candidate, resume: false, reportProgress: null, ct);
+
+    public Task<AcquisitionDownloadOutcome> ResumeDownloadAsync(
+        AcquisitionCandidate candidate, Func<long, Task> reportProgress, CancellationToken ct) =>
+        TransferAsync(candidate, resume: true, reportProgress, ct);
+
+    /// <summary>
+    /// One download. When <paramref name="resume"/> is set, a transfer of the file that slskd already has (still under
+    /// way, or finished with success) is followed instead of queueing another, and a caller's cancellation leaves every
+    /// transfer in slskd alone so the next call can follow it. A transfer this call queued itself is still cancelled
+    /// when the download bound runs out; one it only followed never is.
+    /// </summary>
+    private async Task<AcquisitionDownloadOutcome> TransferAsync(
+        AcquisitionCandidate candidate, bool resume, Func<long, Task>? reportProgress, CancellationToken ct)
     {
         using var bound = CancellationTokenSource.CreateLinkedTokenSource(ct);
         bound.CancelAfter(TimeSpan.FromSeconds(_options.DownloadTimeoutSeconds));
-        HashSet<string> known;
+        List<TransferFile> existing;
         try
         {
-            known = (await FindTransfersAsync(candidate, bound.Token)).Select(t => t.Id).ToHashSet();
+            existing = await FindTransfersAsync(candidate, bound.Token);
         }
         catch (OperationCanceledException) when (!ct.IsCancellationRequested)
         {
@@ -79,27 +93,47 @@ public sealed class SlskdAcquisitionProvider(
             return Failed(AcquisitionFailure.Unavailable, e.Message);
         }
 
+        var known = existing.Select(t => t.Id).ToHashSet();
+        var followed = resume ? existing.LastOrDefault(IsFollowable) : null;
         try
         {
-            await SendAsync(HttpMethod.Post, $"api/v0/transfers/downloads/{Uri.EscapeDataString(candidate.Source)}",
-                new[] { new { filename = candidate.Path, size = candidate.SizeBytes } }, bound.Token);
-            return await WaitForDownloadAsync(candidate, known, bound.Token);
+            if (followed is null)
+            {
+                await SendAsync(HttpMethod.Post, $"api/v0/transfers/downloads/{Uri.EscapeDataString(candidate.Source)}",
+                    new[] { new { filename = candidate.Path, size = candidate.SizeBytes } }, bound.Token);
+            }
+            return await WaitForDownloadAsync(candidate, followed?.Id, known, reportProgress, bound.Token);
         }
         catch (OperationCanceledException) when (!ct.IsCancellationRequested)
         {
-            await CancelTransfersAsync(candidate, known);
-            return Failed(AcquisitionFailure.TimedOut,
-                $"The download did not finish within {_options.DownloadTimeoutSeconds} seconds and was cancelled in slskd.");
+            if (followed is null)
+            {
+                await CancelTransfersAsync(candidate, known);
+            }
+            return Failed(AcquisitionFailure.TimedOut, followed is null
+                ? $"The download did not finish within {_options.DownloadTimeoutSeconds} seconds and was cancelled in slskd."
+                : $"The download did not finish within {_options.DownloadTimeoutSeconds} seconds; the transfer was left in slskd.");
         }
         catch (OperationCanceledException)
         {
-            await CancelTransfersAsync(candidate, known);
+            if (!resume)
+            {
+                await CancelTransfersAsync(candidate, known);
+            }
             throw;
         }
         catch (AcquisitionUnavailableException e)
         {
             return Failed(AcquisitionFailure.Unavailable, e.Message);
         }
+    }
+
+    /// <summary>A transfer that is still under way, or finished with success (its file is there to be located).</summary>
+    private static bool IsFollowable(TransferFile transfer)
+    {
+        var state = transfer.State ?? "";
+        return !state.Contains("Completed", StringComparison.OrdinalIgnoreCase)
+            || state.Contains("Succeeded", StringComparison.OrdinalIgnoreCase);
     }
 
     private async Task WaitForSearchAsync(Guid searchId, CancellationToken ct)
@@ -137,16 +171,27 @@ public sealed class SlskdAcquisitionProvider(
         System.IO.Path.GetExtension(RemotePath.FileName(path)).TrimStart('.').ToLowerInvariant();
 
     private async Task<AcquisitionDownloadOutcome> WaitForDownloadAsync(
-        AcquisitionCandidate candidate, HashSet<string> known, CancellationToken ct)
+        AcquisitionCandidate candidate, string? followedId, HashSet<string> known, Func<long, Task>? reportProgress,
+        CancellationToken ct)
     {
+        long reported = -1;
         while (true)
         {
             await Task.Delay(_options.PollIntervalMs, ct);
-            // Only transfers that appeared after we queued ours: an older one for the same file is not ours.
-            var transfer = (await FindTransfersAsync(candidate, ct)).LastOrDefault(t => !known.Contains(t.Id));
+            // The transfer we follow, or else only one that appeared after we queued ours: an older one for the same file is not ours.
+            var transfers = await FindTransfersAsync(candidate, ct);
+            var transfer = followedId is null
+                ? transfers.LastOrDefault(t => !known.Contains(t.Id))
+                : transfers.FirstOrDefault(t => t.Id == followedId);
             if (transfer is null)
             {
                 continue;
+            }
+
+            if (reportProgress is not null && transfer.BytesTransferred != reported)
+            {
+                reported = transfer.BytesTransferred;
+                await reportProgress(reported);
             }
 
             var state = transfer.State ?? "";
@@ -339,5 +384,5 @@ public sealed class SlskdAcquisitionProvider(
 
     private sealed record TransferDirectory(List<TransferFile>? Files);
 
-    private sealed record TransferFile(string Id, string? Filename, string? State);
+    private sealed record TransferFile(string Id, string? Filename, string? State, long BytesTransferred);
 }

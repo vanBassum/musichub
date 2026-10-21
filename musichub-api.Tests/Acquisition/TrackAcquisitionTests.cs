@@ -54,6 +54,10 @@ public sealed class TrackAcquisitionTests : IDisposable
             Downloaded.Add(candidate.Path);
             return Task.FromResult(Downloads[candidate.Path]());
         }
+
+        public Task<AcquisitionDownloadOutcome> ResumeDownloadAsync(
+            AcquisitionCandidate candidate, Func<long, Task> reportProgress, CancellationToken ct) =>
+            DownloadAsync(candidate, ct);
     }
 
     private sealed class ByNameIdentifier(Dictionary<string, IdentificationResult> identities, List<string> seen) : IRecordingIdentifier
