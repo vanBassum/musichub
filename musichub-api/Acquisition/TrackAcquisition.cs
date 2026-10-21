@@ -20,6 +20,12 @@ public enum TrackAcquisitionOutcome
     /// <summary>Candidates were downloaded or tried, and none was accepted.</summary>
     NoAcceptableCandidate,
 
+    /// <summary>The best candidate was put in the download queue; the transfer happens later, outside the run.</summary>
+    Enqueued,
+
+    /// <summary>The track, or its best candidate, already has an active queued request; nothing was added.</summary>
+    AlreadyQueued,
+
     /// <summary>The provider could not search, so nothing is known about this track.</summary>
     ProviderUnavailable,
 
@@ -33,6 +39,19 @@ public enum TrackAcquisitionOutcome
 /// <summary>What a run did for one track. <paramref name="DownloadId"/> is the <see cref="AcquisitionDownload"/> of the import, when there was one.</summary>
 public sealed record TrackAcquisitionResult(
     int TrackId, string Title, string Artists, TrackAcquisitionOutcome Outcome, string Detail, int? DownloadId = null);
+
+/// <summary>
+/// What searching for one track found. <paramref name="Stopped"/> is set when there is nothing to download; otherwise
+/// <paramref name="Fresh"/> holds the candidates worth downloading, best first.
+/// </summary>
+public sealed record TrackDiscovery(
+    int TrackId, Track? Track, WantedRecording? Wanted, IReadOnlyList<AcquisitionCandidate> Fresh, TrackAcquisitionResult? Stopped)
+{
+    public static TrackDiscovery Ended(int trackId, TrackAcquisitionResult result) => new(trackId, null, null, [], result);
+
+    public TrackAcquisitionResult Result(TrackAcquisitionOutcome outcome, string detail, int? downloadId = null) =>
+        new(TrackId, Track!.Title, string.Join(", ", Wanted!.Artists), outcome, detail, downloadId);
+}
 
 /// <summary>
 /// Acquires one missing track: searches, tries the best-ranked candidates one at a time, and imports the first that is
@@ -52,20 +71,26 @@ public sealed class TrackAcquisition(
     TimeProvider time,
     ILogger<TrackAcquisition> logger)
 {
-    public async Task<TrackAcquisitionResult> RunAsync(int trackId, string executionId, CancellationToken cancellationToken)
+    /// <summary>
+    /// Searches for the track and ranks what is offered, without downloading anything. <see cref="TrackDiscovery.Stopped"/>
+    /// is the result when there is nothing to download; otherwise <see cref="TrackDiscovery.Fresh"/> lists the plausible
+    /// candidates not rejected before, best first.
+    /// </summary>
+    public async Task<TrackDiscovery> DiscoverAsync(int trackId, CancellationToken cancellationToken)
     {
         var track = await db.Tracks.AsNoTracking()
             .Include(t => t.Artists).ThenInclude(a => a.Artist)
             .FirstOrDefaultAsync(t => t.Id == trackId, cancellationToken);
         if (track is null || await HasStoredAudioAsync(trackId, cancellationToken))
-            return new TrackAcquisitionResult(trackId, track?.Title ?? "", "", TrackAcquisitionOutcome.Skipped,
-                "The track was gone or had a stored file when its turn came.");
+            return TrackDiscovery.Ended(trackId, new TrackAcquisitionResult(
+                trackId, track?.Title ?? "", "", TrackAcquisitionOutcome.Skipped,
+                "The track was gone or had a stored file when its turn came."));
 
         var wanted = new WantedRecording(
             track.Title, track.Version, track.Artists.OrderBy(a => a.Id).Select(a => a.Artist.Name).ToList());
-        var artists = string.Join(", ", wanted.Artists);
-        TrackAcquisitionResult Result(TrackAcquisitionOutcome outcome, string detail, int? downloadId = null) =>
-            new(trackId, track.Title, artists, outcome, detail, downloadId);
+        TrackDiscovery Ended(TrackAcquisitionOutcome outcome, string detail) =>
+            TrackDiscovery.Ended(trackId, new TrackAcquisitionResult(
+                trackId, track.Title, string.Join(", ", wanted.Artists), outcome, detail));
 
         IReadOnlyList<AcquisitionCandidate> offered;
         try
@@ -74,7 +99,7 @@ public sealed class TrackAcquisition(
         }
         catch (AcquisitionUnavailableException e)
         {
-            return Result(TrackAcquisitionOutcome.ProviderUnavailable, e.Message);
+            return Ended(TrackAcquisitionOutcome.ProviderUnavailable, e.Message);
         }
 
         var plausible = CandidateRanking.Rank(wanted, offered);
@@ -85,20 +110,30 @@ public sealed class TrackAcquisition(
             if (!await history.WasRejectedAsync(candidate, cancellationToken))
                 fresh.Add(candidate);
         if (fresh.Count == 0)
-            return Result(TrackAcquisitionOutcome.NothingFound,
+            return Ended(TrackAcquisitionOutcome.NothingFound,
                 $"{offered.Count} results, {plausible.Count} plausible MP3s, {plausible.Count - fresh.Count} of them rejected earlier.");
 
+        return new TrackDiscovery(trackId, track, wanted, fresh, null);
+    }
+
+    /// <summary>Discovers, then downloads in this call up to <c>MaxDownloadsPerTrack</c> candidates. The queue's worker does not use this.</summary>
+    public async Task<TrackAcquisitionResult> RunAsync(int trackId, string executionId, CancellationToken cancellationToken)
+    {
+        var discovery = await DiscoverAsync(trackId, cancellationToken);
+        if (discovery.Stopped is { } stopped)
+            return stopped;
+
         var tried = new List<AcquisitionDownload>();
-        foreach (var candidate in fresh.Take(options.Value.MaxDownloadsPerTrack))
+        foreach (var candidate in discovery.Fresh.Take(options.Value.MaxDownloadsPerTrack))
         {
-            var download = await TryAsync(track, wanted, candidate, executionId, cancellationToken);
+            var download = await TryAsync(discovery.Track!, discovery.Wanted!, candidate, executionId, cancellationToken);
             if (download.Status == DownloadStatus.Imported)
-                return Result(TrackAcquisitionOutcome.Imported, download.Reason ?? "", download.Id);
+                return discovery.Result(TrackAcquisitionOutcome.Imported, download.Reason ?? "", download.Id);
             tried.Add(download);
         }
 
-        return Result(TrackAcquisitionOutcome.NoAcceptableCandidate,
-            $"Tried {tried.Count} of {fresh.Count} candidates, none accepted. Last: {tried[^1].Reason}");
+        return discovery.Result(TrackAcquisitionOutcome.NoAcceptableCandidate,
+            $"Tried {tried.Count} of {discovery.Fresh.Count} candidates, none accepted. Last: {tried[^1].Reason}");
     }
 
     private Task<bool> HasStoredAudioAsync(int trackId, CancellationToken cancellationToken) =>

@@ -30,6 +30,8 @@ export interface JobSummary {
 
 export type TrackAcquisitionOutcome =
   | "Imported"
+  | "Enqueued"
+  | "AlreadyQueued"
   | "NothingFound"
   | "NoAcceptableCandidate"
   | "ProviderUnavailable"
@@ -49,9 +51,9 @@ export interface TrackAcquisitionResult {
 // What a Search for Missing Music run did; `tracks` is each track's result (the counts cover all tracks).
 export interface MissingMusicSummary {
   examined: number
-  imported: number
+  enqueued: number
+  alreadyQueued: number
   nothingFound: number
-  noAcceptableCandidate: number
   providerUnavailable: number
   skipped: number
   failed: number
@@ -63,7 +65,7 @@ export type TaskSummary = JobSummary | MissingMusicSummary
 export function isMissingMusicSummary(
   summary: TaskSummary
 ): summary is MissingMusicSummary {
-  return "imported" in summary
+  return "enqueued" in summary
 }
 
 // Hangfire's own state names.

@@ -335,7 +335,7 @@ public sealed class TrackAcquisitionTests : IDisposable
     }
 
     [Fact]
-    public async Task A_run_goes_through_every_missing_track_and_summarizes_each()
+    public async Task A_run_enqueues_the_best_candidate_of_every_missing_track_without_downloading_and_is_idempotent()
     {
         var found = await AddTrackAsync();
         var absent = await AddTrackAsync("Song 2", "Blur");
@@ -354,6 +354,7 @@ public sealed class TrackAcquisitionTests : IDisposable
         services.AddScoped<FileIngestionService>();
         services.AddScoped<AcquisitionHandoff>();
         services.AddScoped<AcquisitionHistory>();
+        services.AddScoped<IDownloadQueueService, DownloadQueueService>();
         services.AddScoped<TrackAcquisition>();
         services.AddScoped<MissingMusicAcquisition>();
         await using var provider = services.BuildServiceProvider();
@@ -365,10 +366,54 @@ public sealed class TrackAcquisitionTests : IDisposable
 
         Assert.Equal(2, total);
         Assert.Equal(2, summary.Examined);
-        Assert.Equal(1, summary.Imported);
+        Assert.Equal(1, summary.Enqueued);
+        Assert.Equal(0, summary.AlreadyQueued);
         Assert.Equal(1, summary.NothingFound);
         Assert.Equal([found, absent], summary.Tracks.Select(t => t.TrackId));
-        Assert.Equal(TrackAcquisitionOutcome.Imported, summary.Tracks[0].Outcome);
+        Assert.Equal(TrackAcquisitionOutcome.Enqueued, summary.Tracks[0].Outcome);
         Assert.Equal("Oasis", summary.Tracks[0].Artists);
+        Assert.Empty(_provider.Downloaded);
+        using (var db = CreateDb())
+        {
+            var request = await db.DownloadRequests.SingleAsync();
+            Assert.Equal(found, request.TrackId);
+            Assert.Equal(DownloadRequestStatus.Queued, request.Status);
+            Assert.Equal("9", request.JobExecutionId);
+            Assert.Empty(await db.Files.ToListAsync());
+        }
+
+        var again = await scope.ServiceProvider.GetRequiredService<MissingMusicAcquisition>()
+            .RunAsync("10", null, CancellationToken.None);
+
+        Assert.Equal(0, again.Enqueued);
+        Assert.Equal(1, again.AlreadyQueued);
+        Assert.Equal(1, again.NothingFound);
+        using var after = CreateDb();
+        Assert.Single(await after.DownloadRequests.ToListAsync());
+    }
+
+    [Fact]
+    public async Task A_candidate_rejected_before_is_not_enqueued_and_the_next_best_is()
+    {
+        var trackId = await AddTrackAsync();
+        Offer(@"Oasis\Wonderwall.mp3", Bytes(3), Identified("Wonderwall", "Oasis"), bitrate: 320);
+        Offer(@"Oasis\Wonderwall (b).mp3", Bytes(5), Identified("Wonderwall", "Oasis"), bitrate: 256);
+        var first = _provider.Offers[0];
+        using (var db = CreateDb())
+        {
+            var history = new AcquisitionHistory(db, TimeProvider.System);
+            await history.RejectedAsync(await history.BeginAsync(first, trackId, CancellationToken.None), "No.", CancellationToken.None);
+        }
+
+        using var read = CreateDb();
+        var acquisition = new TrackAcquisition(
+            read, new AcquisitionHistory(read, TimeProvider.System), _provider, new ByNameIdentifier(_identities, _identified),
+            new AcquisitionHandoff(new FileIngestionService(read, _storage, new ActiveUploadTracker())),
+            Options.Create(new MissingMusicOptions()), TimeProvider.System, NullLogger<TrackAcquisition>.Instance);
+        var discovery = await acquisition.DiscoverAsync(trackId, CancellationToken.None);
+
+        Assert.Null(discovery.Stopped);
+        Assert.Equal(@"Oasis\Wonderwall (b).mp3", discovery.Fresh[0].Path);
+        Assert.Empty(_provider.Downloaded);
     }
 }

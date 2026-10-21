@@ -217,7 +217,7 @@ starts over with what is still missing. Existing files and links are never chang
 | Key | Default |
 | --- | --- |
 | `MissingMusic__MaxConcurrentTracks` | `2` (tracks searched and downloaded at the same time) |
-| `MissingMusic__MaxDownloadsPerTrack` | `3` (candidates downloaded per track per run, best first) |
+| `MissingMusic__MaxDownloadsPerTrack` | `3` (candidates downloaded per track by the inline `TrackAcquisition.RunAsync`; the search run itself queues only the best one) |
 
 ## Understanding
 
