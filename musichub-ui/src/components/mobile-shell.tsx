@@ -4,6 +4,7 @@ import { useMemo, useSyncExternalStore, type ReactNode } from "react"
 import { ArtistPage } from "@/components/artist-page"
 import { BuildInfoSheet } from "@/components/build-info-sheet"
 import { CompactPlayer } from "@/components/compact-player"
+import { DownloadsView } from "@/components/downloads-view"
 import { FilesView } from "@/components/files-view"
 import { JobsView } from "@/components/jobs-view"
 import { MobileNav } from "@/components/mobile-nav"
@@ -30,6 +31,7 @@ import {
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import type { Track } from "@/data/mock-tracks"
 import type { ArtistRef } from "@/lib/artist"
+import type { DownloadQueueState } from "@/lib/use-download-queue"
 import type { FilesState } from "@/lib/use-files"
 import type { JobsState } from "@/lib/use-jobs"
 import type { ProblemsState } from "@/lib/use-problems"
@@ -44,6 +46,7 @@ interface MobileShellProps {
   nowPlayingId: string
   filesState: FilesState
   jobsState: JobsState
+  downloadsState: DownloadQueueState
   problemsState: ProblemsState
   artistRef: ArtistRef | null
   searchQuery: string
@@ -101,6 +104,7 @@ export function MobileShell({
   nowPlayingId,
   filesState,
   jobsState,
+  downloadsState,
   problemsState,
   artistRef,
   searchQuery,
@@ -229,6 +233,9 @@ export function MobileShell({
             <FilesView state={filesState} className="flex-1" />
           )}
           {id === "jobs" && <JobsView state={jobsState} className="flex-1" />}
+          {id === "downloads" && (
+            <DownloadsView state={downloadsState} className="flex-1" />
+          )}
           {id === "problems" && (
             <ProblemsView
               state={problemsState}

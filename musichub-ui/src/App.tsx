@@ -2,6 +2,7 @@ import { useEffect, useState } from "react"
 
 import { AppHeader, type AppView } from "@/components/app-header"
 import { ArtistPage } from "@/components/artist-page"
+import { DownloadsView } from "@/components/downloads-view"
 import { FilesView } from "@/components/files-view"
 import { FilterSidebar } from "@/components/filter-sidebar"
 import { JobsView } from "@/components/jobs-view"
@@ -20,6 +21,7 @@ import { mockNowPlayingId, mockQueue } from "@/data/mock-tracks"
 import type { ArtistRef } from "@/lib/artist"
 import type { AudioFilter } from "@/lib/catalog-api"
 import { useTracks } from "@/lib/use-catalog"
+import { useDownloadQueue } from "@/lib/use-download-queue"
 import { useFiles } from "@/lib/use-files"
 import { useJobs } from "@/lib/use-jobs"
 import { useIsDesktop } from "@/lib/use-media-query"
@@ -48,6 +50,7 @@ export function App() {
   // Held here so uploads survive navigation and the desktop/mobile layout swap.
   const filesState = useFiles()
   const jobsState = useJobs()
+  const downloadsState = useDownloadQueue()
   const problemsState = useProblems()
 
   useEffect(() => {
@@ -129,6 +132,7 @@ export function App() {
           nowPlayingId={mockNowPlayingId}
           filesState={filesState}
           jobsState={jobsState}
+          downloadsState={downloadsState}
           problemsState={problemsState}
           artistRef={artistRef}
           searchQuery={searchQuery}
@@ -166,6 +170,8 @@ export function App() {
             <FilesView state={filesState} className="min-h-0" />
           ) : view === "jobs" ? (
             <JobsView state={jobsState} className="min-h-0" />
+          ) : view === "downloads" ? (
+            <DownloadsView state={downloadsState} className="min-h-0" />
           ) : view === "problems" ? (
             <ProblemsView
               state={problemsState}
