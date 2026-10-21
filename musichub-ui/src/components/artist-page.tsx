@@ -12,6 +12,12 @@ import {
   TabsTrigger,
 } from "@/components/ui/tabs"
 import type { ArtistRef } from "@/lib/artist"
+import {
+  artistBackLabel,
+  formatArtistHash,
+  type ArtistRoute,
+  type ArtistSource,
+} from "@/lib/artist-route"
 import { useArtist } from "@/lib/use-artist"
 import { cn } from "@/lib/utils"
 
@@ -28,6 +34,27 @@ const tabs: { id: Tab; label: string }[] = [
 // other. Back returns to where the artist was opened from. On desktop the overview
 // puts the tracks beside the albums; on a phone the sections stack in one column.
 export function ArtistPage({
+  route,
+  onBack,
+  className,
+}: {
+  route: ArtistRoute
+  onBack: (source: ArtistSource) => void
+  className?: string
+}) {
+  // Another artist starts on the overview again.
+  return (
+    <ArtistView
+      key={formatArtistHash(route)}
+      artistRef={route.ref}
+      backLabel={artistBackLabel[route.source]}
+      onBack={() => onBack(route.source)}
+      className={className}
+    />
+  )
+}
+
+function ArtistView({
   artistRef,
   backLabel,
   onBack,
