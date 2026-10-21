@@ -32,14 +32,20 @@ interface ProviderTrackRowProps {
 
 const titleClass = "block w-full truncate text-left font-medium"
 
-function SourceLink({ title, source }: { title: string; source: Source }) {
+export function SourceLink({
+  title,
+  source,
+}: {
+  title: string
+  source: Source & { url: string }
+}) {
   return (
     <a
       href={source.url}
       target="_blank"
       rel="noreferrer"
       aria-label={`Open ${title} on ${source.label}`}
-      className="flex items-center gap-1 hover:text-foreground"
+      className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
     >
       {source.label}
       <ExternalLink className="size-3" aria-hidden="true" />
@@ -88,7 +94,7 @@ export function ProviderTrackRow({
       </div>
       <div className="hidden shrink-0 items-center gap-2 text-xs text-muted-foreground sm:flex">
         {source.url ? (
-          <SourceLink title={title} source={source} />
+          <SourceLink title={title} source={{ ...source, url: source.url }} />
         ) : (
           <span>{source.label}</span>
         )}

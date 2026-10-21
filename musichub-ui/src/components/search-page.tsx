@@ -1,9 +1,4 @@
-import {
-  ExternalLink,
-  Search,
-  SlidersHorizontal,
-  UserRound,
-} from "lucide-react"
+import { Search, SlidersHorizontal, UserRound } from "lucide-react"
 import { useEffect, useRef, useState, type ReactNode } from "react"
 
 import { Badge } from "@/components/ui/badge"
@@ -18,7 +13,7 @@ import {
 import { Skeleton } from "@/components/ui/skeleton"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { AddToLibraryButton } from "@/components/add-to-library-button"
-import { ProviderTrackRow } from "@/components/provider-track-row"
+import { ProviderTrackRow, SourceLink } from "@/components/provider-track-row"
 import { providerLabel, type ArtistRef } from "@/lib/artist"
 import {
   addExternalTrackToLibrary,
@@ -112,22 +107,6 @@ function Group({
 
 const rowClassName = "flex flex-wrap items-center gap-x-2 gap-y-1 px-2 py-1.5 text-sm"
 
-function ProviderLink({ provider, url }: { provider: string; url: string }) {
-  const label = providerLabel(provider)
-  return (
-    <a
-      href={url}
-      target="_blank"
-      rel="noreferrer"
-      aria-label={`Open on ${label}`}
-      className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
-    >
-      {label}
-      <ExternalLink className="size-3" aria-hidden="true" />
-    </a>
-  )
-}
-
 type LocalSearch = ReturnType<typeof useGlobalSearch>
 type ExternalSearch = ReturnType<typeof useExternalSearch>
 
@@ -200,7 +179,10 @@ function ExternalArtistRow({
           {artist.disambiguation}
         </span>
       )}
-      <ProviderLink provider={artist.provider} url={artist.url} />
+      <SourceLink
+        title={artist.name}
+        source={{ label: providerLabel(artist.provider), url: artist.url }}
+      />
     </li>
   )
 }
