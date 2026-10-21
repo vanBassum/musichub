@@ -3,18 +3,19 @@ import { useEffect, useState } from "react"
 import { AppHeader, type AppView } from "@/components/app-header"
 import { ArtistPage } from "@/components/artist-page"
 import { DownloadsView } from "@/components/downloads-view"
-import { FilesView } from "@/components/files-view"
 import { FilterSidebar } from "@/components/filter-sidebar"
-import { JobsView } from "@/components/jobs-view"
 import { MobileShell } from "@/components/mobile-shell"
 import {
   isSearchHash,
+  parseLocation,
   parseSearchQuery,
   syncSearchHash,
+  syncSettingsHash,
 } from "@/components/mobile-pages"
 import { PlayerPanel } from "@/components/player-panel"
-import { ProblemsView } from "@/components/problems-view"
 import { SearchPage } from "@/components/search-page"
+import type { SettingsSectionId } from "@/components/settings-sections"
+import { SettingsView } from "@/components/settings-view"
 import { TrackDetailsSheet } from "@/components/track-details-sheet"
 import { TrackTable } from "@/components/track-table"
 import type { ArtistRef } from "@/lib/artist"
@@ -24,14 +25,20 @@ import { useDownloadQueue } from "@/lib/use-download-queue"
 import { useFiles } from "@/lib/use-files"
 import { useJobs } from "@/lib/use-jobs"
 import { useIsDesktop } from "@/lib/use-media-query"
-import { useProblems } from "@/lib/use-problems"
+import { problemCount, useProblems } from "@/lib/use-problems"
 
 const searchDelayMs = 300
 
 export function App() {
   const [selectedId, setSelectedId] = useState<number | null>(null)
-  const [view, setView] = useState<AppView>(
-    isSearchHash(window.location.hash) ? "search" : "library"
+  const [view, setView] = useState<AppView>(() => {
+    const { screen } = parseLocation(window.location.hash)
+    if (screen === "settings") return "settings"
+    return isSearchHash(window.location.hash) ? "search" : "library"
+  })
+  // The open Settings section (Files, Jobs or Problems), carried in the URL hash.
+  const [settingsSection, setSettingsSection] = useState<SettingsSectionId>(
+    () => parseLocation(window.location.hash).settingsSection
   )
   // The global search page's term, shared by the desktop page and the phone's tab.
   const [searchQuery, setSearchQuery] = useState(() =>
@@ -71,6 +78,10 @@ export function App() {
     return () => clearTimeout(timer)
   }, [isDesktop, view, searchQuery])
 
+  useEffect(() => {
+    if (isDesktop) syncSettingsHash(settingsSection, view === "settings")
+  }, [isDesktop, view, settingsSection])
+
   const openArtist =(artist: ArtistRef) => {
     setArtistRef(artist)
     setView("artists")
@@ -78,7 +89,8 @@ export function App() {
 
   const openExecution = (executionId: string) => {
     jobsState.select(executionId)
-    setView("jobs")
+    setSettingsSection("jobs")
+    setView("settings")
   }
 
   const changeAudio =(value: AudioFilter) => {
@@ -144,7 +156,11 @@ export function App() {
 
   return (
     <div className="flex min-h-svh flex-col lg:h-svh">
-      <AppHeader view={view} onNavigate={setView} />
+      <AppHeader
+        view={view}
+        onNavigate={setView}
+        problems={problemCount(problemsState)}
+      />
       {view === "library" ? (
         <main className="grid min-h-0 flex-1 gap-4 p-4 lg:grid-rows-[minmax(0,1fr)] lg:grid-cols-[15rem_minmax(0,1fr)_20rem] xl:grid-cols-[17rem_minmax(0,1fr)_24rem]">
           {filters()}
@@ -163,18 +179,18 @@ export function App() {
               autoFocus
               className="min-h-0"
             />
-          ) : view === "files" ? (
-            <FilesView state={filesState} className="min-h-0" />
-          ) : view === "jobs" ? (
-            <JobsView state={jobsState} className="min-h-0" />
-          ) : view === "downloads" ? (
-            <DownloadsView state={downloadsState} className="min-h-0" />
-          ) : view === "problems" ? (
-            <ProblemsView
-              state={problemsState}
+          ) : view === "settings" ? (
+            <SettingsView
+              section={settingsSection}
+              onSectionChange={setSettingsSection}
+              filesState={filesState}
+              jobsState={jobsState}
+              problemsState={problemsState}
               onOpenExecution={openExecution}
               className="min-h-0"
             />
+          ) : view === "downloads" ? (
+            <DownloadsView state={downloadsState} className="min-h-0" />
           ) : (
             <ArtistPage artistRef={artistRef} className="min-h-0" />
           )}

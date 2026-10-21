@@ -1,29 +1,29 @@
 import {
   Database,
   Download,
-  FolderOpen,
-  ListChecks,
   ListMusic,
   Music,
   Search,
   Settings,
-  TriangleAlert,
   UserRound,
 } from "lucide-react"
 
 import { BuildInfoSheet } from "@/components/build-info-sheet"
+import { ProblemCountBadge } from "@/components/problem-count-badge"
 import { Button } from "@/components/ui/button"
 
-export type AppView = "search" | "library" | "files" | "artists" | "jobs" | "downloads" | "problems"
+export type AppView = "search" | "library" | "artists" | "downloads" | "settings"
 
 interface AppHeaderProps {
   view: AppView
   onNavigate: (view: AppView) => void
+  // The recorded problems, shown on Settings so they stay discoverable.
+  problems: number
 }
 
 const activeClassName = "bg-primary/15 text-primary hover:bg-primary/20"
 
-export function AppHeader({ view, onNavigate }: AppHeaderProps) {
+export function AppHeader({ view, onNavigate, problems }: AppHeaderProps) {
   return (
     <header className="flex h-14 shrink-0 items-center gap-6 border-b px-4 lg:px-6">
       <div className="flex items-center gap-2 text-base font-semibold">
@@ -51,16 +51,6 @@ export function AppHeader({ view, onNavigate }: AppHeaderProps) {
           <Database data-icon="inline-start" />
           Library
         </Button>
-        <Button
-          variant={view === "files" ? "secondary" : "ghost"}
-          size="lg"
-          aria-current={view === "files" ? "page" : undefined}
-          className={view === "files" ? activeClassName : undefined}
-          onClick={() => onNavigate("files")}
-        >
-          <FolderOpen data-icon="inline-start" />
-          Files
-        </Button>
         <Button variant="ghost" size="lg" disabled title="Not available yet">
           <ListMusic data-icon="inline-start" />
           Playlists
@@ -76,16 +66,6 @@ export function AppHeader({ view, onNavigate }: AppHeaderProps) {
           Artists
         </Button>
         <Button
-          variant={view === "jobs" ? "secondary" : "ghost"}
-          size="lg"
-          aria-current={view === "jobs" ? "page" : undefined}
-          className={view === "jobs" ? activeClassName : undefined}
-          onClick={() => onNavigate("jobs")}
-        >
-          <ListChecks data-icon="inline-start" />
-          Jobs
-        </Button>
-        <Button
           variant={view === "downloads" ? "secondary" : "ghost"}
           size="lg"
           aria-current={view === "downloads" ? "page" : undefined}
@@ -95,22 +75,19 @@ export function AppHeader({ view, onNavigate }: AppHeaderProps) {
           <Download data-icon="inline-start" />
           Downloads
         </Button>
-        <Button
-          variant={view === "problems" ? "secondary" : "ghost"}
-          size="lg"
-          aria-current={view === "problems" ? "page" : undefined}
-          className={view === "problems" ? activeClassName : undefined}
-          onClick={() => onNavigate("problems")}
-        >
-          <TriangleAlert data-icon="inline-start" />
-          Problems
-        </Button>
       </nav>
       <div className="ml-auto flex items-center gap-4">
         <BuildInfoSheet />
-        <Button variant="ghost" size="lg" disabled title="Not available yet">
+        <Button
+          variant={view === "settings" ? "secondary" : "ghost"}
+          size="lg"
+          aria-current={view === "settings" ? "page" : undefined}
+          className={view === "settings" ? activeClassName : undefined}
+          onClick={() => onNavigate("settings")}
+        >
           <Settings data-icon="inline-start" />
           <span className="hidden sm:inline">Settings</span>
+          <ProblemCountBadge count={problems} />
         </Button>
         <span
           className="hidden items-center gap-2 text-xs text-muted-foreground opacity-50 sm:flex"
