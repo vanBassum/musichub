@@ -1,14 +1,19 @@
 import {
   Download,
   Ellipsis,
-  FolderOpen,
   Library,
-  ListChecks,
   Music,
   Search,
-  TriangleAlert,
+  Settings,
   UserRound,
 } from "lucide-react"
+
+import {
+  defaultSettingsSection,
+  formatSettingsHash,
+  parseSettingsSection,
+  type SettingsSectionId,
+} from "@/components/settings-sections"
 
 // The phone's primary destinations, in nav order.
 export const mobileTabs = [
@@ -22,11 +27,9 @@ export type MobileTabId = (typeof mobileTabs)[number]["id"]
 // The screens listed under More.
 export const moreScreens = [
   { id: "library", label: "Library", icon: Library },
-  { id: "files", label: "Files", icon: FolderOpen },
-  { id: "jobs", label: "Jobs", icon: ListChecks },
   { id: "downloads", label: "Downloads", icon: Download },
-  { id: "problems", label: "Problems", icon: TriangleAlert },
   { id: "artists", label: "Artists", icon: UserRound },
+  { id: "settings", label: "Settings", icon: Settings },
 ] as const
 
 export type MoreScreenId = (typeof moreScreens)[number]["id"]
@@ -37,17 +40,24 @@ export interface MobileLocation {
   tab: MobileTabId
   // The open More screen, if any.
   screen: MoreScreenId | null
+  // The open Settings section, which applies while the Settings screen shows.
+  settingsSection: SettingsSectionId
   playerView: PlayerView
 }
 
 // The location lives in the URL hash (#/search, #/player, #/player/queue, #/more,
-// #/more/files), so browser back and shared links work.
+// #/more/downloads, #/settings/files), so browser back and shared links work. The
+// former #/more/files, #/more/jobs and #/more/problems links open Settings.
 export function parseLocation(hash: string): MobileLocation {
   const [tab, sub] = hash.replace(/^#\/?/, "").split("?")[0].split("/")
-  const screen = moreScreens.find((s) => s.id === sub)?.id ?? null
+  const legacySection = tab === "more" ? parseSettingsSection(sub) : null
+  const inSettings = tab === "settings" || legacySection !== null
+  const moreScreen =
+    tab === "more" ? (moreScreens.find((s) => s.id === sub)?.id ?? null) : null
   return {
-    tab: mobileTabs.find((t) => t.id === tab)?.id ?? "search",
-    screen: tab === "more" ? screen : null,
+    tab: inSettings ? "more" : (mobileTabs.find((t) => t.id === tab)?.id ?? "search"),
+    screen: inSettings ? "settings" : moreScreen,
+    settingsSection: parseSettingsSection(sub) ?? defaultSettingsSection,
     playerView: tab === "player" && sub === "queue" ? "queue" : "now-playing",
   }
 }
@@ -89,11 +99,32 @@ export function syncSearchHash(
   }
 }
 
+export function isSettingsHash(hash: string): boolean {
+  return hash.startsWith("#/settings")
+}
+
+// Desktop: keeps the hash on the open Settings section (without a history entry) and
+// clears it again when another view shows, so a Settings link can be shared and reloaded.
+export function syncSettingsHash(
+  section: SettingsSectionId,
+  desktopOnSettings: boolean
+) {
+  if (desktopOnSettings) {
+    window.history.replaceState(null, "", formatSettingsHash(section))
+  } else if (isSettingsHash(window.location.hash)) {
+    window.history.replaceState(null, "", window.location.pathname)
+  }
+}
+
 export function formatLocation({
   tab,
   screen,
+  settingsSection,
   playerView,
 }: MobileLocation): string {
+  if (tab === "more" && screen === "settings") {
+    return formatSettingsHash(settingsSection)
+  }
   if (tab === "more") return screen ? `#/more/${screen}` : "#/more"
   if (tab === "player") {
     return playerView === "queue" ? "#/player/queue" : "#/player"

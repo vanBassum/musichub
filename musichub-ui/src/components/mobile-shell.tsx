@@ -5,8 +5,6 @@ import { ArtistPage } from "@/components/artist-page"
 import { BuildInfoSheet } from "@/components/build-info-sheet"
 import { CompactPlayer } from "@/components/compact-player"
 import { DownloadsView } from "@/components/downloads-view"
-import { FilesView } from "@/components/files-view"
-import { JobsView } from "@/components/jobs-view"
 import { MobileNav } from "@/components/mobile-nav"
 import {
   formatLocation,
@@ -19,8 +17,10 @@ import {
   type PlayerView,
 } from "@/components/mobile-pages"
 import { NowPlaying, QueueList } from "@/components/player-panel"
-import { ProblemsView } from "@/components/problems-view"
+import { ProblemCountBadge } from "@/components/problem-count-badge"
 import { SearchPage } from "@/components/search-page"
+import { SettingsView } from "@/components/settings-view"
+import type { SettingsSectionId } from "@/components/settings-sections"
 import { Button } from "@/components/ui/button"
 import {
   Sheet,
@@ -33,7 +33,7 @@ import type { ArtistRef } from "@/lib/artist"
 import type { DownloadQueueState } from "@/lib/use-download-queue"
 import type { FilesState } from "@/lib/use-files"
 import type { JobsState } from "@/lib/use-jobs"
-import type { ProblemsState } from "@/lib/use-problems"
+import { problemCount, type ProblemsState } from "@/lib/use-problems"
 import { cn } from "@/lib/utils"
 
 interface MobileShellProps {
@@ -93,7 +93,7 @@ function Page({
 }
 
 // Below `lg` the phone has three destinations: Search, Player (Now Playing and
-// Queue) and More (Library, Files, Jobs, Artists). The location is the URL hash.
+// Queue) and More (Library, Downloads, Artists, Settings with Files, Jobs and Problems). The location is the URL hash.
 // Outside the Player page a compact player sits above the navigation.
 export function MobileShell({
   total,
@@ -112,17 +112,19 @@ export function MobileShell({
 }: MobileShellProps) {
   const hash = useSyncExternalStore(subscribe, getHash)
   const location = useMemo(() => parseLocation(hash), [hash])
-  const { tab, screen, playerView } = location
+  const { tab, screen, playerView, settingsSection } = location
 
   const navigate = (id: MobileTabId) => {
     if (id === "search") openSearchHash(searchQuery)
-    else go({ tab: id, screen: null, playerView: "now-playing" })
+    else go({ ...location, tab: id, screen: null, playerView: "now-playing" })
   }
   const openScreen = (id: MoreScreenId) =>
-    go({ tab: "more", screen: id, playerView })
+    go({ ...location, tab: "more", screen: id })
+  const openSettingsSection = (id: SettingsSectionId) =>
+    go({ ...location, tab: "more", screen: "settings", settingsSection: id })
   const openExecution = (executionId: string) => {
     jobsState.select(executionId)
-    openScreen("jobs")
+    openSettingsSection("jobs")
   }
   const showMore =(id: MoreScreenId) => tab === "more" && screen === id
 
@@ -144,7 +146,12 @@ export function MobileShell({
         <Tabs
           value={playerView}
           onValueChange={(value) =>
-            go({ tab: "player", screen: null, playerView: value as PlayerView })
+            go({
+              ...location,
+              tab: "player",
+              screen: null,
+              playerView: value as PlayerView,
+            })
           }
           className="p-2 pb-0"
         >
@@ -184,6 +191,9 @@ export function MobileShell({
               >
                 <Icon />
                 <span className="flex-1 text-left">{label}</span>
+                {id === "settings" && (
+                  <ProblemCountBadge count={problemCount(problemsState)} />
+                )}
                 <ChevronRight className="text-muted-foreground" />
               </Button>
             </li>
@@ -235,16 +245,16 @@ export function MobileShell({
             )}
           </div>
           {id === "library" && table}
-          {id === "files" && (
-            <FilesView state={filesState} className="flex-1" />
-          )}
-          {id === "jobs" && <JobsView state={jobsState} className="flex-1" />}
           {id === "downloads" && (
             <DownloadsView state={downloadsState} className="flex-1" />
           )}
-          {id === "problems" && (
-            <ProblemsView
-              state={problemsState}
+          {id === "settings" && (
+            <SettingsView
+              section={settingsSection}
+              onSectionChange={openSettingsSection}
+              filesState={filesState}
+              jobsState={jobsState}
+              problemsState={problemsState}
               onOpenExecution={openExecution}
               className="flex-1"
             />
