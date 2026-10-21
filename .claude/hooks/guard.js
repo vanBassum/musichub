@@ -1,8 +1,13 @@
 // PreToolUse guard for Claude sessions in this repo, on every machine (see the
 // "Git workflow" section of CLAUDE.md):
-// - never push to main, and never skip the git hooks that refuse it;
-// - musichub-understanding is read-only: no file edits and no writing shell or
-//   GitHub commands against it. When it needs to change, Claude tells Bas instead.
+// - in this repo, never push to main, and never skip the git hooks that refuse
+//   it. Other repositories a session works in (strato-stack, say) have their
+//   own rules; these two are about musichub's main;
+// - musichub-understanding is read-only, from any repo: no file edits and no
+//   writing shell or GitHub commands against it. When it needs to change,
+//   Claude tells Bas instead.
+const path = require("path")
+
 const UNDERSTANDING = /musichub-understanding/i
 
 const PUSH_TO_MAIN = /\bgit\b[^|;&\n]*\bpush\b[^|;&\n]*(?:[\s:+]|refs\/heads\/)main(?=$|[\s;&|])/i
@@ -23,6 +28,40 @@ const WRITES = [
   /(^|[^2&])>{1,2}(?!\s*(\/dev\/null|\$null|&))/,
 ]
 
+// This repository: the project Claude runs in, else the checkout this file is in.
+const REPO = norm(process.env.CLAUDE_PROJECT_DIR || path.resolve(__dirname, "..", ".."))
+
+// One spelling for a path: forward slashes, lowercase, no trailing slash, and
+// Git Bash's /c/... as c:/... .
+function norm(p) {
+  let n = String(p).trim().replace(/^["']|["']$/g, "").replace(/\\/g, "/")
+  const drive = /^\/([a-z])(\/|$)/i.exec(n)
+  if (drive) n = drive[1] + ":/" + n.slice(3)
+  return n.replace(/\/+$/, "").toLowerCase()
+}
+
+function resolveFrom(base, p) {
+  const n = norm(p)
+  return /^[a-z]:\//.test(n) || n.startsWith("/") || n.startsWith("~") ? n : norm(path.posix.normalize(`${base}/${n}`))
+}
+
+const inRepo = (dir) => dir === REPO || dir.startsWith(`${REPO}/`)
+
+// Whether a git command matching `re` runs in this repository. Each command of
+// a chain runs in its own -C directory, else in the last cd before it, else in
+// the session's cwd.
+function runsHere(cmd, cwd, re) {
+  let dir = norm(cwd || REPO)
+  for (const part of cmd.split(/&&|\|\||[;&|\n]/)) {
+    const cd = /^\s*(?:cd|pushd|Set-Location|sl)\s+(?:-(?:Literal)?Path\s+)?("[^"]+"|'[^']+'|\S+)/i.exec(part)
+    if (cd) { dir = resolveFrom(dir, cd[1]); continue }
+    if (!re.test(part)) continue
+    const c = /\bgit\s+(?:-c\s+\S+\s+)*-C\s+("[^"]+"|'[^']+'|\S+)/i.exec(part)
+    if (inRepo(c ? resolveFrom(dir, c[1]) : dir)) return true
+  }
+  return false
+}
+
 function deny(reason) {
   // No process.exit(): on Windows it can drop piped stdout before it is flushed.
   process.stdout.write(JSON.stringify({
@@ -40,9 +79,9 @@ process.stdin.on("end", () => {
   const file = String(input?.tool_input?.file_path ?? input?.tool_input?.notebook_path ?? "")
   const cwd = String(input?.cwd ?? "")
 
-  if (PUSH_TO_MAIN.test(cmd))
+  if (runsHere(cmd, cwd, PUSH_TO_MAIN))
     return deny("Never push to main in musichub. Push a branch and open a PR to main (CLAUDE.md, Git workflow).")
-  if (SKIP_HOOKS.test(cmd))
+  if (runsHere(cmd, cwd, SKIP_HOOKS))
     return deny("Don't skip or redirect the git hooks in musichub: .githooks/pre-push is what keeps pushes off main.")
 
   const understandingReason =

@@ -20,8 +20,10 @@ code owner's review (`.github/CODEOWNERS`: Bas owns `.github/`, `.claude/` and
   `git config core.hooksPath .githooks` (the README says so too). Claude sessions turn
   it on automatically at session start (`.claude/settings.json`).
 - `.claude/hooks/guard.js` (a PreToolUse hook in the shared `.claude/settings.json`)
-  refuses, for Claude: pushes to `main`, `--no-verify`, changing `core.hooksPath`,
-  and any write to musichub-understanding. Tested by `.claude/hooks/guard.test.js`.
+  refuses, for Claude: in this repo, pushes to `main`, `--no-verify` and changing
+  `core.hooksPath`; from anywhere, any write to musichub-understanding. Other
+  repositories a session works in (strato-stack, say) follow their own rules.
+  Tested by `.claude/hooks/guard.test.js`.
 - Personal Claude permissions go in `.claude/settings.local.json`, which is not
   versioned.
 
