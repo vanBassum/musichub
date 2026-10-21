@@ -4,8 +4,10 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import {
+  downloadStatuses,
   type DownloadQueueItem,
   type DownloadQueueStatus,
+  type DownloadStatusFilter,
 } from "@/lib/downloads-api"
 import type { DownloadQueueState } from "@/lib/use-download-queue"
 import { cn } from "@/lib/utils"
@@ -79,7 +81,42 @@ function DownloadItem({ item }: { item: DownloadQueueItem }) {
   )
 }
 
-function DownloadsBody({ state }: { state: DownloadQueueState }) {
+const filterOptions: { value: DownloadStatusFilter; label: string }[] = [
+  { value: "all", label: "All" },
+  ...downloadStatuses.map((value) => ({ value, label: statusLabels[value] })),
+]
+
+function StatusFilter({
+  status,
+  onChange,
+}: {
+  status: DownloadStatusFilter
+  onChange: (status: DownloadStatusFilter) => void
+}) {
+  return (
+    <div role="group" aria-label="Filter by status" className="flex flex-wrap gap-2">
+      {filterOptions.map((option) => (
+        <Button
+          key={option.value}
+          variant={status === option.value ? "secondary" : "outline"}
+          size="sm"
+          aria-pressed={status === option.value}
+          onClick={() => onChange(option.value)}
+        >
+          {option.label}
+        </Button>
+      ))}
+    </div>
+  )
+}
+
+function DownloadsBody({
+  state,
+  status,
+}: {
+  state: DownloadQueueState
+  status: DownloadStatusFilter
+}) {
   const { items, error } = state
   if (items === null)
     return error ? null : <Skeleton className="h-40 w-full rounded-xl" />
@@ -87,7 +124,9 @@ function DownloadsBody({ state }: { state: DownloadQueueState }) {
   if (items.length === 0)
     return (
       <p className="rounded-xl border bg-card p-6 text-center text-muted-foreground">
-        No downloads have been queued yet.
+        {status === "all"
+          ? "No downloads have been queued yet."
+          : `No downloads with the status ${statusLabels[status]}.`}
       </p>
     )
 
@@ -100,13 +139,17 @@ function DownloadsBody({ state }: { state: DownloadQueueState }) {
   )
 }
 
-// Read-only overview of the download queue, current and past requests. It changes nothing: there are no pause,
-// cancel or retry controls.
+// Read-only overview of the download queue, current and past requests, narrowed by status. It changes nothing:
+// there are no pause, cancel or retry controls.
 export function DownloadsView({
   state,
+  status,
+  onStatusChange,
   className,
 }: {
   state: DownloadQueueState
+  status: DownloadStatusFilter
+  onStatusChange: (status: DownloadStatusFilter) => void
   className?: string
 }) {
   return (
@@ -123,6 +166,11 @@ export function DownloadsView({
             Queued, active, completed and failed download requests
           </p>
         </div>
+        {state.items !== null && (
+          <span role="status" className="text-lg text-muted-foreground">
+            {state.total} {state.total === 1 ? "request" : "requests"}
+          </span>
+        )}
         <Button
           variant="outline"
           size="lg"
@@ -134,12 +182,13 @@ export function DownloadsView({
           Refresh
         </Button>
       </div>
+      <StatusFilter status={status} onChange={onStatusChange} />
       {state.error && (
         <p role="alert" className="shrink-0 text-sm text-destructive">
           {state.error}
         </p>
       )}
-      <DownloadsBody state={state} />
+      <DownloadsBody state={state} status={status} />
       {state.items !== null && state.total > state.items.length && (
         <p className="shrink-0 text-sm text-muted-foreground">
           Showing the newest {state.items.length} of {state.total} requests.

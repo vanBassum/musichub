@@ -39,6 +39,22 @@ describe("location", () => {
     expect(formatLocation(location)).toBe(hash)
   })
 
+  it("round-trips the Library and Downloads filters", () => {
+    const missing = { ...locationOf("library"), audio: "without" as const }
+    expect(parseLocation("#/library?audio=without")).toEqual(missing)
+    expect(formatLocation(missing)).toBe("#/library?audio=without")
+
+    const failed = { ...locationOf("downloads"), downloadStatus: "Failed" as const }
+    expect(parseLocation("#/downloads?status=failed")).toEqual(failed)
+    expect(formatLocation(failed)).toBe("#/downloads?status=failed")
+  })
+
+  it("ignores an unknown filter value and filters of another page", () => {
+    expect(parseLocation("#/library?audio=x")).toEqual(locationOf("library"))
+    expect(parseLocation("#/downloads?status=x")).toEqual(locationOf("downloads"))
+    expect(parseLocation("#/downloads?audio=without")).toEqual(locationOf("downloads"))
+  })
+
   it("opens Search for an empty or unknown hash", () => {
     expect(parseLocation("")).toEqual(locationOf("search"))
     expect(parseLocation("#/nowhere")).toEqual(locationOf("search"))

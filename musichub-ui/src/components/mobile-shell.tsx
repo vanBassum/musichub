@@ -25,6 +25,7 @@ import {
   type AppLocation,
   type PlayerView,
 } from "@/lib/navigation"
+import type { DownloadStatusFilter } from "@/lib/downloads-api"
 import type { DownloadQueueState } from "@/lib/use-download-queue"
 import { cn } from "@/lib/utils"
 
@@ -38,6 +39,7 @@ interface MobileShellProps extends SettingsStates {
   filters: ReactNode
   table: ReactNode
   downloadsState: DownloadQueueState
+  onDownloadStatusChange: (status: DownloadStatusFilter) => void
   searchQuery: string
   onSearchQueryChange: (query: string) => void
   onSelectTrack: (trackId: number) => void
@@ -112,6 +114,7 @@ export function MobileShell({
   filters,
   table,
   downloadsState,
+  onDownloadStatusChange,
   searchQuery,
   onSearchQueryChange,
   onSelectTrack,
@@ -168,7 +171,12 @@ export function MobileShell({
       </Page>
       <Page show={tab === "downloads"} label="Downloads" className="gap-3 p-3">
         <PageHeader title="Downloads" />
-        <DownloadsView state={downloadsState} className="flex-1" />
+        <DownloadsView
+          state={downloadsState}
+          status={location.downloadStatus}
+          onStatusChange={onDownloadStatusChange}
+          className="flex-1"
+        />
       </Page>
       <Page show={tab === "player"} label="Player">
         <Tabs
