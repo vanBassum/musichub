@@ -43,7 +43,9 @@ interface MobileShellProps extends SettingsStates {
   onSelectTrack: (trackId: number) => void
 }
 
-const pageClassName = "flex min-h-0 flex-1 flex-col overflow-hidden"
+// On a tablet a page keeps a readable width, centred, instead of stretching.
+const pageClassName =
+  "mx-auto flex min-h-0 w-full max-w-3xl flex-1 flex-col overflow-hidden"
 
 // A page that isn't showing stays mounted (so uploads, jobs and search keep their
 // state) but is hidden and inert, so keyboard focus can't land in it.
