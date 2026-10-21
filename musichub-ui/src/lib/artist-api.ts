@@ -14,6 +14,7 @@ import {
   type ArtistTrack,
   type ArtistTracks,
 } from "@/lib/artist"
+import { classifyVersion } from "@/lib/track-version"
 
 interface ArtistDetail {
   id: number
@@ -122,6 +123,7 @@ function localTrack(track: CatalogTrack): ArtistTrack {
     key: `local:${track.id}`,
     title: track.title,
     detail: [track.version, artistNames(track)].filter(Boolean).join(" · "),
+    versionKind: classifyVersion(track.title, track.version),
     availability: catalogAvailability(track.hasAudio),
     provenance: null,
     addable: null,
@@ -142,6 +144,7 @@ function externalTrack({
       ? `${track.title} (${track.disambiguation})`
       : track.title,
     detail: track.artists.map((a) => a.name).join(", "),
+    versionKind: classifyVersion(track.title, track.disambiguation),
     availability: !inCatalog ? "external" : catalogAvailability(hasAudio === true),
     provenance: inCatalog ? null : { label: providerLabel(track.provider), url: track.url },
     // In the catalog already: it is in the library, so no second record is made.
