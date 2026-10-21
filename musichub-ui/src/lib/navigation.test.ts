@@ -33,7 +33,6 @@ describe("location", () => {
     ["#/settings", locationOf("settings")],
     ["#/settings/files", locationOf("settings", "files")],
     ["#/settings/jobs", locationOf("settings", "jobs")],
-    ["#/settings/problems", locationOf("settings", "problems")],
   ])("round-trips %s", (hash, location) => {
     expect(parseLocation(hash)).toEqual(location)
     expect(formatLocation(location)).toBe(hash)
@@ -55,6 +54,11 @@ describe("location", () => {
     expect(parseLocation("#/downloads?audio=without")).toEqual(locationOf("downloads"))
   })
 
+  it("opens Settings, on its first section, for the removed Problems links", () => {
+    expect(parseLocation("#/settings/problems")).toEqual(locationOf("settings"))
+    expect(parseLocation("#/more/problems")).toEqual(locationOf("settings"))
+  })
+
   it("opens Search for an empty or unknown hash", () => {
     expect(parseLocation("")).toEqual(locationOf("search"))
     expect(parseLocation("#/nowhere")).toEqual(locationOf("search"))
@@ -72,9 +76,6 @@ describe("location", () => {
       locationOf("settings", "files")
     )
     expect(parseLocation("#/more/jobs")).toEqual(locationOf("settings", "jobs"))
-    expect(parseLocation("#/more/problems")).toEqual(
-      locationOf("settings", "problems")
-    )
     expect(parseLocation("#/more/library")).toEqual(locationOf("library"))
     expect(parseLocation("#/more/downloads")).toEqual(locationOf("downloads"))
     expect(parseLocation("#/more/artists")).toEqual(locationOf("search"))

@@ -1,9 +1,11 @@
-import { RefreshCw } from "lucide-react"
+import { RefreshCw, RotateCw, X } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import {
+  canRemoveDownload,
+  canRetryDownload,
   downloadStatuses,
   type DownloadQueueItem,
   type DownloadQueueStatus,
@@ -41,7 +43,51 @@ function Timestamps({ item }: { item: DownloadQueueItem }) {
   )
 }
 
-function DownloadItem({ item }: { item: DownloadQueueItem }) {
+function DownloadActions({
+  item,
+  label,
+  state,
+}: {
+  item: DownloadQueueItem
+  label: string
+  state: DownloadQueueState
+}) {
+  const busy = state.busyIds.has(item.id)
+  return (
+    <div className="flex gap-2">
+      {canRetryDownload(item) && (
+        <Button
+          variant="outline"
+          disabled={busy}
+          aria-label={`Retry ${label}`}
+          onClick={() => void state.retry(item.id)}
+        >
+          <RotateCw data-icon="inline-start" />
+          Retry
+        </Button>
+      )}
+      {canRemoveDownload(item) && (
+        <Button
+          variant="outline"
+          disabled={busy}
+          aria-label={`Remove ${label} from the queue`}
+          onClick={() => void state.remove(item.id)}
+        >
+          <X data-icon="inline-start" />
+          Remove
+        </Button>
+      )}
+    </div>
+  )
+}
+
+function DownloadItem({
+  item,
+  state,
+}: {
+  item: DownloadQueueItem
+  state: DownloadQueueState
+}) {
   const title = item.trackTitle ?? item.fileName
   const artist = item.artists.join(", ")
   const label = artist ? `${title} by ${artist}` : title
@@ -76,6 +122,7 @@ function DownloadItem({ item }: { item: DownloadQueueItem }) {
         <Badge className={statusClassNames[item.status]}>
           {statusLabels[item.status]}
         </Badge>
+        <DownloadActions item={item} label={label} state={state} />
       </div>
     </li>
   )
@@ -133,14 +180,15 @@ function DownloadsBody({
   return (
     <ul aria-label="Downloads" className="divide-y rounded-xl border bg-card">
       {items.map((item) => (
-        <DownloadItem key={item.id} item={item} />
+        <DownloadItem key={item.id} item={item} state={state} />
       ))}
     </ul>
   )
 }
 
-// Read-only overview of the download queue, current and past requests, narrowed by status. It changes nothing:
-// there are no pause, cancel or retry controls.
+// Overview of the download queue, current and past requests, narrowed by status. A failed request can be retried and a failed or
+// completed one removed from the list (the wishlist and stored music are untouched); an active transfer has no
+// controls, as it cannot be cancelled.
 export function DownloadsView({
   state,
   status,
@@ -186,6 +234,11 @@ export function DownloadsView({
       {state.error && (
         <p role="alert" className="shrink-0 text-sm text-destructive">
           {state.error}
+        </p>
+      )}
+      {state.actionError && (
+        <p role="alert" className="shrink-0 text-sm text-destructive">
+          {state.actionError}
         </p>
       )}
       <DownloadsBody state={state} status={status} />

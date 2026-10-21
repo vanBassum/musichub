@@ -76,6 +76,53 @@ public class DownloadQueueService(MusicHubDbContext db, TimeProvider time) : IDo
         return new DownloadRequestPage(rows.Select(ToView).ToList(), total, page, pageSize);
     }
 
+    public async Task<RetryResult> RetryAsync(int id, CancellationToken ct)
+    {
+        var request = await FindVisibleAsync(id, ct);
+        if (request is null)
+            return new RetryResult(RetryOutcome.NotFound, null);
+
+        if (request.Status != DownloadRequestStatus.Failed)
+            return new RetryResult(RetryOutcome.NotFailed, await GetAsync(id, ct));
+
+        try
+        {
+            if (!await TransitionAsync(request, DownloadRequestStatus.Queued, r =>
+                {
+                    r.AttemptCount = 0;
+                    r.BytesTransferred = 0;
+                    r.NextAttemptAt = null;
+                    r.FinishedAt = null;
+                    r.Failure = null;
+                    r.Error = null;
+                }, ct))
+                return new RetryResult(RetryOutcome.NotFailed, await GetAsync(id, ct));
+        }
+        catch (DbUpdateException)
+        {
+            // The unique indexes refused a second active request for the track or the candidate.
+            db.Entry(request).State = EntityState.Detached;
+            return new RetryResult(RetryOutcome.AlreadyActive, await GetAsync(id, ct));
+        }
+
+        return new RetryResult(RetryOutcome.Retried, await GetAsync(id, ct));
+    }
+
+    public async Task<RemoveOutcome> RemoveAsync(int id, CancellationToken ct)
+    {
+        var request = await FindVisibleAsync(id, ct);
+        if (request is null)
+            return RemoveOutcome.NotFound;
+        if (!DownloadRequestStatuses.Removable.Contains(request.Status))
+            return RemoveOutcome.NotRemovable;
+
+        var now = time.GetUtcNow();
+        request.RemovedAt = now;
+        request.UpdatedAt = now;
+        // The status is the concurrency token: a retry that won the race makes this save fail, and nothing is removed.
+        return await SaveAsync(request, ct) ? RemoveOutcome.Removed : RemoveOutcome.NotRemovable;
+    }
+
     public async Task<ClaimedDownload?> ClaimNextAsync(CancellationToken ct)
     {
         var now = time.GetUtcNow();
@@ -204,6 +251,9 @@ public class DownloadQueueService(MusicHubDbContext db, TimeProvider time) : IDo
     private Task<DownloadRequest?> FindAsync(int id, CancellationToken ct) =>
         db.DownloadRequests.Where(r => r.Id == id).FirstOrDefaultAsync(ct);
 
+    private Task<DownloadRequest?> FindVisibleAsync(int id, CancellationToken ct) =>
+        db.DownloadRequests.Where(r => r.Id == id && r.RemovedAt == null).FirstOrDefaultAsync(ct);
+
     private Task<DownloadRequest?> FindActiveAsync(
         int trackId, (string Provider, string Source, string RemotePath) identity, CancellationToken ct) =>
         db.DownloadRequests.AsNoTracking()
@@ -219,6 +269,7 @@ public class DownloadQueueService(MusicHubDbContext db, TimeProvider time) : IDo
 
     private IQueryable<DownloadRequest> Viewable() =>
         db.DownloadRequests.AsNoTracking()
+            .Where(r => r.RemovedAt == null)
             .Include(r => r.Track).ThenInclude(t => t!.Artists).ThenInclude(a => a.Artist);
 
     private static DownloadRequestView ToView(DownloadRequest r) => new(
