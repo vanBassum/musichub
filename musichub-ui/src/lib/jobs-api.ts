@@ -29,11 +29,9 @@ export interface JobSummary {
 }
 
 export type TrackAcquisitionOutcome =
-  | "Imported"
   | "Enqueued"
   | "AlreadyQueued"
   | "NothingFound"
-  | "NoAcceptableCandidate"
   | "ProviderUnavailable"
   | "Skipped"
   | "Failed"
@@ -45,7 +43,6 @@ export interface TrackAcquisitionResult {
   artists: string
   outcome: TrackAcquisitionOutcome
   detail: string
-  downloadId: number | null
 }
 
 // What a Search for Missing Music run did; `tracks` is each track's result (the counts cover all tracks).
