@@ -40,10 +40,14 @@ export function parseArtistHash(hash: string): ArtistRoute | null {
     return { ref: { kind: "local", id: Number(first) }, source }
   }
   if (kind === "external" && first && second) {
-    const provider = decodeURIComponent(first)
-    const externalId = decodeURIComponent(second)
-    const name = params.get("name") ?? ""
-    return { ref: { kind: "external", provider, externalId, name }, source }
+    try {
+      const provider = decodeURIComponent(first)
+      const externalId = decodeURIComponent(second)
+      const name = params.get("name") ?? ""
+      return { ref: { kind: "external", provider, externalId, name }, source }
+    } catch {
+      return null // a malformed escape in an edited or truncated link
+    }
   }
   return null
 }
