@@ -1,6 +1,7 @@
 import {
   isMissingMusicSummary,
   type JobExecution,
+  type JobSummary,
   type TaskSummary,
 } from "@/lib/jobs-api"
 
@@ -22,6 +23,15 @@ export function summaryHeadline(summary: TaskSummary) {
     main: `${plural(summary.examined, "file", "files")} examined`,
     sub: `${summary.linked} linked, ${summary.unresolved} unresolved${failedPart}`,
   }
+}
+
+// Only a run that re-identified linked files has these; they are not shown for a default run.
+function reIdentifiedFacts(summary: JobSummary): [string, string][] {
+  if (summary.confirmed + summary.differing === 0) return []
+  return [
+    ["Confirmed", plural(summary.confirmed, "file", "files")],
+    ["Differs from link", plural(summary.differing, "file", "files")],
+  ]
 }
 
 // How many items a Succeeded run could not process.
@@ -46,9 +56,10 @@ export function summaryFacts(summary: TaskSummary): [string, string | number][] 
     ]
   }
   return [
-    ["Examined", plural(summary.examined, "file", "files")],
-    ["Linked", plural(summary.linked, "file", "files")],
+    ["Attempted", plural(summary.examined, "file", "files")],
+    ["Newly linked", plural(summary.linked, "file", "files")],
     ["Tracks created", summary.tracksCreated],
+    ...reIdentifiedFacts(summary),
     ["Not identified", plural(summary.unresolved, "file", "files")],
     ["Skipped", plural(summary.skipped, "file", "files")],
     ["Errors", summary.failed],

@@ -7,14 +7,17 @@ using MusicHub.Api.Storage;
 namespace MusicHub.Api.Catalog;
 
 /// <summary>What one reconciliation run did. Files that stayed unlinked (unresolved or failed) are unchanged.</summary>
-/// <param name="Examined">Stored, unlinked files the run went through.</param>
+/// <param name="Examined">Files the run attempted: Stored files without a track, and with re-identification all Stored files.</param>
 /// <param name="Linked">Files now linked to a track.</param>
 /// <param name="TracksCreated">Of those links, the tracks that were created for them (the others reused an existing track).</param>
 /// <param name="Unresolved">Files the identification could not establish an identity for.</param>
 /// <param name="Skipped">Files that were no longer eligible when their turn came (deleted, linked or changed meanwhile).</param>
-/// <param name="Failed">Files whose processing failed (storage, identification or database); they stay unlinked.</param>
+/// <param name="Failed">Files whose processing failed (storage, identification or database); they stay as they were.</param>
+/// <param name="Confirmed">Re-identified linked files whose identity matches their track. Only with re-identification.</param>
+/// <param name="Differing">Re-identified linked files whose candidate differs from their track; the link was kept and the candidate recorded for review. Only with re-identification.</param>
 public sealed record CatalogReconciliationSummary(
-    int Examined, int Linked, int TracksCreated, int Unresolved, int Skipped, int Failed);
+    int Examined, int Linked, int TracksCreated, int Unresolved, int Skipped, int Failed,
+    int Confirmed = 0, int Differing = 0);
 
 /// <summary>
 /// Links MusicHub-managed Stored files that have no catalog track to the catalog, using the existing
@@ -23,6 +26,9 @@ public sealed record CatalogReconciliationSummary(
 /// left exactly as it was. One file's failure never stops the others, and a rerun finds only what is still unlinked, so
 /// it creates no duplicate tracks, artists or links. The proposed identity carries no version, so a track with a
 /// version is never reused for it: versions stay distinct tracks.
+/// With re-identification, files that already have a track are identified again too, but only to record the attempt:
+/// their link is never changed, so a manual confirmation or any other association stays, and a candidate that differs is
+/// recorded for review.
 /// </summary>
 public sealed class CatalogReconciliation(
     MusicHubDbContext db,
@@ -38,24 +44,28 @@ public sealed class CatalogReconciliation(
     private readonly ArtistExternalLinks links = new(db, time);
 
     /// <param name="executionId">The Hangfire execution the per-file attempts are recorded under; null when the run is not a job.</param>
-    public async Task<CatalogReconciliationSummary> RunAsync(string? executionId, CancellationToken cancellationToken)
+    /// <param name="reIdentifyAll">Also identify files that already have a track, without ever changing their link.</param>
+    public async Task<CatalogReconciliationSummary> RunAsync(
+        string? executionId, CancellationToken cancellationToken, bool reIdentifyAll = false)
     {
         var ids = await db.Files.AsNoTracking()
-            .Where(f => f.Status == FileStatus.Stored && f.TrackId == null)
+            .Where(f => f.Status == FileStatus.Stored && (reIdentifyAll || f.TrackId == null))
             .OrderBy(f => f.Id)
             .Select(f => f.Id)
             .ToListAsync(cancellationToken);
 
-        logger.LogInformation("Catalog reconciliation started: {Count} stored files without a track.", ids.Count);
+        logger.LogInformation(
+            "Catalog reconciliation started: {Count} stored files {Scope}.",
+            ids.Count, reIdentifyAll ? "to identify again, linked or not" : "without a track");
 
-        int linked = 0, created = 0, unresolved = 0, skipped = 0, failed = 0;
+        int linked = 0, created = 0, unresolved = 0, skipped = 0, failed = 0, confirmed = 0, differing = 0;
         foreach (var id in ids)
         {
             cancellationToken.ThrowIfCancellationRequested();
             var attempt = new Attempt();
             try
             {
-                switch (await ReconcileAsync(id, executionId ?? "", attempt, cancellationToken))
+                switch (await ReconcileAsync(id, executionId ?? "", reIdentifyAll, attempt, cancellationToken))
                 {
                     case Outcome.LinkedExisting:
                         linked++;
@@ -67,6 +77,12 @@ public sealed class CatalogReconciliation(
                     case Outcome.Unresolved:
                         unresolved++;
                         break;
+                    case Outcome.Confirmed:
+                        confirmed++;
+                        break;
+                    case Outcome.Differs:
+                        differing++;
+                        break;
                     default:
                         skipped++;
                         break;
@@ -75,11 +91,11 @@ public sealed class CatalogReconciliation(
             catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
             {
                 failed++;
-                logger.LogError(ex, "Reconciling file {FileId} failed; it stays unlinked.", id);
+                logger.LogError(ex, "Reconciling file {FileId} failed; it stays as it was.", id);
                 // Only the exception type: the message may carry storage or database details.
                 attempt.Decision = IdentificationDecision.Error;
                 attempt.TrackId = null;
-                attempt.Reason = $"Processing failed ({ex.GetType().Name}); the file stays unlinked.";
+                attempt.Reason = $"Processing failed ({ex.GetType().Name}); the file stays as it was.";
             }
             finally
             {
@@ -90,14 +106,16 @@ public sealed class CatalogReconciliation(
                 await RecordAsync(executionId ?? "", id, attempt, cancellationToken);
         }
 
-        var summary = new CatalogReconciliationSummary(ids.Count, linked, created, unresolved, skipped, failed);
+        var summary = new CatalogReconciliationSummary(
+            ids.Count, linked, created, unresolved, skipped, failed, confirmed, differing);
         logger.LogInformation(
-            "Catalog reconciliation finished: {Examined} examined, {Linked} linked ({Created} new tracks), {Unresolved} unresolved, {Skipped} skipped, {Failed} failed.",
-            summary.Examined, summary.Linked, summary.TracksCreated, summary.Unresolved, summary.Skipped, summary.Failed);
+            "Catalog reconciliation finished: {Examined} examined, {Linked} linked ({Created} new tracks), {Unresolved} unresolved, {Skipped} skipped, {Failed} failed, {Confirmed} confirmed, {Differing} differing.",
+            summary.Examined, summary.Linked, summary.TracksCreated, summary.Unresolved, summary.Skipped, summary.Failed,
+            summary.Confirmed, summary.Differing);
         return summary;
     }
 
-    private enum Outcome { LinkedExisting, LinkedCreated, Unresolved, Skipped }
+    private enum Outcome { LinkedExisting, LinkedCreated, Unresolved, Skipped, Confirmed, Differs }
 
     /// <summary>What one file's attempt turned out to be; filled in as the attempt proceeds, recorded once at the end.</summary>
     private sealed class Attempt
@@ -147,10 +165,11 @@ public sealed class CatalogReconciliation(
         }
     }
 
-    private async Task<Outcome> ReconcileAsync(int fileId, string executionId, Attempt attempt, CancellationToken cancellationToken)
+    private async Task<Outcome> ReconcileAsync(
+        int fileId, string executionId, bool reIdentifyAll, Attempt attempt, CancellationToken cancellationToken)
     {
         var file = await db.Files.AsNoTracking().FirstOrDefaultAsync(f => f.Id == fileId, cancellationToken);
-        if (file is not { Status: FileStatus.Stored, TrackId: null })
+        if (file is not { Status: FileStatus.Stored } || (file.TrackId is not null && !reIdentifyAll))
             return SkipEligibility(fileId, attempt);
 
         attempt.FileName = file.OriginalFilename;
@@ -162,7 +181,7 @@ public sealed class CatalogReconciliation(
         {
             var reason = result.UnresolvedReason ?? "the proposed identity has no title or no artist";
             logger.LogInformation(
-                "File {FileId} ({Filename}) stays unlinked: {Reason} (evidence from: {Evidence}).",
+                "File {FileId} ({Filename}) has no new identity: {Reason} (evidence from: {Evidence}).",
                 fileId, file.OriginalFilename, reason, evidence);
             attempt.Decision = result.Status == IdentificationStatus.Identified
                 ? IdentificationDecision.InsufficientEvidence
@@ -170,6 +189,9 @@ public sealed class CatalogReconciliation(
             attempt.Reason = reason;
             return Outcome.Unresolved;
         }
+
+        if (file.TrackId is { } linkedTrackId)
+            return await ReviewLinkedAsync(fileId, linkedTrackId, identity, attempt, cancellationToken);
 
         await CatalogLock.WaitAsync(cancellationToken);
         try
@@ -218,11 +240,39 @@ public sealed class CatalogReconciliation(
         }
     }
 
+    // A linked file is only compared, never changed: its track stays, whoever set it (a person's confirmation included).
+    private async Task<Outcome> ReviewLinkedAsync(
+        int fileId, int trackId, ProposedRecordingIdentity identity, Attempt attempt, CancellationToken cancellationToken)
+    {
+        var track = await db.Tracks.AsNoTracking()
+            .Include(t => t.Artists).ThenInclude(a => a.Artist)
+            .FirstOrDefaultAsync(t => t.Id == trackId, cancellationToken);
+        if (track is null)
+            return SkipEligibility(fileId, attempt);
+
+        var candidate = $"\"{identity.Title}\" by {string.Join(", ", identity.Artists)}";
+        attempt.TrackId = trackId;
+        if (string.Equals(track.Title.Trim(), identity.Title, StringComparison.OrdinalIgnoreCase)
+            && CreditsExactly(track, identity.Artists))
+        {
+            attempt.Decision = IdentificationDecision.Confirmed;
+            attempt.Reason = $"Identified as {candidate}, the same as its track \"{track.Title}\".";
+            return Outcome.Confirmed;
+        }
+
+        logger.LogInformation(
+            "File {FileId} stays linked to track {TrackId} \"{Title}\"; the identification found {Candidate}.",
+            fileId, trackId, track.Title, candidate);
+        attempt.Decision = IdentificationDecision.Differs;
+        attempt.Reason = $"Identified as {candidate}, which differs from its track \"{track.Title}\"; the link was kept.";
+        return Outcome.Differs;
+    }
+
     private Outcome SkipEligibility(int fileId, Attempt attempt)
     {
-        logger.LogInformation("File {FileId} skipped: it is no longer a stored file without a track.", fileId);
+        logger.LogInformation("File {FileId} skipped: it is no longer eligible.", fileId);
         attempt.Decision = IdentificationDecision.Skipped;
-        attempt.Reason = "The file was no longer a stored file without a track when its turn came.";
+        attempt.Reason = "The file was no longer eligible when its turn came.";
         return Outcome.Skipped;
     }
 
@@ -255,10 +305,12 @@ public sealed class CatalogReconciliation(
             .OrderBy(t => t.Id)
             .ToListAsync(cancellationToken);
 
-        var wanted = identity.Artists.ToHashSet(StringComparer.OrdinalIgnoreCase);
-        return candidates.FirstOrDefault(t =>
-            t.Artists.Select(a => a.Artist.Name.Trim()).ToHashSet(StringComparer.OrdinalIgnoreCase).SetEquals(wanted));
+        return candidates.FirstOrDefault(t => CreditsExactly(t, identity.Artists));
     }
+
+    private static bool CreditsExactly(Track track, IEnumerable<string> artists) =>
+        track.Artists.Select(a => a.Artist.Name.Trim()).ToHashSet(StringComparer.OrdinalIgnoreCase)
+            .SetEquals(artists.ToHashSet(StringComparer.OrdinalIgnoreCase));
 
     private async Task<Track> CreateTrackAsync(
         ProposedRecordingIdentity identity, string linkEvidence, CancellationToken cancellationToken)

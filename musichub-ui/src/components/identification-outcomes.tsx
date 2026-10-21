@@ -16,6 +16,8 @@ export const decisionLabels: Record<IdentificationDecision, string> = {
   NoMethodRan: "No method could run",
   MethodFailed: "A method failed",
   Skipped: "Skipped",
+  Confirmed: "Confirmed",
+  Differs: "Differs from link",
   Error: "Error",
   Mismatch: "Another recording",
 }
@@ -27,6 +29,8 @@ export const decisionClassNames: Record<IdentificationDecision, string> = {
   NoMethodRan: "bg-warning text-warning-foreground",
   MethodFailed: "bg-destructive text-white",
   Skipped: "bg-muted text-muted-foreground",
+  Confirmed: "bg-success text-success-foreground",
+  Differs: "bg-warning text-warning-foreground",
   Error: "bg-destructive text-white",
   Mismatch: "bg-warning text-warning-foreground",
 }

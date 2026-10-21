@@ -28,6 +28,12 @@ public enum IdentificationDecision
     /// <summary>The file was no longer eligible when its turn came; it was not touched.</summary>
     Skipped,
 
+    /// <summary>A re-identification of an already linked file named the same recording as its current track; nothing changed.</summary>
+    Confirmed,
+
+    /// <summary>A re-identification of an already linked file named another recording; the link was kept and the candidate is recorded for review.</summary>
+    Differs,
+
     /// <summary>A downloaded candidate was identified, as a different recording than the one wanted; it stays outside the library.</summary>
     Mismatch,
 
@@ -107,7 +113,7 @@ public class IdentificationOutcome
     public IdentificationDecision Decision { get; set; }
     public string Reason { get; set; } = "";
 
-    /// <summary>The track the file was linked to, when <see cref="Decision"/> is Identified.</summary>
+    /// <summary>The track the file was linked to, when <see cref="Decision"/> is Identified; the track it stays linked to, when it is Confirmed or Differs.</summary>
     public int? TrackId { get; set; }
 
     /// <summary>The serialized method results; only <see cref="SetMethods"/> and <see cref="ReadMethods"/> know the format.</summary>

@@ -73,12 +73,26 @@ public sealed class CatalogReconciliationTests : IDisposable
         return record.Id;
     }
 
-    private async Task<CatalogReconciliationSummary> RunAsync(ByNameIdentifier? identifier = null, string? executionId = null)
+    private async Task<CatalogReconciliationSummary> RunAsync(
+        ByNameIdentifier? identifier = null, string? executionId = null, bool reIdentifyAll = false)
     {
         using var db = CreateDb();
         var service = new CatalogReconciliation(
             db, _storage, identifier ?? new ByNameIdentifier(_identities), TimeProvider.System, _log);
-        return await service.RunAsync(executionId, CancellationToken.None);
+        return await service.RunAsync(executionId, CancellationToken.None, reIdentifyAll);
+    }
+
+    private async Task<int> AddTrackAsync(string title, params string[] artists)
+    {
+        using var db = CreateDb();
+        var track = new Track
+        {
+            Title = title, CreatedAt = DateTimeOffset.UtcNow,
+            Artists = artists.Select(a => new TrackArtist { Artist = new Artist { Name = a, CreatedAt = DateTimeOffset.UtcNow } }).ToList(),
+        };
+        db.Tracks.Add(track);
+        await db.SaveChangesAsync();
+        return track.Id;
     }
 
     private async Task<List<IdentificationOutcome>> OutcomesAsync(string executionId)
@@ -485,6 +499,121 @@ public sealed class CatalogReconciliationTests : IDisposable
         Assert.Equal(
             [IdentificationSource.Automatic, IdentificationSource.Manual],
             (await check.AppliedIdentifications.OrderBy(a => a.Id).ToListAsync()).Select(a => a.Source));
+    }
+
+    [Fact]
+    public async Task Re_identification_also_examines_linked_files_but_the_default_does_not()
+    {
+        var track = await AddTrackAsync("Song", "Artist");
+        _identities["linked.mp3"] = () => Identified("Song", "Artist");
+        _identities["free.mp3"] = () => Identified("Other", "Artist");
+        await AddFileAsync("linked.mp3", trackId: track);
+        await AddFileAsync("free.mp3");
+        await AddFileAsync("failed.mp3", FileStatus.Failed);
+
+        var normal = new ByNameIdentifier(_identities);
+        Assert.Equal(1, (await RunAsync(normal)).Examined);
+        Assert.Equal(1, normal.Calls);
+
+        var all = new ByNameIdentifier(_identities);
+        var summary = await RunAsync(all, reIdentifyAll: true);
+        Assert.Equal(2, summary.Examined);
+        Assert.Equal(2, all.Calls);
+    }
+
+    [Fact]
+    public async Task Re_identification_confirms_a_linked_file_whose_identity_matches_and_changes_nothing()
+    {
+        var track = await AddTrackAsync("Song", "Artist");
+        _identities["a.mp3"] = () => Identified(" song ", "ARTIST");
+        var id = await AddFileAsync("a.mp3", trackId: track);
+
+        var summary = await RunAsync(executionId: "1", reIdentifyAll: true);
+
+        Assert.Equal(new CatalogReconciliationSummary(1, 0, 0, 0, 0, 0, Confirmed: 1), summary);
+        var outcome = Assert.Single(await OutcomesAsync("1"));
+        Assert.Equal((IdentificationDecision.Confirmed, (int?)track, (int?)id), (outcome.Decision, outcome.TrackId, outcome.FileId));
+        using var db = CreateDb();
+        Assert.Equal(track, (await db.Files.SingleAsync(f => f.Id == id)).TrackId);
+        Assert.Empty(await db.AppliedIdentifications.ToListAsync());
+        Assert.Equal(1, await db.Tracks.CountAsync());
+    }
+
+    [Fact]
+    public async Task Re_identification_never_replaces_a_link_and_records_a_differing_candidate_with_its_evidence()
+    {
+        var current = await AddTrackAsync("Song", "Artist");
+        _identities["a.mp3"] = () => IdentificationResult.Identified(
+            new ProposedRecordingIdentity("Another", ["Someone"], null), [new("musicbrainz", "x")],
+            [Method("musicbrainz", IdentificationMethodStatus.Found, "\"Another\" by Someone")]);
+        var id = await AddFileAsync("a.mp3", trackId: current);
+
+        var summary = await RunAsync(executionId: "1", reIdentifyAll: true);
+
+        Assert.Equal(new CatalogReconciliationSummary(1, 0, 0, 0, 0, 0, Differing: 1), summary);
+        var outcome = Assert.Single(await OutcomesAsync("1"));
+        Assert.Equal(IdentificationDecision.Differs, outcome.Decision);
+        Assert.Contains("\"Another\" by Someone", outcome.Reason);
+        Assert.Contains("\"\\u0022Another\\u0022 by Someone\"", outcome.MethodsJson);
+        using var db = CreateDb();
+        Assert.Equal(current, (await db.Files.SingleAsync(f => f.Id == id)).TrackId);
+        Assert.Equal(1, await db.Tracks.CountAsync());
+        Assert.Empty(await db.AppliedIdentifications.ToListAsync());
+    }
+
+    [Fact]
+    public async Task Re_identification_keeps_a_manual_confirmation_and_the_history_of_earlier_attempts()
+    {
+        _identities["a.mp3"] = () => Identified("Song", "Artist");
+        var id = await AddFileAsync("a.mp3");
+        await RunAsync(executionId: "1");
+        var manual = await AddTrackAsync("Chosen", "Person");
+        using (var db = CreateDb())
+            await new ManualIdentification(db, TimeProvider.System).ApplyAsync(id, manual, CancellationToken.None);
+
+        var summary = await RunAsync(executionId: "2", reIdentifyAll: true);
+
+        Assert.Equal(1, summary.Differing);
+        Assert.Equal(IdentificationDecision.Identified, Assert.Single(await OutcomesAsync("1")).Decision);
+        Assert.Equal(IdentificationDecision.Differs, Assert.Single(await OutcomesAsync("2")).Decision);
+        using var check = CreateDb();
+        Assert.Equal(manual, (await check.Files.SingleAsync(f => f.Id == id)).TrackId);
+        Assert.Equal(
+            [IdentificationSource.Automatic, IdentificationSource.Manual],
+            (await check.AppliedIdentifications.OrderBy(a => a.Id).ToListAsync()).Select(a => a.Source));
+    }
+
+    [Fact]
+    public async Task Re_identification_records_an_unresolved_linked_file_without_unlinking_it()
+    {
+        var track = await AddTrackAsync("Song", "Artist");
+        _identities["a.mp3"] = () => Unresolved("nothing", Method("musicbrainz", IdentificationMethodStatus.NothingFound));
+        var id = await AddFileAsync("a.mp3", trackId: track);
+
+        var summary = await RunAsync(executionId: "1", reIdentifyAll: true);
+
+        Assert.Equal(new CatalogReconciliationSummary(1, 0, 0, 1, 0, 0), summary);
+        Assert.Equal(IdentificationDecision.NoMatch, Assert.Single(await OutcomesAsync("1")).Decision);
+        using var db = CreateDb();
+        Assert.Equal(track, (await db.Files.SingleAsync(f => f.Id == id)).TrackId);
+    }
+
+    [Fact]
+    public async Task Re_identification_still_links_unlinked_files_and_a_repeat_changes_nothing()
+    {
+        _identities["a.mp3"] = () => Identified("Song", "Artist");
+        _identities["x.mp3"] = () => Unresolved("not sure");
+        await AddFileAsync("a.mp3");
+        await AddFileAsync("x.mp3");
+
+        var first = await RunAsync(reIdentifyAll: true);
+        var second = await RunAsync(reIdentifyAll: true);
+
+        Assert.Equal(new CatalogReconciliationSummary(2, 1, 1, 1, 0, 0), first);
+        Assert.Equal(new CatalogReconciliationSummary(2, 0, 0, 1, 0, 0, Confirmed: 1), second);
+        using var db = CreateDb();
+        Assert.Equal(1, await db.Tracks.CountAsync());
+        Assert.Equal(1, await db.AppliedIdentifications.CountAsync());
     }
 
     [Fact]

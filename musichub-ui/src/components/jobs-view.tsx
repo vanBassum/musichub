@@ -5,6 +5,7 @@ import { IdentificationOutcomes } from "@/components/identification-outcomes"
 import { MissingMusicResults } from "@/components/missing-music-results"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { Checkbox } from "@/components/ui/checkbox"
 import {
   Select,
   SelectContent,
@@ -14,7 +15,12 @@ import {
 } from "@/components/ui/select"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import type { JobExecution, JobSchedule, JobTask } from "@/lib/jobs-api"
+import {
+  catalogReconciliationTaskId,
+  type JobExecution,
+  type JobSchedule,
+  type JobTask,
+} from "@/lib/jobs-api"
 import { formatElapsed } from "@/lib/format"
 import {
   executionVersion,
@@ -122,6 +128,8 @@ function TaskCard({
   start: JobsState["start"]
 }) {
   const running = starting === task.id || task.activeExecutionId !== null
+  const [reIdentifyAll, setReIdentifyAll] = useState(false)
+  const hasReIdentifyOption = task.id === catalogReconciliationTaskId
   return (
     <li className="flex items-start gap-3 rounded-xl border border-primary bg-card p-4">
       <span className="rounded-lg bg-primary/10 p-2 text-primary">
@@ -133,6 +141,23 @@ function TaskCard({
           <p className="text-sm text-muted-foreground">{task.description}</p>
         </div>
         <ScheduleLine schedule={task.schedule} />
+        {hasReIdentifyOption && (
+          <label className="flex items-start gap-2 text-sm">
+            <Checkbox
+              checked={reIdentifyAll}
+              onCheckedChange={setReIdentifyAll}
+              disabled={running}
+              className="mt-0.5"
+            />
+            <span>
+              Re-identify all files
+              <span className="block text-muted-foreground">
+                Also identifies files that are already linked. Their links are never changed;
+                a different result is only recorded for review.
+              </span>
+            </span>
+          </label>
+        )}
         <div className="flex flex-wrap items-center justify-between gap-2">
           <p className="flex items-center gap-2 text-sm">
             <span
@@ -141,7 +166,7 @@ function TaskCard({
             {running ? "Running" : "Available"}
           </p>
           <Button
-            onClick={() => start(task.id)}
+            onClick={() => start(task.id, hasReIdentifyOption ? { reIdentifyAll } : undefined)}
             disabled={running || starting !== null}
           >
             <Play data-icon="inline-start" />

@@ -41,14 +41,15 @@ public sealed class JobService(JobEngine engine, JobSchedule schedule)
     public bool IsReady => engine.IsReady;
 
     /// <summary>Enqueues a run of <paramref name="kind"/> unless one is active. Returns the new execution id, or null when a run is already active.</summary>
-    public async Task<string?> TryStartAsync(JobKind kind, CancellationToken cancellationToken)
+    /// <param name="options">What the start chooses; null for the defaults, as a scheduled run starts.</param>
+    public async Task<string?> TryStartAsync(JobKind kind, CancellationToken cancellationToken, JobStartOptions? options = null)
     {
         await StartLock.WaitAsync(cancellationToken);
         try
         {
             if (await ActiveExecutionIdAsync(kind, cancellationToken) is not null)
                 return null;
-            return kind.Enqueue(await engine.ClientAsync(cancellationToken));
+            return kind.Enqueue(await engine.ClientAsync(cancellationToken), options ?? new JobStartOptions());
         }
         finally
         {
