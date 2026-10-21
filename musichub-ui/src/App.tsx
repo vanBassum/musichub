@@ -19,6 +19,7 @@ import { SettingsView } from "@/components/settings-view"
 import { TrackDetailsSheet } from "@/components/track-details-sheet"
 import { TrackTable } from "@/components/track-table"
 import {
+  artistBackLabel,
   openArtist,
   parseArtistHash,
   type ArtistSource,
@@ -200,7 +201,7 @@ export function App() {
             <ArtistPage
               key={hash}
               artistRef={artist.ref}
-              backLabel={artist.source === "library" ? "Library" : "Search"}
+              backLabel={artistBackLabel[artist.source]}
               onBack={() => navigate(artist.source)}
               className="min-h-0"
             />

@@ -3,6 +3,12 @@ import type { ArtistRef } from "@/lib/artist"
 // Where an artist page was opened from; Back returns there.
 export type ArtistSource = "search" | "library"
 
+// The label of the Back button on an artist page opened from `source`.
+export const artistBackLabel: Record<ArtistSource, string> = {
+  search: "Search",
+  library: "Library",
+}
+
 export interface ArtistRoute {
   ref: ArtistRef
   source: ArtistSource

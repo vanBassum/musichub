@@ -29,7 +29,11 @@ import {
   SheetTrigger,
 } from "@/components/ui/sheet"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { openArtist, parseArtistHash } from "@/lib/artist-route"
+import {
+  artistBackLabel,
+  openArtist,
+  parseArtistHash,
+} from "@/lib/artist-route"
 import type { DownloadQueueState } from "@/lib/use-download-queue"
 import type { FilesState } from "@/lib/use-files"
 import type { JobsState } from "@/lib/use-jobs"
@@ -152,7 +156,7 @@ export function MobileShell({
           <ArtistPage
             key={hash}
             artistRef={artist.ref}
-            backLabel={artist.source === "library" ? "Library" : "Search"}
+            backLabel={artistBackLabel[artist.source]}
             onBack={backFromArtist}
             className="flex-1"
           />
