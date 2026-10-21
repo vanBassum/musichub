@@ -86,6 +86,18 @@ export interface JobExecution {
   kind: string
   // How many items the run set out to go through, when its job says so while it runs.
   total: number | null
+  // Whether the run has waited in the queue or processed for too long.
+  stuck: boolean
+}
+
+// Which executions the history lists; the values are the `state` query of GET /api/jobs/executions.
+export const jobFilters = ["all", "failed", "stuck"] as const
+export type JobFilter = (typeof jobFilters)[number]
+
+// A page of the history; `total` counts every execution that matches the filter, not only this page.
+export interface JobExecutionPage {
+  items: JobExecution[]
+  total: number
 }
 
 export interface JobStateEntry {
@@ -197,8 +209,17 @@ export async function getJson<T>(url: string, what: string, signal?: AbortSignal
 export const listJobs = (signal?: AbortSignal) =>
   getJson<JobTask[]>("/api/jobs", "The task list", signal)
 
-export const listExecutions = (signal?: AbortSignal) =>
-  getJson<JobExecution[]>("/api/jobs/executions", "The executions", signal)
+// The newest `take` executions that match `filter` (the API caps a page at 100).
+export const listExecutions = (
+  filter: JobFilter,
+  take: number,
+  signal?: AbortSignal
+) =>
+  getJson<JobExecutionPage>(
+    `/api/jobs/executions?${new URLSearchParams({ state: filter, take: String(take) })}`,
+    "The executions",
+    signal
+  )
 
 export const getExecution = (id: string, signal?: AbortSignal) =>
   getJson<JobExecutionDetails>(

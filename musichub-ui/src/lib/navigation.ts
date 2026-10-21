@@ -1,5 +1,6 @@
 import { Download, Library, Music, Search, Settings } from "lucide-react"
 
+import { jobFilters, type JobFilter } from "@/lib/jobs-api"
 import {
   formatSettingsHash,
   parseSettingsSection,
@@ -124,6 +125,23 @@ export function formatSearchHash(query: string): string {
 // entry.
 export function syncSearchHash(query: string) {
   window.history.replaceState(null, "", formatSearchHash(query))
+}
+
+// A Jobs history deep link is `#/settings/jobs?state=failed` (or `stuck`); anything else lists all runs.
+export function parseJobsFilter(hash: string): JobFilter {
+  const location = parseLocation(hash)
+  if (location.tab !== "settings" || location.screen !== "jobs") return "all"
+  const state = new URLSearchParams(hash.split("?")[1] ?? "").get("state")
+  return jobFilters.find((filter) => filter === state) ?? "all"
+}
+
+export function formatJobsHash(filter: JobFilter): string {
+  return withQuery(formatSettingsHash("jobs"), "state", filter)
+}
+
+// Keeps the hash in step with the history filter while Jobs shows, without a history entry.
+export function syncJobsHash(filter: JobFilter) {
+  window.history.replaceState(null, "", formatJobsHash(filter))
 }
 
 // `searchQuery` is the term Search reopens with. Library and Downloads carry their
