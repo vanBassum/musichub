@@ -211,9 +211,18 @@ public sealed class CatalogReconciliation(
             var track = await FindTrackAsync(identity, cancellationToken);
             if (previousTrackId is not null && track?.Id == previousTrackId)
                 return Retain(attempt, previousTrackId.Value, $"Identified again as its track \"{track.Title}\"; the link stays.");
-            if (previousTrackId is not null && await IsManuallyLinkedAsync(fileId, cancellationToken))
-                return Retain(attempt, previousTrackId.Value,
-                    $"Identified as \"{identity.Title}\" by {string.Join(", ", identity.Artists)}, which contradicts the identity a person confirmed; the confirmed link stays.");
+            if (previousTrackId is not null && await LatestAppliedAsync(fileId, cancellationToken) is { } applied)
+            {
+                var named = $"\"{identity.Title}\" by {string.Join(", ", identity.Artists)}";
+                if (applied.Source == IdentificationSource.Manual)
+                    return Retain(attempt, previousTrackId.Value,
+                        $"Identified as {named}, which contradicts the identity a person confirmed; the confirmed link stays.");
+                var existing = EvidenceStrength(applied.Attempt?.ReadMethods() ?? []);
+                var proposed = EvidenceStrength(attempt.Methods);
+                if (proposed <= existing)
+                    return Retain(attempt, previousTrackId.Value,
+                        $"Identified as {named}, but with evidence from {proposed} source(s) against {existing} behind the automatic link; the link stays.");
+            }
 
             attempt.CreatedTrack = track is null;
             var linkEvidence = $"Credited with this identifier on a recording identified from: {evidence}";
@@ -265,13 +274,19 @@ public sealed class CatalogReconciliation(
         return Outcome.Retained;
     }
 
-    // A person's confirmation is the file's latest applied identification; automation never replaces it.
-    private Task<bool> IsManuallyLinkedAsync(int fileId, CancellationToken cancellationToken) =>
+    // The file's latest applied identification: a person's confirmation is authoritative, an automatic one carries the
+    // evidence it was decided on.
+    private Task<AppliedIdentification?> LatestAppliedAsync(int fileId, CancellationToken cancellationToken) =>
         db.AppliedIdentifications.AsNoTracking()
+            .Include(a => a.Attempt)
             .Where(a => a.FileId == fileId)
             .OrderByDescending(a => a.Id)
-            .Select(a => a.Source == IdentificationSource.Manual)
             .FirstOrDefaultAsync(cancellationToken);
+
+    // Evidence strength: how many independent identification methods suggested candidates. An automatic link is
+    // replaced only by an identification with evidence from more of them; a link without recorded evidence counts for nothing.
+    private static int EvidenceStrength(IReadOnlyList<IdentificationMethodResult> methods) =>
+        methods.Count(m => m.Status == IdentificationMethodStatus.Found);
 
     private Outcome SkipEligibility(int fileId, Attempt attempt)
     {
