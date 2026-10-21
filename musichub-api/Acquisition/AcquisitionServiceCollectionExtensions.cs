@@ -7,8 +7,8 @@ public static class AcquisitionServiceCollectionExtensions
 {
     /// <summary>
     /// Registers <see cref="AcquisitionHandoff"/>, the missing-music search and, when <c>Slskd__BaseUrl</c> is configured,
-    /// slskd as the <see cref="IAcquisitionProvider"/> with <see cref="TrackAcquisition"/>. Without a provider nothing can
-    /// acquire; nothing runs by itself either: the provider only works when a caller asks it to.
+    /// slskd as the <see cref="IAcquisitionProvider"/> with <see cref="TrackAcquisition"/> and the
+    /// <see cref="DownloadWorker"/> that works off the download queue. Without a provider nothing can acquire.
     /// </summary>
     public static IServiceCollection AddAcquisition(this IServiceCollection services, IConfiguration configuration)
     {
@@ -25,6 +25,10 @@ public static class AcquisitionServiceCollectionExtensions
 
         // Acquiring a track needs a provider, so it exists only with one.
         services.AddScoped<TrackAcquisition>();
+        // The queue only gets worked off with a provider: without one requests wait.
+        services.Configure<DownloadWorkerOptions>(configuration.GetSection(DownloadWorkerOptions.SectionName));
+        services.AddScoped<DownloadProcessor>();
+        services.AddHostedService<DownloadWorker>();
         // Each request and each wait applies its own configured timeout, so the client's is switched off.
         services.AddHttpClient<IAcquisitionProvider, SlskdAcquisitionProvider>((sp, client) =>
         {

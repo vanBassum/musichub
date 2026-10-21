@@ -118,4 +118,13 @@ public interface IAcquisitionProvider
 
     /// <summary>Downloads the candidate within the provider's bound. Failures are returned, not thrown.</summary>
     Task<AcquisitionDownloadOutcome> DownloadAsync(AcquisitionCandidate candidate, CancellationToken ct);
+
+    /// <summary>
+    /// Like <see cref="DownloadAsync"/>, for a download that may already be under way at the provider (after a restart):
+    /// it follows that transfer instead of starting another, calls <paramref name="reportProgress"/> with the bytes
+    /// received so far, and, when cancelled, leaves the transfer at the provider so a later call can follow it again.
+    /// It never removes a transfer or a file it did not start.
+    /// </summary>
+    Task<AcquisitionDownloadOutcome> ResumeDownloadAsync(
+        AcquisitionCandidate candidate, Func<long, Task> reportProgress, CancellationToken ct);
 }
