@@ -1,7 +1,5 @@
 import { useSyncExternalStore } from "react"
 
-import { desktopMinRem } from "@/lib/layout"
-
 export function useMediaQuery(query: string) {
   return useSyncExternalStore(
     (onChange) => {
@@ -16,5 +14,5 @@ export function useMediaQuery(query: string) {
 
 // Matches Tailwind's `lg` breakpoint, where the desktop grid takes over.
 export function useIsDesktop() {
-  return useMediaQuery(`(min-width: ${desktopMinRem}rem)`)
+  return useMediaQuery("(min-width: 64rem)")
 }
