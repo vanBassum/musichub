@@ -1,3 +1,4 @@
+import { ArtistLinks } from "@/components/artist-links"
 import { AudioBadge } from "@/components/audio-badge"
 import { TrackPlayControl } from "@/components/track-play-control"
 import {
@@ -14,12 +15,14 @@ interface TrackDetailsSheetProps {
   // The selected track; null closes the sheet.
   trackId: number | null
   onClose: () => void
+  onSelectArtist: (artistId: number) => void
 }
 
 // Details of the selected catalog track, read from GET /api/tracks/{id}.
 export function TrackDetailsSheet({
   trackId,
   onClose,
+  onSelectArtist,
 }: TrackDetailsSheetProps) {
   const track = useTrack(trackId)
 
@@ -70,7 +73,10 @@ export function TrackDetailsSheet({
                     <ul>
                       {track.data.artists.map((artist) => (
                         <li key={artist.artistId}>
-                          {artist.name}
+                          <ArtistLinks
+                            artists={[artist]}
+                            onSelect={onSelectArtist}
+                          />
                           {artist.role && (
                             <span className="text-muted-foreground">
                               {" "}

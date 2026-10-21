@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 
 import { AppHeader, type AppView } from "@/components/app-header"
 import { ArtistPage } from "@/components/artist-page"
@@ -17,12 +17,17 @@ import { ProblemsView } from "@/components/problems-view"
 import { SearchPage } from "@/components/search-page"
 import { TrackDetailsSheet } from "@/components/track-details-sheet"
 import { TrackTable } from "@/components/track-table"
-import type { ArtistRef } from "@/lib/artist"
+import {
+  openArtist,
+  parseArtistHash,
+  type ArtistSource,
+} from "@/lib/artist-route"
 import type { AudioFilter } from "@/lib/catalog-api"
 import { useTracks } from "@/lib/use-catalog"
 import { useDownloadQueue } from "@/lib/use-download-queue"
 import { useFiles } from "@/lib/use-files"
 import { useJobs } from "@/lib/use-jobs"
+import { useHash } from "@/lib/use-hash"
 import { useIsDesktop } from "@/lib/use-media-query"
 import { useProblems } from "@/lib/use-problems"
 
@@ -30,6 +35,8 @@ const searchDelayMs = 300
 
 export function App() {
   const [selectedId, setSelectedId] = useState<number | null>(null)
+  // Which page the selected track was opened from; its artists' pages return there.
+  const [selectedSource, setSelectedSource] = useState<ArtistSource>("library")
   const [view, setView] = useState<AppView>(
     isSearchHash(window.location.hash) ? "search" : "library"
   )
@@ -37,8 +44,11 @@ export function App() {
   const [searchQuery, setSearchQuery] = useState(() =>
     parseSearchQuery(window.location.hash)
   )
-  // The artist page shows this artist, found by a local or an external search.
-  const [artistRef, setArtistRef] = useState<ArtistRef | null>(null)
+  // The artist page is a contextual location in the hash (#/artist/...), opened from
+  // Search or the Library; it shows over the view it came from.
+  const hash = useHash()
+  const artist = useMemo(() => parseArtistHash(hash), [hash])
+  const artistOpen = artist !== null
   // What the box shows now, and the term sent to the API once typing pauses.
   const [searchInput, setSearchInput] = useState("")
   const [search, setSearch] = useState("")
@@ -65,15 +75,17 @@ export function App() {
   // reloaded. Updated once typing pauses; Safari limits how often it may change.
   useEffect(() => {
     const timer = setTimeout(
-      () => syncSearchHash(searchQuery, isDesktop, view === "search"),
+      () =>
+        syncSearchHash(searchQuery, isDesktop, view === "search" && !artistOpen),
       searchDelayMs
     )
     return () => clearTimeout(timer)
-  }, [isDesktop, view, searchQuery])
+  }, [isDesktop, view, artistOpen, searchQuery])
 
-  const openArtist =(artist: ArtistRef) => {
-    setArtistRef(artist)
-    setView("artists")
+  // Leaves the artist page (its hash) for a view; Search then writes its own hash.
+  const navigate = (next: AppView) => {
+    setView(next)
+    if (artist) window.location.hash = ""
   }
 
   const openExecution = (executionId: string) => {
@@ -96,6 +108,12 @@ export function App() {
     />
   )
 
+  const selectTrack = (id: number, source: ArtistSource) => {
+    setSelectedSource(source)
+    setSelectedId(id)
+  }
+  const selectSearchTrack = (id: number) => selectTrack(id, "search")
+
   const table = (showHeader: boolean) => (
     <TrackTable
       showHeader={showHeader}
@@ -106,7 +124,10 @@ export function App() {
       onPageChange={setPage}
       filtered={search !== "" || audio !== "all"}
       selectedId={selectedId}
-      onSelect={setSelectedId}
+      onSelect={(id) => selectTrack(id, "library")}
+      onSelectArtist={(id) =>
+        openArtist({ ref: { kind: "local", id }, source: "library" })
+      }
     />
   )
 
@@ -114,6 +135,10 @@ export function App() {
     <TrackDetailsSheet
       trackId={selectedId}
       onClose={() => setSelectedId(null)}
+      onSelectArtist={(id) => {
+        setSelectedId(null)
+        openArtist({ ref: { kind: "local", id }, source: selectedSource })
+      }}
     />
   )
 
@@ -131,11 +156,9 @@ export function App() {
           jobsState={jobsState}
           downloadsState={downloadsState}
           problemsState={problemsState}
-          artistRef={artistRef}
           searchQuery={searchQuery}
           onSearchQueryChange={setSearchQuery}
-          onSelectTrack={setSelectedId}
-          onSelectArtist={setArtistRef}
+          onSelectTrack={selectSearchTrack}
         />
         {details}
       </>
@@ -144,8 +167,8 @@ export function App() {
 
   return (
     <div className="flex min-h-svh flex-col lg:h-svh">
-      <AppHeader view={view} onNavigate={setView} />
-      {view === "library" ? (
+      <AppHeader view={artist ? artist.source : view} onNavigate={navigate} />
+      {view === "library" && !artist ? (
         <main className="grid min-h-0 flex-1 gap-4 p-4 lg:grid-rows-[minmax(0,1fr)] lg:grid-cols-[15rem_minmax(0,1fr)_20rem] xl:grid-cols-[17rem_minmax(0,1fr)_24rem]">
           {filters()}
           {table(true)}
@@ -154,12 +177,20 @@ export function App() {
       ) : (
         // The player stays docked beside every view, so playback can be controlled anywhere.
         <main className="grid min-h-0 flex-1 gap-4 p-4 lg:grid-rows-[minmax(0,1fr)] lg:grid-cols-[minmax(0,1fr)_20rem] xl:grid-cols-[minmax(0,1fr)_24rem]">
-          {view === "search" ? (
+          {artist ? (
+            <ArtistPage
+              key={hash}
+              artistRef={artist.ref}
+              backLabel={artist.source === "library" ? "Library" : "Search"}
+              onBack={() => navigate(artist.source)}
+              className="min-h-0"
+            />
+          ) : view === "search" ? (
             <SearchPage
               query={searchQuery}
               onQueryChange={setSearchQuery}
-              onSelectTrack={setSelectedId}
-              onSelectArtist={openArtist}
+              onSelectTrack={selectSearchTrack}
+              onSelectArtist={(ref) => openArtist({ ref, source: "search" })}
               autoFocus
               className="min-h-0"
             />
@@ -169,14 +200,12 @@ export function App() {
             <JobsView state={jobsState} className="min-h-0" />
           ) : view === "downloads" ? (
             <DownloadsView state={downloadsState} className="min-h-0" />
-          ) : view === "problems" ? (
+          ) : (
             <ProblemsView
               state={problemsState}
               onOpenExecution={openExecution}
               className="min-h-0"
             />
-          ) : (
-            <ArtistPage artistRef={artistRef} className="min-h-0" />
           )}
           <PlayerPanel />
         </main>

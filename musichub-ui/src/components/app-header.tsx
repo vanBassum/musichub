@@ -8,13 +8,12 @@ import {
   Search,
   Settings,
   TriangleAlert,
-  UserRound,
 } from "lucide-react"
 
 import { BuildInfoSheet } from "@/components/build-info-sheet"
 import { Button } from "@/components/ui/button"
 
-export type AppView = "search" | "library" | "files" | "artists" | "jobs" | "downloads" | "problems"
+export type AppView = "search" | "library" | "files" | "jobs" | "downloads" | "problems"
 
 interface AppHeaderProps {
   view: AppView
@@ -64,16 +63,6 @@ export function AppHeader({ view, onNavigate }: AppHeaderProps) {
         <Button variant="ghost" size="lg" disabled title="Not available yet">
           <ListMusic data-icon="inline-start" />
           Playlists
-        </Button>
-        <Button
-          variant={view === "artists" ? "secondary" : "ghost"}
-          size="lg"
-          aria-current={view === "artists" ? "page" : undefined}
-          className={view === "artists" ? activeClassName : undefined}
-          onClick={() => onNavigate("artists")}
-        >
-          <UserRound data-icon="inline-start" />
-          Artists
         </Button>
         <Button
           variant={view === "jobs" ? "secondary" : "ghost"}

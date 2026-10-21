@@ -1,5 +1,5 @@
 import { ChevronLeft, ChevronRight, SlidersHorizontal } from "lucide-react"
-import { useMemo, useSyncExternalStore, type ReactNode } from "react"
+import { useMemo, type ReactNode } from "react"
 
 import { ArtistPage } from "@/components/artist-page"
 import { BuildInfoSheet } from "@/components/build-info-sheet"
@@ -29,11 +29,12 @@ import {
   SheetTrigger,
 } from "@/components/ui/sheet"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import type { ArtistRef } from "@/lib/artist"
+import { openArtist, parseArtistHash } from "@/lib/artist-route"
 import type { DownloadQueueState } from "@/lib/use-download-queue"
 import type { FilesState } from "@/lib/use-files"
 import type { JobsState } from "@/lib/use-jobs"
 import type { ProblemsState } from "@/lib/use-problems"
+import { useHash } from "@/lib/use-hash"
 import { cn } from "@/lib/utils"
 
 interface MobileShellProps {
@@ -45,21 +46,12 @@ interface MobileShellProps {
   jobsState: JobsState
   downloadsState: DownloadQueueState
   problemsState: ProblemsState
-  artistRef: ArtistRef | null
   searchQuery: string
   onSearchQueryChange: (query: string) => void
   onSelectTrack: (trackId: number) => void
-  onSelectArtist: (artist: ArtistRef) => void
 }
 
 const pageClassName = "flex min-h-0 flex-1 flex-col overflow-hidden"
-
-function subscribe(onChange: () => void) {
-  window.addEventListener("hashchange", onChange)
-  return () => window.removeEventListener("hashchange", onChange)
-}
-
-const getHash = () => window.location.hash
 
 function go(location: MobileLocation) {
   window.location.hash = formatLocation(location)
@@ -91,8 +83,9 @@ function Page({
 }
 
 // Below `lg` the phone has three destinations: Search, Player (Now Playing and
-// Queue) and More (Library, Files, Jobs, Artists). The location is the URL hash.
-// Outside the Player page a compact player sits above the navigation.
+// Queue) and More (Library, Files, Jobs, Downloads, Problems). An artist page opens
+// from Search or the Library and shows over the tab it came from. The location is the
+// URL hash. Outside the Player page a compact player sits above the navigation.
 export function MobileShell({
   total,
   filters,
@@ -101,15 +94,20 @@ export function MobileShell({
   jobsState,
   downloadsState,
   problemsState,
-  artistRef,
   searchQuery,
   onSearchQueryChange,
   onSelectTrack,
-  onSelectArtist,
 }: MobileShellProps) {
-  const hash = useSyncExternalStore(subscribe, getHash)
+  const hash = useHash()
   const location = useMemo(() => parseLocation(hash), [hash])
-  const { tab, screen, playerView } = location
+  const artist = useMemo(() => parseArtistHash(hash), [hash])
+  const { screen, playerView } = location
+  // An artist page counts as part of the tab it was opened from.
+  const tab: MobileTabId = artist
+    ? artist.source === "library"
+      ? "more"
+      : "search"
+    : location.tab
 
   const navigate = (id: MobileTabId) => {
     if (id === "search") openSearchHash(searchQuery)
@@ -121,22 +119,39 @@ export function MobileShell({
     jobsState.select(executionId)
     openScreen("jobs")
   }
-  const showMore =(id: MoreScreenId) => tab === "more" && screen === id
+  const showMore = (id: MoreScreenId) =>
+    !artist && tab === "more" && screen === id
+  const backFromArtist = () => {
+    if (artist?.source === "library") openScreen("library")
+    else openSearchHash(searchQuery)
+  }
 
   return (
     <div className="flex h-dvh flex-col overflow-hidden">
-      <Page show={tab === "search"} label="Search" className="gap-2 p-2">
+      <Page
+        show={!artist && tab === "search"}
+        label="Search"
+        className="gap-2 p-2"
+      >
         <SearchPage
           query={searchQuery}
           onQueryChange={onSearchQueryChange}
           onSelectTrack={onSelectTrack}
-          onSelectArtist={(artist) => {
-            onSelectArtist(artist)
-            openScreen("artists")
-          }}
+          onSelectArtist={(ref) => openArtist({ ref, source: "search" })}
           className="flex-1"
         />
       </Page>
+      {artist && (
+        <Page show label="Artist" className="p-2">
+          <ArtistPage
+            key={hash}
+            artistRef={artist.ref}
+            backLabel={artist.source === "library" ? "Library" : "Search"}
+            onBack={backFromArtist}
+            className="flex-1"
+          />
+        </Page>
+      )}
       <Page show={tab === "player"} label="Player">
         <Tabs
           value={playerView}
@@ -163,7 +178,7 @@ export function MobileShell({
         </div>
       </Page>
       <Page
-        show={tab === "more" && screen === null}
+        show={!artist && tab === "more" && screen === null}
         label="More"
         className="gap-3 p-3"
       >
@@ -238,7 +253,6 @@ export function MobileShell({
               className="flex-1"
             />
           )}
-          {id === "artists" && <ArtistPage artistRef={artistRef} className="flex-1" />}
         </Page>
       ))}
       {tab !== "player" && (

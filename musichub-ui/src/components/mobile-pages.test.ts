@@ -6,6 +6,15 @@ import {
   parseSearchQuery,
 } from "@/components/mobile-pages"
 
+describe("removed Artists screen", () => {
+  it("opens Search for the old #/more/artists link", () => {
+    expect(parseLocation("#/more/artists")).toMatchObject({
+      tab: "search",
+      screen: null,
+    })
+  })
+})
+
 describe("search deep link", () => {
   it("round-trips a term", () => {
     const hash = formatSearchHash(" Björk & Co ")
