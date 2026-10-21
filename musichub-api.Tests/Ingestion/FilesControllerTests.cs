@@ -22,6 +22,7 @@ public class FilesControllerTests
             new FileIngestionService(db, storage, new ActiveUploadTracker()),
             new FileDeletionService(db, storage, new ActiveUploadTracker(),
                 Microsoft.Extensions.Logging.Abstractions.NullLogger<FileDeletionService>.Instance),
+            new FileListing(db),
             Options.Create(new FileIngestionOptions()))
         {
             ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext() },
@@ -98,10 +99,11 @@ public class FilesControllerTests
         var controller = CreateController(db, new FakeFileStorage(), [1, 2]);
         await controller.Upload("a.mp3", 3, Sha256Hex([1, 2, 3]), CancellationToken.None);
 
-        var result = Assert.IsType<OkObjectResult>(await controller.List(CancellationToken.None));
+        var result = Assert.IsType<OkObjectResult>(await controller.List(null, null));
 
-        var item = Assert.Single(Assert.IsAssignableFrom<IEnumerable<FileListItem>>(result.Value));
+        var item = Assert.Single(Assert.IsType<FileListResponse>(result.Value).Items);
         Assert.Equal("Failed", item.Status);
+        Assert.Null(item.Identification);
         Assert.Equal("Incomplete", item.FailureReason);
         Assert.False(string.IsNullOrWhiteSpace(item.StatusDetail));
     }
@@ -152,9 +154,9 @@ public class FilesControllerTests
         await db.SaveChangesAsync();
         var controller = CreateController(db, new FakeFileStorage());
 
-        var result = Assert.IsType<OkObjectResult>(await controller.List(CancellationToken.None));
+        var result = Assert.IsType<OkObjectResult>(await controller.List(null, null));
 
-        var items = Assert.IsAssignableFrom<IEnumerable<FileListItem>>(result.Value).ToList();
+        var items = Assert.IsType<FileListResponse>(result.Value).Items.ToList();
         Assert.Equal(["new.mp3", "tie-b.mp3", "tie-a.mp3", "old.mp3"], items.Select(i => i.OriginalFilename));
         Assert.Equal(["Pending", "Uploading", "Failed", "Stored"], items.Select(i => i.Status));
         Assert.Equal(t.AddMinutes(2), items[0].StartedAt);
@@ -165,7 +167,7 @@ public class FilesControllerTests
     public void ListItem_ExposesNeitherStorageKeyNorContentHash()
     {
         Assert.Equal(
-            ["DeletionError", "FailureReason", "Id", "OriginalFilename", "SizeBytes", "StartedAt", "Status", "StatusDetail"],
+            ["DeletionError", "FailureReason", "Id", "Identification", "OriginalFilename", "SizeBytes", "StartedAt", "Status", "StatusDetail"],
             typeof(FileListItem).GetProperties().Select(p => p.Name).Order());
     }
 
@@ -180,8 +182,8 @@ public class FilesControllerTests
 
         Assert.IsType<NoContentResult>(await controller.Delete(record.Id, CancellationToken.None));
 
-        var list = Assert.IsType<OkObjectResult>(await controller.List(CancellationToken.None));
-        Assert.Empty(Assert.IsAssignableFrom<IEnumerable<FileListItem>>(list.Value));
+        var list = Assert.IsType<OkObjectResult>(await controller.List(null, null));
+        Assert.Empty(Assert.IsType<FileListResponse>(list.Value).Items);
         Assert.False(await storage.ExistsAsync(record.StorageKey, CancellationToken.None));
     }
 
