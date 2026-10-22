@@ -540,7 +540,7 @@ public sealed class CatalogReconciliationTests : IDisposable
     }
 
     [Fact]
-    public async Task Re_identification_replaces_an_automatic_link_when_the_identification_justifies_another_track()
+    public async Task Re_identification_keeps_an_automatic_link_when_the_identification_names_another_track_and_records_it()
     {
         _identities["a.mp3"] = () => Identified("Song", "Artist");
         var id = await AddFileAsync("a.mp3");
@@ -551,19 +551,18 @@ public sealed class CatalogReconciliationTests : IDisposable
 
         var summary = await RunAsync(executionId: "2", reIdentifyAll: true);
 
-        Assert.Equal(new CatalogReconciliationSummary(1, 0, 1, 0, 0, 0, Replaced: 1), summary);
+        Assert.Equal(new CatalogReconciliationSummary(1, 0, 0, 0, 0, 0, Retained: 1), summary);
         var outcome = Assert.Single(await OutcomesAsync("2"));
-        Assert.Equal(IdentificationDecision.Identified, outcome.Decision);
-        Assert.Contains("replaces the automatic link", outcome.Reason);
+        Assert.Contains("which is not its track", outcome.Reason);
         Assert.Contains("\"\\u0022Another\\u0022 by Someone\"", outcome.MethodsJson);
         Assert.Equal(IdentificationDecision.Identified, Assert.Single(await OutcomesAsync("1")).Decision);
         using var db = CreateDb();
         var file = await db.Files.SingleAsync(f => f.Id == id);
         Assert.Equal(outcome.TrackId, file.TrackId);
-        Assert.Equal("Another", (await db.Tracks.SingleAsync(t => t.Id == file.TrackId)).Title);
-        Assert.Equal(2, await db.Tracks.CountAsync());
+        Assert.Equal("Song", (await db.Tracks.SingleAsync(t => t.Id == file.TrackId)).Title);
+        Assert.Equal(1, await db.Tracks.CountAsync());
         Assert.Equal(
-            [IdentificationSource.Automatic, IdentificationSource.Automatic],
+            [IdentificationSource.Automatic],
             (await db.AppliedIdentifications.OrderBy(a => a.Id).ToListAsync()).Select(a => a.Source));
     }
 
@@ -579,11 +578,10 @@ public sealed class CatalogReconciliationTests : IDisposable
 
         var summary = await RunAsync(executionId: "2", reIdentifyAll: true);
 
-        Assert.Equal((0, 1), (summary.Replaced, summary.Retained));
+        Assert.Equal(1, summary.Retained);
         Assert.Equal(IdentificationDecision.Identified, Assert.Single(await OutcomesAsync("1")).Decision);
         var retained = Assert.Single(await OutcomesAsync("2"));
         Assert.Equal((IdentificationDecision.Identified, (int?)manual), (retained.Decision, retained.TrackId));
-        Assert.Contains("a person confirmed", retained.Reason);
         using var check = CreateDb();
         Assert.Equal(manual, (await check.Files.SingleAsync(f => f.Id == id)).TrackId);
         Assert.Equal(

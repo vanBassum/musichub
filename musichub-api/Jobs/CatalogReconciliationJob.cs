@@ -5,7 +5,7 @@ using MusicHub.Api.Catalog;
 namespace MusicHub.Api.Jobs;
 
 /// <summary>
-/// The Hangfire job that links Stored files without a track to the catalog (and, when asked, identifies the linked ones again; only an automatic link can be replaced). Only one run executes
+/// The Hangfire job that links Stored files without a track to the catalog (and, when asked, identifies the linked ones again without changing their link). Only one run executes
 /// at a time, across instances (Hangfire's distributed lock); a run that cannot get it within the timeout fails and is retried by Hangfire.
 /// Its return value, the summary, is kept as the job's result for as long as Hangfire keeps the execution; the per-file
 /// attempts are permanent and are not pruned with it.
@@ -13,7 +13,7 @@ namespace MusicHub.Api.Jobs;
 public class CatalogReconciliationJob(CatalogReconciliation reconciliation)
 {
     /// <param name="context">Supplied by Hangfire when the job runs; its job id names the execution.</param>
-    /// <param name="reIdentifyAll">Also identify files that already have a track; only an automatic link can be replaced.</param>
+    /// <param name="reIdentifyAll">Also identify files that already have a track; their link is never changed.</param>
     [DisableConcurrentExecution(timeoutInSeconds: 30)]
     public Task<CatalogReconciliationSummary> Run(PerformContext? context, bool reIdentifyAll, CancellationToken cancellationToken) =>
         reconciliation.RunAsync(context?.BackgroundJob.Id, cancellationToken, reIdentifyAll);

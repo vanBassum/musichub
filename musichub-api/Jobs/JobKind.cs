@@ -14,7 +14,7 @@ public sealed record JobKind(
     Func<IBackgroundJobClient, JobStartOptions, string> Enqueue);
 
 /// <summary>What a manual start chooses for a run. A task ignores the options it has no use for.</summary>
-/// <param name="ReIdentifyAll">Synchronize catalog: also identify files that already have a track; an automatic link is replaced only when the identification has stronger evidence for another track, a person's confirmation never.</param>
+/// <param name="ReIdentifyAll">Synchronize catalog: also identify files that already have a track, recording each attempt and never changing their link.</param>
 public sealed record JobStartOptions(bool ReIdentifyAll = false);
 
 public static class JobKinds

@@ -9,15 +9,13 @@ namespace MusicHub.Api.Catalog;
 /// <summary>What one reconciliation run did. Files that stayed unlinked (unresolved or failed) are unchanged.</summary>
 /// <param name="Examined">Files the run attempted: Stored files without a track, and with re-identification all Stored files.</param>
 /// <param name="Linked">Files that had no track and are now linked to one.</param>
-/// <param name="TracksCreated">Of the links and replacements, the tracks that were created for them (the others reused an existing track).</param>
+/// <param name="TracksCreated">Of the links, the tracks that were created for them (the others reused an existing track).</param>
 /// <param name="Unresolved">Unlinked files the identification could not establish an identity for.</param>
 /// <param name="Skipped">Files that were no longer eligible when their turn came (deleted, linked or changed meanwhile).</param>
 /// <param name="Failed">Files whose processing failed (storage, identification or database); they stay as they were.</param>
-/// <param name="Replaced">Linked files whose automatic link was replaced by another track. Only with re-identification.</param>
-/// <param name="Retained">Linked files that kept their link: the identification confirmed it, was inconclusive, or a person had confirmed it. Only with re-identification.</param>
+/// <param name="Retained">Linked files that kept their link, whatever the identification found. Only with re-identification.</param>
 public sealed record CatalogReconciliationSummary(
-    int Examined, int Linked, int TracksCreated, int Unresolved, int Skipped, int Failed,
-    int Replaced = 0, int Retained = 0);
+    int Examined, int Linked, int TracksCreated, int Unresolved, int Skipped, int Failed, int Retained = 0);
 
 /// <summary>
 /// Links MusicHub-managed Stored files that have no catalog track to the catalog, using the existing
@@ -26,10 +24,10 @@ public sealed record CatalogReconciliationSummary(
 /// left exactly as it was. One file's failure never stops the others, and a rerun finds only what is still unlinked, so
 /// it creates no duplicate tracks, artists or links. The proposed identity carries no version, so a track with a
 /// version is never reused for it: versions stay distinct tracks.
-/// With re-identification, files that already have a track go through the same identification and decision as the
-/// others. Their current link stays unless the identification justifies another track, and then only an automatic link
-/// is replaced: a person's confirmation is never changed, an inconclusive result never unlinks a file, and every
-/// attempt is recorded with its evidence.
+/// With re-identification, files that already have a track go through the same identification, but their link is never
+/// changed: the confidence policy cannot compare new evidence with an existing link, so replacing one needs a decision
+/// that is not made yet. Every attempt is recorded with its evidence, and a result that names another track is visible
+/// in the attempt's reason.
 /// </summary>
 public sealed class CatalogReconciliation(
     MusicHubDbContext db,
@@ -45,7 +43,7 @@ public sealed class CatalogReconciliation(
     private readonly ArtistExternalLinks links = new(db, time);
 
     /// <param name="executionId">The Hangfire execution the per-file attempts are recorded under; null when the run is not a job.</param>
-    /// <param name="reIdentifyAll">Also identify files that already have a track; only an automatic link can be replaced.</param>
+    /// <param name="reIdentifyAll">Also identify files that already have a track; their link is never changed.</param>
     public async Task<CatalogReconciliationSummary> RunAsync(
         string? executionId, CancellationToken cancellationToken, bool reIdentifyAll = false)
     {
@@ -59,7 +57,7 @@ public sealed class CatalogReconciliation(
             "Catalog reconciliation started: {Count} stored files {Scope}.",
             ids.Count, reIdentifyAll ? "to identify again, linked or not" : "without a track");
 
-        int linked = 0, created = 0, unresolved = 0, skipped = 0, failed = 0, replaced = 0, retained = 0;
+        int linked = 0, created = 0, unresolved = 0, skipped = 0, failed = 0, retained = 0;
         foreach (var id in ids)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -70,9 +68,6 @@ public sealed class CatalogReconciliation(
                 {
                     case Outcome.Linked:
                         linked++;
-                        break;
-                    case Outcome.Replaced:
-                        replaced++;
                         break;
                     case Outcome.Retained:
                         retained++;
@@ -106,15 +101,15 @@ public sealed class CatalogReconciliation(
         }
 
         var summary = new CatalogReconciliationSummary(
-            ids.Count, linked, created, unresolved, skipped, failed, replaced, retained);
+            ids.Count, linked, created, unresolved, skipped, failed, retained);
         logger.LogInformation(
-            "Catalog reconciliation finished: {Examined} examined, {Linked} linked ({Created} new tracks), {Unresolved} unresolved, {Skipped} skipped, {Failed} failed, {Replaced} replaced, {Retained} retained.",
+            "Catalog reconciliation finished: {Examined} examined, {Linked} linked ({Created} new tracks), {Unresolved} unresolved, {Skipped} skipped, {Failed} failed, {Retained} retained.",
             summary.Examined, summary.Linked, summary.TracksCreated, summary.Unresolved, summary.Skipped, summary.Failed,
-            summary.Replaced, summary.Retained);
+            summary.Retained);
         return summary;
     }
 
-    private enum Outcome { Linked, Replaced, Retained, Unresolved, Skipped }
+    private enum Outcome { Linked, Retained, Unresolved, Skipped }
 
     /// <summary>What one file's attempt turned out to be; filled in as the attempt proceeds, recorded once at the end.</summary>
     private sealed class Attempt
@@ -199,20 +194,18 @@ public sealed class CatalogReconciliation(
             return Outcome.Retained;
         }
 
+        if (file.TrackId is { } linkedTrackId)
+            return await RetainLinkAsync(linkedTrackId, identity, attempt, cancellationToken);
+
         await CatalogLock.WaitAsync(cancellationToken);
         try
         {
-            // Re-read under the lock: the file may have been linked, relinked or deleted while it was being identified.
+            // Re-read under the lock: the file may have been linked or deleted while it was being identified.
             var current = await db.Files.FirstOrDefaultAsync(f => f.Id == fileId, cancellationToken);
-            if (current is not { Status: FileStatus.Stored } || current.TrackId != file.TrackId)
+            if (current is not { Status: FileStatus.Stored, TrackId: null })
                 return SkipEligibility(fileId, attempt);
 
-            var previousTrackId = current.TrackId;
             var track = await FindTrackAsync(identity, cancellationToken);
-            if (previousTrackId is { } linkedTrackId
-                && await RetainReasonAsync(fileId, linkedTrackId, track, identity, attempt.Methods, cancellationToken) is { } retainReason)
-                return Retain(attempt, linkedTrackId, retainReason);
-
             attempt.CreatedTrack = track is null;
             var linkEvidence = $"Credited with this identifier on a recording identified from: {evidence}";
             track ??= await CreateTrackAsync(identity, linkEvidence, cancellationToken);
@@ -226,9 +219,7 @@ public sealed class CatalogReconciliation(
             var kind = attempt.CreatedTrack ? "new" : "existing";
             attempt.Decision = IdentificationDecision.Identified;
             attempt.TrackId = track.Id;
-            attempt.Reason = previousTrackId is null
-                ? $"Linked to {kind} track \"{track.Title}\"."
-                : $"Identified as {kind} track \"{track.Title}\"; it replaces the automatic link to track {previousTrackId}.";
+            attempt.Reason = $"Linked to {kind} track \"{track.Title}\".";
             var outcome = ToOutcome(executionId, fileId, attempt);
             db.IdentificationOutcomes.Add(outcome);
             db.AppliedIdentifications.Add(new AppliedIdentification
@@ -244,9 +235,9 @@ public sealed class CatalogReconciliation(
             attempt.Recorded = true;
 
             logger.LogInformation(
-                "File {FileId} {Action} {Kind} track {TrackId} \"{Title}\" (evidence from: {Evidence}).",
-                fileId, previousTrackId is null ? "linked to" : "relinked to", kind, track.Id, track.Title, evidence);
-            return previousTrackId is null ? Outcome.Linked : Outcome.Replaced;
+                "File {FileId} linked to {Kind} track {TrackId} \"{Title}\" (evidence from: {Evidence}).",
+                fileId, kind, track.Id, track.Title, evidence);
+            return Outcome.Linked;
         }
         finally
         {
@@ -254,50 +245,19 @@ public sealed class CatalogReconciliation(
         }
     }
 
-    // Why an existing link stays instead of being replaced, or null when the new identity may replace it: the same
-    // track, a person's confirmation, or evidence that is not stronger than what the automatic link was decided on.
-    private async Task<string?> RetainReasonAsync(
-        int fileId, int linkedTrackId, Track? track, ProposedRecordingIdentity identity,
-        IReadOnlyList<IdentificationMethodResult> methods, CancellationToken cancellationToken)
+    // A linked file keeps its link. The confidence policy only decides whether one identity is justified; it has no
+    // comparison against an existing link, so a different identity is recorded with its evidence and changes nothing.
+    private async Task<Outcome> RetainLinkAsync(
+        int linkedTrackId, ProposedRecordingIdentity identity, Attempt attempt, CancellationToken cancellationToken)
     {
-        if (track?.Id == linkedTrackId)
-            return $"Identified again as its track \"{track.Title}\"; the link stays.";
-        if (await LatestAppliedAsync(fileId, cancellationToken) is not { } applied)
-            return null;
-
-        var named = $"\"{identity.Title}\" by {string.Join(", ", identity.Artists)}";
-        if (applied.Source == IdentificationSource.Manual)
-            return $"Identified as {named}, which contradicts the identity a person confirmed; the confirmed link stays.";
-
-        var existing = EvidenceStrength(applied.Attempt?.ReadMethods() ?? []);
-        var proposed = EvidenceStrength(methods);
-        return proposed <= existing
-            ? $"Identified as {named}, but with evidence from {proposed} source(s) against {existing} behind the automatic link; the link stays."
-            : null;
-    }
-
-    // The attempt names the identity the engine established and the link that stays; the file does not change.
-    private static Outcome Retain(Attempt attempt, int trackId, string reason)
-    {
+        var track = await FindTrackAsync(identity, cancellationToken);
         attempt.Decision = IdentificationDecision.Identified;
-        attempt.TrackId = trackId;
-        attempt.Reason = reason;
+        attempt.TrackId = linkedTrackId;
+        attempt.Reason = track?.Id == linkedTrackId
+            ? $"Identified again as its track \"{track.Title}\"; the link stays."
+            : $"Identified as \"{identity.Title}\" by {string.Join(", ", identity.Artists)}, which is not its track; the link stays.";
         return Outcome.Retained;
     }
-
-    // The file's latest applied identification: a person's confirmation is authoritative, an automatic one carries the
-    // evidence it was decided on.
-    private Task<AppliedIdentification?> LatestAppliedAsync(int fileId, CancellationToken cancellationToken) =>
-        db.AppliedIdentifications.AsNoTracking()
-            .Include(a => a.Attempt)
-            .Where(a => a.FileId == fileId)
-            .OrderByDescending(a => a.Id)
-            .FirstOrDefaultAsync(cancellationToken);
-
-    // Evidence strength: how many independent identification methods suggested candidates. An automatic link is
-    // replaced only by an identification with evidence from more of them; a link without recorded evidence counts for nothing.
-    private static int EvidenceStrength(IReadOnlyList<IdentificationMethodResult> methods) =>
-        methods.Count(m => m.Status == IdentificationMethodStatus.Found);
 
     private Outcome SkipEligibility(int fileId, Attempt attempt)
     {

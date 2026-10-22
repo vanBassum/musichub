@@ -170,8 +170,8 @@ function TaskCard({
             <span>
               Re-identify all files
               <span className="block text-muted-foreground">
-                Also identifies files that are already linked. An automatic link is only
-                replaced by clearly justified evidence; a link you confirmed never is.
+                Also identifies files that are already linked. Their link is never
+                changed; each attempt is recorded.
               </span>
             </span>
           </label>

@@ -27,11 +27,8 @@ export function summaryHeadline(summary: TaskSummary) {
 
 // Only a run that re-identified linked files has these; they are not shown for a default run.
 function reIdentifiedFacts(summary: JobSummary): [string, string][] {
-  if (summary.replaced + summary.retained === 0) return []
-  return [
-    ["Link replaced", plural(summary.replaced, "file", "files")],
-    ["Link kept", plural(summary.retained, "file", "files")],
-  ]
+  if (summary.retained === 0) return []
+  return [["Link kept", plural(summary.retained, "file", "files")]]
 }
 
 // How many items a Succeeded run could not process.

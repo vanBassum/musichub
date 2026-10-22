@@ -26,9 +26,7 @@ export interface JobSummary {
   unresolved: number
   skipped: number
   failed: number
-  // Re-identification only: linked files whose automatic link was replaced, and those that kept their link
-  // (confirmed again, inconclusive, or confirmed by a person).
-  replaced: number
+  // Re-identification only: linked files, whose link is never changed
   retained: number
 }
 
@@ -250,7 +248,7 @@ export const getDownloads = (id: string, signal?: AbortSignal) =>
   )
 
 // What a manual start chooses. `reIdentifyAll` (Synchronize catalog only) also identifies files that already
-// have a track; only an automatic link can be replaced, never a person's confirmation.
+// have a track; their link is never changed.
 export interface JobStartOptions {
   reIdentifyAll?: boolean
 }
