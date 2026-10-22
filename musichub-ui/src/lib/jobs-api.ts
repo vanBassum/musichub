@@ -26,6 +26,8 @@ export interface JobSummary {
   unresolved: number
   skipped: number
   failed: number
+  // Re-identification only: linked files, whose link is never changed
+  retained: number
 }
 
 export type TrackAcquisitionOutcome =
@@ -112,7 +114,8 @@ export interface JobExecutionDetails {
   errorType: string | null
 }
 
-// How the identification of one file in an execution ended. Only "Identified" links the file.
+// How the identification of one file in an execution ended. "Identified" links the file (or, on a
+// re-identification, keeps the link it has).
 export type IdentificationDecision =
   | "Identified"
   | "NoMatch"
@@ -244,12 +247,22 @@ export const getDownloads = (id: string, signal?: AbortSignal) =>
     signal
   )
 
+// What a manual start chooses. `reIdentifyAll` (Synchronize catalog only) also identifies files that already
+// have a track; their link is never changed.
+export interface JobStartOptions {
+  reIdentifyAll?: boolean
+}
+
+export const catalogReconciliationTaskId = "catalog-reconciliation"
+
 // POST /api/jobs/{taskId}/start: 202 with the new execution; 409 while a run is already active (or, for a search
 // for missing music, while no acquisition provider is configured).
-export async function startJob(taskId: string) {
-  const response = await fetch(`/api/jobs/${encodeURIComponent(taskId)}/start`, {
-    method: "POST",
-  })
+export async function startJob(taskId: string, options: JobStartOptions = {}) {
+  const query = options.reIdentifyAll ? "?reIdentifyAll=true" : ""
+  const response = await fetch(
+    `/api/jobs/${encodeURIComponent(taskId)}/start${query}`,
+    { method: "POST" }
+  )
   if (!response.ok) {
     throw new Error(
       (await problemDetail(response)) ??

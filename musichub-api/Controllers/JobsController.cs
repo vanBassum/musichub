@@ -100,10 +100,15 @@ public class JobsController(JobService jobs, MusicHubDbContext db, IServiceProvi
         return Ok(rows.Select(DownloadItem.From));
     }
 
-    /// <summary>Enqueues a catalog reconciliation run: 202 with the new execution. 409 while a run is already active.</summary>
+    /// <summary>
+    /// Enqueues a catalog reconciliation run: 202 with the new execution. 409 while a run is already active. With
+    /// <paramref name="reIdentifyAll"/> (off by default) the run also identifies files that already have a track; it
+    /// records each attempt and never changes their link.
+    /// </summary>
     [HttpPost("catalog-reconciliation/start")]
-    public Task<IActionResult> StartCatalogReconciliation(CancellationToken cancellationToken) =>
-        StartAsync(JobKinds.CatalogReconciliation, cancellationToken);
+    public Task<IActionResult> StartCatalogReconciliation(
+        CancellationToken cancellationToken, [FromQuery] bool reIdentifyAll = false) =>
+        StartAsync(JobKinds.CatalogReconciliation, cancellationToken, new JobStartOptions(reIdentifyAll));
 
     /// <summary>
     /// Enqueues a Search for Missing Music run: 202 with the new execution. 409 while a run is already active, and
@@ -118,12 +123,12 @@ public class JobsController(JobService jobs, MusicHubDbContext db, IServiceProvi
                 detail: MissingMusicAcquisition.NoProviderMessage,
                 statusCode: StatusCodes.Status409Conflict));
 
-    private async Task<IActionResult> StartAsync(JobKind kind, CancellationToken cancellationToken)
+    private async Task<IActionResult> StartAsync(JobKind kind, CancellationToken cancellationToken, JobStartOptions? options = null)
     {
         if (!jobs.IsReady)
             return JobsUnavailable();
 
-        if (await jobs.TryStartAsync(kind, cancellationToken) is not { } id)
+        if (await jobs.TryStartAsync(kind, cancellationToken, options) is not { } id)
             return Problem(
                 title: $"\"{kind.Name}\" is already running",
                 detail: "A run is waiting or in progress. Wait for it to finish, then start it again.",

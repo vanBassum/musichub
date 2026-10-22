@@ -8,8 +8,8 @@ public enum ManualIdentificationResult { Applied, FileNotFound, TrackNotFound, F
 
 /// <summary>
 /// A person's correction of which track a stored file is. It replaces the file's current link and is recorded as a
-/// <see cref="IdentificationSource.Manual"/> decision in the same save. Automatic reconciliation only looks at files
-/// without a track, so it never replaces a link set here.
+/// <see cref="IdentificationSource.Manual"/> decision in the same save. Automatic reconciliation never replaces a link
+/// whose latest decision is a manual one, not even in a full re-identification.
 /// </summary>
 public sealed class ManualIdentification(MusicHubDbContext db, TimeProvider time)
 {

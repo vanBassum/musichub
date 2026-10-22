@@ -10,7 +10,7 @@ namespace MusicHub.Api.Catalog;
 [JsonConverter(typeof(JsonStringEnumConverter))]
 public enum IdentificationDecision
 {
-    /// <summary>An identity was established and the file was linked to a track.</summary>
+    /// <summary>An identity was established: the file was linked to its track, or, on a re-identification, kept the link it has.</summary>
     Identified,
 
     /// <summary>The tools that ran found nothing.</summary>
@@ -107,7 +107,7 @@ public class IdentificationOutcome
     public IdentificationDecision Decision { get; set; }
     public string Reason { get; set; } = "";
 
-    /// <summary>The track the file was linked to, when <see cref="Decision"/> is Identified.</summary>
+    /// <summary>The track the file was linked to, when <see cref="Decision"/> is Identified (on a re-identification, the track it is linked to afterwards).</summary>
     public int? TrackId { get; set; }
 
     /// <summary>The serialized method results; only <see cref="SetMethods"/> and <see cref="ReadMethods"/> know the format.</summary>

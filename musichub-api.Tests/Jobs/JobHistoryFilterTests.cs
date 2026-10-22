@@ -27,7 +27,7 @@ public class JobHistoryFilterTests
     }
 
     private static string Create(IBackgroundJobClient client, IState state) =>
-        client.Create(Job.FromExpression<CatalogReconciliationJob>(job => job.Run(null, CancellationToken.None)), state);
+        client.Create(Job.FromExpression<CatalogReconciliationJob>(job => job.Run(null, false, CancellationToken.None)), state);
 
     private static IState Failed(string message) => new FailedState(new InvalidOperationException(message));
 

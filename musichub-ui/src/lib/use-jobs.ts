@@ -8,6 +8,7 @@ import {
   type JobExecution,
   type JobExecutionDetails,
   type JobFilter,
+  type JobStartOptions,
   type JobTask,
 } from "@/lib/jobs-api"
 import { useLoader } from "@/lib/use-loader"
@@ -48,7 +49,7 @@ export interface JobsState {
   starting: string | null
   startError: string | null
   refresh: () => Promise<void>
-  start: (taskId: string) => void
+  start: (taskId: string, options?: JobStartOptions) => void
 }
 
 // Owns the task list, the executions and the selected execution. Call it above the views (in `App`), so the
@@ -120,12 +121,12 @@ export function useJobs(): JobsState {
 
   // One start at a time: a double click is ignored. The new run is selected once the list has it.
   const start = useCallback(
-    (taskId: string) => {
+    (taskId: string, options?: JobStartOptions) => {
       if (starts.current) return
       starts.current = true
       setStarting(taskId)
       setStartError(null)
-      startJob(taskId)
+      startJob(taskId, options)
         .then(
           (id) => setPicked(id),
           (error: Error) => setStartError(error.message)

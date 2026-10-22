@@ -101,6 +101,44 @@ public class CatalogReconciliationJobServiceTests
     }
 
     [Fact]
+    public async Task StartedRun_ExaminesLinkedFilesOnlyWhenReIdentifyAllIsPassedThrough()
+    {
+        const string database = nameof(StartedRun_ExaminesLinkedFilesOnlyWhenReIdentifyAllIsPassedThrough);
+        var storage = new FakeFileStorage();
+        await using var host = await JobsHost.StartAsync(
+            new FixedStorageFactory(new InMemoryStorage()),
+            configureServices: s =>
+            {
+                WithCatalog(s, database);
+                s.AddSingleton<IFileStorage>(storage);
+                s.AddSingleton<IRecordingIdentifier>(new UnresolvedIdentifier());
+            });
+        using (var scope = host.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<MusicHubDbContext>();
+            var track = new MusicHub.Api.Catalog.Track { Title = "Song", CreatedAt = DateTimeOffset.UtcNow };
+            db.Tracks.Add(track);
+            db.Files.Add(new MusicHub.Api.Ingestion.FileRecord
+            {
+                OriginalFilename = "x.mp3", StorageLocation = "default", StorageKey = "library/aa/x", Track = track,
+                Status = MusicHub.Api.Ingestion.FileStatus.Stored, Source = "upload", StartedAt = DateTimeOffset.UtcNow,
+            });
+            await db.SaveChangesAsync();
+            await storage.PutAsync("library/aa/x", new MemoryStream([1]), null, CancellationToken.None);
+        }
+
+        var normal = await host.Jobs.TryStartAsync(JobKinds.CatalogReconciliation, CancellationToken.None);
+        var normalRun = await WaitForAsync(host, normal!, d => d?.Execution.State == "Succeeded");
+        var all = await host.Jobs.TryStartAsync(
+            JobKinds.CatalogReconciliation, CancellationToken.None, new JobStartOptions(ReIdentifyAll: true));
+        var allRun = await WaitForAsync(host, all!, d => d?.Execution.State == "Succeeded");
+
+        Assert.Equal(0, (normalRun.Execution.Summary as MusicHub.Api.Catalog.CatalogReconciliationSummary)?.Examined);
+        var summary = Assert.IsType<MusicHub.Api.Catalog.CatalogReconciliationSummary>(allRun.Execution.Summary);
+        Assert.Equal((1, 1), (summary.Examined, summary.Retained));
+    }
+
+    [Fact]
     public async Task Start_WhileARunIsWaiting_IsRefused()
     {
         await using var host = await JobsHost.StartAsync(
