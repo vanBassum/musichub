@@ -3,9 +3,11 @@ import { describe, expect, it } from "vitest"
 import { formatArtistHash, type ArtistRoute } from "@/lib/artist-route"
 import {
   activeNav,
+  formatJobsHash,
   formatLocation,
   formatSearchHash,
   locationOf,
+  parseJobsFilter,
   parseLocation,
   parseSearchQuery,
 } from "@/lib/navigation"
@@ -24,6 +26,22 @@ describe("search deep link", () => {
   })
 })
 
+describe("jobs history deep link", () => {
+  it.each(["failed", "stuck"] as const)("round-trips the %s filter", (filter) => {
+    const hash = formatJobsHash(filter)
+    expect(hash).toBe(`#/settings/jobs?state=${filter}`)
+    expect(parseJobsFilter(hash)).toBe(filter)
+    expect(parseLocation(hash)).toEqual(locationOf("settings", "jobs"))
+  })
+
+  it("lists all runs without a valid filter or on another screen", () => {
+    expect(formatJobsHash("all")).toBe("#/settings/jobs")
+    expect(parseJobsFilter("#/settings/jobs")).toBe("all")
+    expect(parseJobsFilter("#/settings/jobs?state=bogus")).toBe("all")
+    expect(parseJobsFilter("#/settings/files?state=failed")).toBe("all")
+  })
+})
+
 describe("location", () => {
   it.each([
     ["#/library", locationOf("library")],
@@ -33,10 +51,30 @@ describe("location", () => {
     ["#/settings", locationOf("settings")],
     ["#/settings/files", locationOf("settings", "files")],
     ["#/settings/jobs", locationOf("settings", "jobs")],
-    ["#/settings/problems", locationOf("settings", "problems")],
   ])("round-trips %s", (hash, location) => {
     expect(parseLocation(hash)).toEqual(location)
     expect(formatLocation(location)).toBe(hash)
+  })
+
+  it("round-trips the Library and Downloads filters", () => {
+    const missing = { ...locationOf("library"), audio: "without" as const }
+    expect(parseLocation("#/library?audio=without")).toEqual(missing)
+    expect(formatLocation(missing)).toBe("#/library?audio=without")
+
+    const failed = { ...locationOf("downloads"), downloadStatus: "Failed" as const }
+    expect(parseLocation("#/downloads?status=failed")).toEqual(failed)
+    expect(formatLocation(failed)).toBe("#/downloads?status=failed")
+  })
+
+  it("ignores an unknown filter value and filters of another page", () => {
+    expect(parseLocation("#/library?audio=x")).toEqual(locationOf("library"))
+    expect(parseLocation("#/downloads?status=x")).toEqual(locationOf("downloads"))
+    expect(parseLocation("#/downloads?audio=without")).toEqual(locationOf("downloads"))
+  })
+
+  it("opens Settings, on its first section, for the removed Problems links", () => {
+    expect(parseLocation("#/settings/problems")).toEqual(locationOf("settings"))
+    expect(parseLocation("#/more/problems")).toEqual(locationOf("settings"))
   })
 
   it("opens Search for an empty or unknown hash", () => {
@@ -56,9 +94,6 @@ describe("location", () => {
       locationOf("settings", "files")
     )
     expect(parseLocation("#/more/jobs")).toEqual(locationOf("settings", "jobs"))
-    expect(parseLocation("#/more/problems")).toEqual(
-      locationOf("settings", "problems")
-    )
     expect(parseLocation("#/more/library")).toEqual(locationOf("library"))
     expect(parseLocation("#/more/downloads")).toEqual(locationOf("downloads"))
     expect(parseLocation("#/more/artists")).toEqual(locationOf("search"))

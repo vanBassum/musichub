@@ -30,9 +30,17 @@ public static class DownloadRequestStatuses
     public static readonly IReadOnlyList<DownloadRequestStatus> Active =
         [DownloadRequestStatus.Queued, DownloadRequestStatus.Downloading, DownloadRequestStatus.Downloaded];
 
-    /// <summary>Downloading to Queued is a retry or the recovery of an interrupted transfer. Final statuses never change.</summary>
+    /// <summary>The final statuses: only these may be removed from the queue, never a request a worker may still touch.</summary>
+    public static readonly IReadOnlyList<DownloadRequestStatus> Removable =
+        [DownloadRequestStatus.Completed, DownloadRequestStatus.Failed];
+
+    /// <summary>
+    /// Downloading to Queued is a retry or the recovery of an interrupted transfer; Failed to Queued is the user's manual
+    /// retry. Completed never changes.
+    /// </summary>
     public static bool CanTransition(DownloadRequestStatus from, DownloadRequestStatus to) => (from, to) switch
     {
+        (DownloadRequestStatus.Failed, DownloadRequestStatus.Queued) => true,
         (DownloadRequestStatus.Queued, DownloadRequestStatus.Downloading) => true,
         (DownloadRequestStatus.Queued, DownloadRequestStatus.Failed) => true,
         (DownloadRequestStatus.Downloading, DownloadRequestStatus.Queued) => true,
@@ -102,4 +110,10 @@ public class DownloadRequest
 
     /// <summary>When it reached Completed or Failed.</summary>
     public DateTimeOffset? FinishedAt { get; set; }
+
+    /// <summary>
+    /// When the user removed it from the visible queue; null while visible. The row stays, so the attempt's diagnostics
+    /// and its link to the permanent history survive. Only a final request is removed.
+    /// </summary>
+    public DateTimeOffset? RemovedAt { get; set; }
 }

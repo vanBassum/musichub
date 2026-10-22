@@ -1,11 +1,15 @@
-import { RefreshCw } from "lucide-react"
+import { RefreshCw, RotateCw, X } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import {
+  canRemoveDownload,
+  canRetryDownload,
+  downloadStatuses,
   type DownloadQueueItem,
   type DownloadQueueStatus,
+  type DownloadStatusFilter,
 } from "@/lib/downloads-api"
 import type { DownloadQueueState } from "@/lib/use-download-queue"
 import { cn } from "@/lib/utils"
@@ -39,7 +43,51 @@ function Timestamps({ item }: { item: DownloadQueueItem }) {
   )
 }
 
-function DownloadItem({ item }: { item: DownloadQueueItem }) {
+function DownloadActions({
+  item,
+  label,
+  state,
+}: {
+  item: DownloadQueueItem
+  label: string
+  state: DownloadQueueState
+}) {
+  const busy = state.busyIds.has(item.id)
+  return (
+    <div className="flex gap-2">
+      {canRetryDownload(item) && (
+        <Button
+          variant="outline"
+          disabled={busy}
+          aria-label={`Retry ${label}`}
+          onClick={() => void state.retry(item.id)}
+        >
+          <RotateCw data-icon="inline-start" />
+          Retry
+        </Button>
+      )}
+      {canRemoveDownload(item) && (
+        <Button
+          variant="outline"
+          disabled={busy}
+          aria-label={`Remove ${label} from the queue`}
+          onClick={() => void state.remove(item.id)}
+        >
+          <X data-icon="inline-start" />
+          Remove
+        </Button>
+      )}
+    </div>
+  )
+}
+
+function DownloadItem({
+  item,
+  state,
+}: {
+  item: DownloadQueueItem
+  state: DownloadQueueState
+}) {
   const title = item.trackTitle ?? item.fileName
   const artist = item.artists.join(", ")
   const label = artist ? `${title} by ${artist}` : title
@@ -74,12 +122,48 @@ function DownloadItem({ item }: { item: DownloadQueueItem }) {
         <Badge className={statusClassNames[item.status]}>
           {statusLabels[item.status]}
         </Badge>
+        <DownloadActions item={item} label={label} state={state} />
       </div>
     </li>
   )
 }
 
-function DownloadsBody({ state }: { state: DownloadQueueState }) {
+const filterOptions: { value: DownloadStatusFilter; label: string }[] = [
+  { value: "all", label: "All" },
+  ...downloadStatuses.map((value) => ({ value, label: statusLabels[value] })),
+]
+
+function StatusFilter({
+  status,
+  onChange,
+}: {
+  status: DownloadStatusFilter
+  onChange: (status: DownloadStatusFilter) => void
+}) {
+  return (
+    <div role="group" aria-label="Filter by status" className="flex flex-wrap gap-2">
+      {filterOptions.map((option) => (
+        <Button
+          key={option.value}
+          variant={status === option.value ? "secondary" : "outline"}
+          size="sm"
+          aria-pressed={status === option.value}
+          onClick={() => onChange(option.value)}
+        >
+          {option.label}
+        </Button>
+      ))}
+    </div>
+  )
+}
+
+function DownloadsBody({
+  state,
+  status,
+}: {
+  state: DownloadQueueState
+  status: DownloadStatusFilter
+}) {
   const { items, error } = state
   if (items === null)
     return error ? null : <Skeleton className="h-40 w-full rounded-xl" />
@@ -87,26 +171,33 @@ function DownloadsBody({ state }: { state: DownloadQueueState }) {
   if (items.length === 0)
     return (
       <p className="rounded-xl border bg-card p-6 text-center text-muted-foreground">
-        No downloads have been queued yet.
+        {status === "all"
+          ? "No downloads have been queued yet."
+          : `No downloads with the status ${statusLabels[status]}.`}
       </p>
     )
 
   return (
     <ul aria-label="Downloads" className="divide-y rounded-xl border bg-card">
       {items.map((item) => (
-        <DownloadItem key={item.id} item={item} />
+        <DownloadItem key={item.id} item={item} state={state} />
       ))}
     </ul>
   )
 }
 
-// Read-only overview of the download queue, current and past requests. It changes nothing: there are no pause,
-// cancel or retry controls.
+// Overview of the download queue, current and past requests, narrowed by status. A failed request can be retried and a failed or
+// completed one removed from the list (the wishlist and stored music are untouched); an active transfer has no
+// controls, as it cannot be cancelled.
 export function DownloadsView({
   state,
+  status,
+  onStatusChange,
   className,
 }: {
   state: DownloadQueueState
+  status: DownloadStatusFilter
+  onStatusChange: (status: DownloadStatusFilter) => void
   className?: string
 }) {
   return (
@@ -123,6 +214,11 @@ export function DownloadsView({
             Queued, active, completed and failed download requests
           </p>
         </div>
+        {state.items !== null && (
+          <span role="status" className="text-lg text-muted-foreground">
+            {state.total} {state.total === 1 ? "request" : "requests"}
+          </span>
+        )}
         <Button
           variant="outline"
           size="lg"
@@ -134,12 +230,18 @@ export function DownloadsView({
           Refresh
         </Button>
       </div>
+      <StatusFilter status={status} onChange={onStatusChange} />
       {state.error && (
         <p role="alert" className="shrink-0 text-sm text-destructive">
           {state.error}
         </p>
       )}
-      <DownloadsBody state={state} />
+      {state.actionError && (
+        <p role="alert" className="shrink-0 text-sm text-destructive">
+          {state.actionError}
+        </p>
+      )}
+      <DownloadsBody state={state} status={status} />
       {state.items !== null && state.total > state.items.length && (
         <p className="shrink-0 text-sm text-muted-foreground">
           Showing the newest {state.items.length} of {state.total} requests.

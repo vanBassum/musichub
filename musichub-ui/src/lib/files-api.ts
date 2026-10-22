@@ -1,3 +1,9 @@
+import {
+  getJson,
+  type FileOutcome,
+  type IdentificationDecision,
+} from "@/lib/jobs-api"
+
 export type FileStatus =
   | "Pending"
   | "Uploading"
@@ -24,7 +30,81 @@ export function isAudioFilename(name: string) {
   return audioExtensions.some((extension) => lower.endsWith(extension))
 }
 
-// One row of GET /api/files: a persisted registration, not a track.
+export const fileStatuses: FileStatus[] = [
+  "Stored",
+  "Pending",
+  "Uploading",
+  "Failed",
+  "Expired",
+  "Deleting",
+]
+
+// Where a Stored file stands in identification, from what is already recorded: its link, who applied it and how the
+// latest attempt ended. "Uncertain" is the existing InsufficientEvidence decision (candidates that did not justify an
+// identity); there is no confidence score. Unidentified is every unlinked file: the other unlinked states split it.
+export type FileIdentificationState =
+  | "Identified"
+  | "ManuallyConfirmed"
+  | "Unidentified"
+  | "NotAttempted"
+  | "Uncertain"
+  | "NoMatch"
+  | "NoMethodRan"
+  | "MethodFailed"
+  | "Error"
+  | "Mismatch"
+
+export const identificationStates: Record<
+  FileIdentificationState,
+  { label: string; hint: string }
+> = {
+  Identified: { label: "Identified", hint: "Linked to a track" },
+  ManuallyConfirmed: {
+    label: "Confirmed by you",
+    hint: "Linked, and a person confirmed or corrected the track",
+  },
+  Unidentified: { label: "Unidentified", hint: "Not linked to a track" },
+  NotAttempted: {
+    label: "Not attempted",
+    hint: "Not linked, and no unresolved identification attempt is recorded",
+  },
+  Uncertain: {
+    label: "Uncertain",
+    hint: "The latest attempt found candidates that did not justify an identity",
+  },
+  NoMatch: { label: "No match", hint: "The latest attempt found nothing" },
+  NoMethodRan: {
+    label: "No method could run",
+    hint: "The latest attempt had no identification method that could run",
+  },
+  MethodFailed: {
+    label: "A method failed",
+    hint: "The latest attempt found nothing and a method failed, so a match may have been missed",
+  },
+  Error: { label: "Error", hint: "Processing the file failed in the latest attempt" },
+  Mismatch: {
+    label: "Another recording",
+    hint: "The latest attempt identified another recording than the one wanted",
+  },
+}
+
+// The filters, in the order they are offered.
+export const identificationFilters = Object.keys(
+  identificationStates
+) as FileIdentificationState[]
+
+// How the identification of a Stored file stands; `decision` is how the latest recorded attempt ended.
+export interface FileIdentification {
+  state: FileIdentificationState
+  source: "Automatic" | "Manual" | null
+  trackId: number | null
+  trackTitle: string | null
+  decision: IdentificationDecision | null
+  reason: string | null
+  recordedAt: string | null
+}
+
+// One row of GET /api/files: a persisted registration, not a track. `identification` is null unless it is Stored.
 export interface FileRegistration {
   id: string
   originalFilename: string
@@ -33,6 +113,44 @@ export interface FileRegistration {
   startedAt: string
   statusDetail: string | null
   deletionError: string | null
+  identification: FileIdentification | null
+}
+
+// `total` counts every registration that matches the filters, not only this page.
+export interface FilesPage {
+  items: FileRegistration[]
+  total: number
+  page: number
+  pageSize: number
+}
+
+// Registrations per status and Stored files per identification state, whatever filter a list shows.
+export interface FileCounts {
+  total: number
+  statuses: Partial<Record<FileStatus, number>>
+  identification: Record<FileIdentificationState, number>
+}
+
+export interface FilesQuery {
+  status: FileStatus | null
+  identification: FileIdentificationState | null
+  page: number
+}
+
+export const FILES_PAGE_SIZE = 50
+
+// Everything recorded about identifying one file, newest first; nothing in it is ever deleted.
+export interface AppliedIdentification {
+  source: "Automatic" | "Manual"
+  trackId: number | null
+  trackTitle: string | null
+  attemptId: number | null
+  appliedAt: string
+}
+
+export interface FileIdentificationHistory {
+  attempts: FileOutcome[]
+  applied: AppliedIdentification[]
 }
 
 // DELETE /api/files/{id}: removes the stored object and the registration. Safe to repeat:
@@ -70,13 +188,28 @@ export async function deleteFailedFiles() {
   return (await response.json()) as FailedFilesDeletion
 }
 
-export async function listFiles(signal?: AbortSignal) {
-  const response = await fetch("/api/files", { signal })
-  if (!response.ok) {
-    throw new Error(`The file list could not be loaded (HTTP ${response.status}).`)
-  }
-  return (await response.json()) as FileRegistration[]
+export function listFiles(
+  { status, identification, page }: FilesQuery,
+  signal?: AbortSignal
+) {
+  const params = new URLSearchParams({
+    page: String(page),
+    pageSize: String(FILES_PAGE_SIZE),
+  })
+  if (status) params.set("status", status)
+  if (identification) params.set("identification", identification)
+  return getJson<FilesPage>(`/api/files?${params}`, "The file list", signal)
 }
+
+export const getFileCounts = (signal?: AbortSignal) =>
+  getJson<FileCounts>("/api/files/counts", "The file counts", signal)
+
+export const getFileIdentification = (id: string, signal?: AbortSignal) =>
+  getJson<FileIdentificationHistory>(
+    `/api/files/${encodeURIComponent(id)}/identification`,
+    "The identification history",
+    signal
+  )
 
 export interface UploadHandle {
   // Resolves only when the API answers 201 with status Stored.

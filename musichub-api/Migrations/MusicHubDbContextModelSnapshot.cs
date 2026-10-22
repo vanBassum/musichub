@@ -177,6 +177,9 @@ namespace MusicHub.Api.Migrations
                         .HasMaxLength(1000)
                         .HasColumnType("character varying(1000)");
 
+                    b.Property<DateTimeOffset?>("RemovedAt")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<long?>("SizeBytes")
                         .HasColumnType("bigint");
 

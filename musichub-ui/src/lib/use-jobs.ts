@@ -7,17 +7,15 @@ import {
   startJob,
   type JobExecution,
   type JobExecutionDetails,
+  type JobFilter,
   type JobTask,
 } from "@/lib/jobs-api"
 import { useLoader } from "@/lib/use-loader"
 
 const pollMs = 3000
-
-function fetchLists(signal: AbortSignal) {
-  return Promise.all([listJobs(signal), listExecutions(signal)]).then(
-    ([tasks, executions]) => ({ tasks, executions })
-  )
-}
+const pageSize = 25
+// The API returns at most this many runs per request.
+const maxLimit = 100
 
 export type JobsTab = "tasks" | "history"
 
@@ -25,7 +23,15 @@ export interface JobsState {
   tab: JobsTab
   setTab: (tab: JobsTab) => void
   tasks: JobTask[] | null
+  // The newest runs that match `filter`; null until they are loaded for it.
   executions: JobExecution[] | null
+  // How many runs match `filter`, also those not loaded yet.
+  total: number | null
+  filter: JobFilter
+  setFilter: (filter: JobFilter) => void
+  // Whether more runs match than are shown and the API's page size is not reached yet.
+  canShowMore: boolean
+  showMore: () => void
   loadError: string | null
   refreshing: boolean
   // The execution whose details show: the user's pick, else the newest.
@@ -49,6 +55,15 @@ export interface JobsState {
 // selection and a start in flight survive navigation and the desktop/mobile layout swap. While a run is waiting
 // or in progress the data is polled.
 export function useJobs(): JobsState {
+  const [filter, changeFilter] = useState<JobFilter>("all")
+  const [limit, setLimit] = useState(pageSize)
+  const fetchLists = useCallback(
+    (signal: AbortSignal) =>
+      Promise.all([listJobs(signal), listExecutions(filter, limit, signal)]).then(
+        ([tasks, page]) => ({ tasks, page, filter })
+      ),
+    [filter, limit]
+  )
   const {
     data: lists,
     error: loadError,
@@ -66,7 +81,9 @@ export function useJobs(): JobsState {
   const starts = useRef(false)
 
   const tasks = lists?.tasks ?? null
-  const executions = lists?.executions ?? null
+  // The page of another filter is not shown while the new one loads, so the count never belongs to the wrong filter.
+  const page = lists?.filter === filter ? lists.page : null
+  const executions = page?.items ?? null
   const selectedId = picked ?? executions?.[0]?.id ?? null
   // Details of another execution are not shown while the new ones load.
   const details = loaded?.execution.id === selectedId ? loaded : null
@@ -129,11 +146,23 @@ export function useJobs(): JobsState {
   }, [])
   const closeDetails = useCallback(() => setPicked(null), [])
 
+  // A new filter starts at the newest page again.
+  const setFilter = useCallback((next: JobFilter) => {
+    changeFilter(next)
+    setLimit(pageSize)
+  }, [])
+  const showMore = useCallback(() => setLimit((current) => Math.min(current + pageSize, maxLimit)), [])
+
   return {
     tab,
     setTab,
     tasks,
     executions,
+    total: page?.total ?? null,
+    filter,
+    setFilter,
+    canShowMore: page !== null && page.items.length < page.total && limit < maxLimit,
+    showMore,
     loadError,
     refreshing,
     selectedId,
