@@ -69,7 +69,7 @@ public class ExternalSearchController(IExternalMusicSearch? provider = null) : C
     {
         if (provider is null)
         {
-            return Unavailable("External search is not configured.");
+            return this.Unavailable("External search is not configured.");
         }
         try
         {
@@ -77,12 +77,9 @@ public class ExternalSearchController(IExternalMusicSearch? provider = null) : C
         }
         catch (CandidateSearchUnavailableException e)
         {
-            return Unavailable(e.Message);
+            return this.Unavailable(e.Message);
         }
     }
-
-    private ObjectResult Unavailable(string detail) =>
-        Problem(detail, statusCode: StatusCodes.Status503ServiceUnavailable, title: "External search is unavailable.");
 
     private IActionResult? Validate(string? search, int limit)
     {

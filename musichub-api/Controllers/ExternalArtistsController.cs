@@ -38,7 +38,7 @@ public class ExternalArtistsController(MusicHubDbContext db, IExternalMusicSearc
         }
         catch (CandidateSearchUnavailableException e)
         {
-            return Unavailable(e.Message);
+            return this.Unavailable(e.Message);
         }
     }
 
@@ -81,7 +81,7 @@ public class ExternalArtistsController(MusicHubDbContext db, IExternalMusicSearc
         }
         catch (CandidateSearchUnavailableException e)
         {
-            return Unavailable(e.Message);
+            return this.Unavailable(e.Message);
         }
     }
 
@@ -89,18 +89,7 @@ public class ExternalArtistsController(MusicHubDbContext db, IExternalMusicSearc
     private IActionResult? Check(string externalId)
     {
         if (provider is null)
-            return Unavailable("External search is not configured.");
-        if (ExternalSources.Normalize(provider.Provider, externalId) is not { } normalized
-            || normalized.ExternalId != externalId)
-        {
-            return BadRequest(new ValidationProblemDetails(new Dictionary<string, string[]>
-            {
-                ["externalId"] = [$"Not a valid {provider.Provider} artist identifier."],
-            }));
-        }
-        return null;
+            return this.Unavailable("External search is not configured.");
+        return this.InvalidId(provider.Provider, externalId, "artist");
     }
-
-    private ObjectResult Unavailable(string detail) =>
-        Problem(detail, statusCode: StatusCodes.Status503ServiceUnavailable, title: "External search is unavailable.");
 }
