@@ -7,18 +7,8 @@ import {
   type IdentificationDecision,
   type IdentificationMethodStatus,
 } from "@/lib/jobs-api"
+import { decisionLabels } from "@/lib/job-summary"
 import { useOutcomes } from "@/lib/use-outcomes"
-
-export const decisionLabels: Record<IdentificationDecision, string> = {
-  Identified: "Linked",
-  NoMatch: "No match",
-  InsufficientEvidence: "Not enough evidence",
-  NoMethodRan: "No method could run",
-  MethodFailed: "A method failed",
-  Skipped: "Skipped",
-  Error: "Error",
-  Mismatch: "Another recording",
-}
 
 export const decisionClassNames: Record<IdentificationDecision, string> = {
   Identified: "bg-success text-success-foreground",

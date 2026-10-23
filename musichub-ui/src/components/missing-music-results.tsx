@@ -12,15 +12,8 @@ import {
   type TrackAcquisitionOutcome,
   type TrackAcquisitionResult,
 } from "@/lib/jobs-api"
+import { downloadLabels } from "@/lib/job-summary"
 import { useDownloads } from "@/lib/use-downloads"
-
-const downloadLabels: Record<DownloadStatus, string> = {
-  Downloading: "Downloading",
-  Failed: "Download failed",
-  Cancelled: "Cancelled",
-  Rejected: "Rejected",
-  Imported: "Imported",
-}
 
 const downloadClassNames: Record<DownloadStatus, string> = {
   Downloading: "bg-primary text-primary-foreground",

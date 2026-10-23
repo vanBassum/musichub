@@ -72,14 +72,12 @@ export function App() {
     return () => clearTimeout(timer)
   }, [location.tab, searchQuery])
 
-  // A Jobs link with a filter (#/jobs?state=failed) opens History with that filter applied.
-  const { setFilter: setJobsFilter, setTab: setJobsTab } = jobsState
+  // A Jobs link with a filter (#/jobs?state=failed) opens Recent runs with that filter applied.
+  const { setFilter: setJobsFilter } = jobsState
   useEffect(() => {
     if (location.tab !== "jobs") return
-    const filter = parseJobsFilter(window.location.hash)
-    setJobsFilter(filter)
-    if (filter !== "all") setJobsTab("history")
-  }, [location, setJobsFilter, setJobsTab])
+    setJobsFilter(parseJobsFilter(window.location.hash))
+  }, [location, setJobsFilter])
 
   // A navigation is a history entry, so browser back returns to where it came from.
   const navigate = (next: AppLocation) => {

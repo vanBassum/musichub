@@ -1,29 +1,33 @@
 import {
   isMissingMusicSummary,
+  type DownloadStatus,
+  type IdentificationDecision,
   type JobExecution,
   type JobSummary,
   type TaskSummary,
 } from "@/lib/jobs-api"
 
+export const decisionLabels: Record<IdentificationDecision, string> = {
+  Identified: "Linked",
+  NoMatch: "No match",
+  InsufficientEvidence: "Not enough evidence",
+  NoMethodRan: "No method could run",
+  MethodFailed: "A method failed",
+  Skipped: "Skipped",
+  Error: "Error",
+  Mismatch: "Another recording",
+}
+
+export const downloadLabels: Record<DownloadStatus, string> = {
+  Downloading: "Downloading",
+  Failed: "Download failed",
+  Cancelled: "Cancelled",
+  Rejected: "Rejected",
+  Imported: "Imported",
+}
+
 const plural = (count: number, one: string, many: string) =>
   `${count} ${count === 1 ? one : many}`
-
-// The one place that knows what each task's summary says: the headline of a run, and whether it only did
-// part of its work.
-export function summaryHeadline(summary: TaskSummary) {
-  const failures = summaryFailures(summary)
-  const failedPart = failures > 0 ? `, ${failures} failed` : ""
-  if (isMissingMusicSummary(summary)) {
-    return {
-      main: `${plural(summary.examined, "track", "tracks")} searched`,
-      sub: `${summary.enqueued} queued, ${summary.alreadyQueued} already queued, ${summary.nothingFound} not found${failedPart}`,
-    }
-  }
-  return {
-    main: `${plural(summary.examined, "file", "files")} examined`,
-    sub: `${summary.linked} linked, ${summary.unresolved} unresolved${failedPart}`,
-  }
-}
 
 // Only a run that re-identified linked files has these; they are not shown for a default run.
 function reIdentifiedFacts(summary: JobSummary): [string, string][] {
