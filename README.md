@@ -225,11 +225,26 @@ download queue (`DownloadRequest`). At start it requeues requests a restart inte
 then it claims queued requests through `IDownloadQueueService` (the database decides who
 gets one, so a request is never processed twice) and `DownloadProcessor` follows the
 transfer: a transfer slskd already has is followed, never queued again, and progress is
-saved on the request. A delivered file moves the request to `Downloaded` (identification
-and import follow it); a failed attempt is recorded as an `AcquisitionDownload` and
-retried with a growing wait until the attempts are used up, then the request is `Failed`
-with its reason (a source that declines, or a file MusicHub cannot read, fails at once).
-Stopping the app never cancels or removes transfers or files in slskd.
+saved on the request. A delivered file moves the request to `Downloaded`; a failed attempt
+is recorded as an `AcquisitionDownload` and retried with a growing wait until the attempts
+are used up, then the request is `Failed` with its reason (a source that declines, or a
+file MusicHub cannot read, fails at once). Stopping the app never cancels or removes
+transfers or files in slskd.
+
+The same loops hand every `Downloaded` request off, including those that were already
+downloaded when the app started (nothing is downloaded again). `DownloadHandoffProcessor`
+claims it (`Processing`, shown as "Importing"), finds the file in `Slskd__DownloadsPath`,
+hashes it and identifies it before anything is imported. Only a file that is confidently
+the wanted track (title and artists; a versioned track such as live or remix is never
+confirmed, since identification names no version) is stored through ingestion, linked to
+that track and the request is `Completed`. Any other identity, or none, rejects the
+candidate: the request is `Failed` (`IdentityRejected`), the source file stays in the
+downloads folder, the rejection and its identification attempt are kept, and the track
+moves on to its next candidate. A failure that is not a judgement (an identification
+method that could not answer, storage, the database) is retried with the same wait and
+attempts, then the request is `Failed` (`ProcessingFailed`) and the candidate is not
+rejected. A restart puts `Processing` requests back to `Downloaded`; an imported download
+is never imported twice.
 
 | Key | Default |
 | --- | --- |
