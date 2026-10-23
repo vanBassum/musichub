@@ -87,7 +87,8 @@ public interface IExternalAlbumSource
     /// <summary>The provider's name; carried on every result as its provenance.</summary>
     string Provider { get; }
 
-    Task<IReadOnlyList<ExternalAlbum>> SearchAlbumsAsync(string term, int limit, CancellationToken ct);
+    /// <summary>A page of albums: <paramref name="offset"/> results are skipped, then up to <paramref name="limit"/> are read.</summary>
+    Task<IReadOnlyList<ExternalAlbum>> SearchAlbumsAsync(string term, int limit, int offset, CancellationToken ct);
 
     /// <summary>The albums the provider credits to the artist, in the provider's order (no ranking).</summary>
     Task<IReadOnlyList<ExternalAlbum>> GetArtistAlbumsAsync(string artistExternalId, int limit, CancellationToken ct);

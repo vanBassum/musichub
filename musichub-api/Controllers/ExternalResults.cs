@@ -23,6 +23,17 @@ public static class ExternalResults
                 ["limit"] = [$"Limit must be between 1 and {MaxListLimit}."],
             }));
 
+    public const int MaxOffset = 10_000;
+
+    /// <summary>Null when the offset of a provider search page is within bounds.</summary>
+    public static IActionResult? InvalidOffset(this ControllerBase controller, int offset) =>
+        offset is >= 0 and <= MaxOffset
+            ? null
+            : controller.BadRequest(new ValidationProblemDetails(new Dictionary<string, string[]>
+            {
+                ["offset"] = [$"Offset must be between 0 and {MaxOffset}."],
+            }));
+
     /// <summary>Runs the answer against the provider; no provider or an unavailable one answers 503.</summary>
     public static async Task<IActionResult> WithProvider<T>(
         this ControllerBase controller, T? provider, Func<T, Task<IActionResult>> answer) where T : class

@@ -45,10 +45,11 @@ public interface IExternalMusicSearch
     /// <summary>The provider's name; carried on every result as its provenance.</summary>
     string Provider { get; }
 
+    /// <summary>A page of tracks: <paramref name="offset"/> results are skipped, then up to <paramref name="limit"/> are read.</summary>
     Task<IReadOnlyList<ExternalTrack>> SearchTracksAsync(
-        string term, ExternalSearchFields fields, int limit, CancellationToken ct);
+        string term, ExternalSearchFields fields, int limit, int offset, CancellationToken ct);
 
-    Task<IReadOnlyList<ExternalArtist>> SearchArtistsAsync(string term, int limit, CancellationToken ct);
+    Task<IReadOnlyList<ExternalArtist>> SearchArtistsAsync(string term, int limit, int offset, CancellationToken ct);
 
     /// <summary>One artist by the provider's own identifier; null when the provider has no such artist.</summary>
     Task<ExternalArtist?> GetArtistAsync(string externalId, CancellationToken ct);

@@ -26,9 +26,10 @@ public class ExternalSearchController(IExternalMusicSearch? provider = null) : C
         [FromQuery] string? search,
         [FromQuery] string? fields,
         [FromQuery] int limit = DefaultLimit,
+        [FromQuery] int offset = 0,
         CancellationToken cancellationToken = default)
     {
-        if (Validate(search, limit) is { } invalid)
+        if (Validate(search, limit, offset) is { } invalid)
         {
             return invalid;
         }
@@ -42,7 +43,7 @@ public class ExternalSearchController(IExternalMusicSearch? provider = null) : C
         }
 
         return await Query(
-            p => p.SearchTracksAsync(search!.Trim(), parsed, limit, cancellationToken),
+            p => p.SearchTracksAsync(search!.Trim(), parsed, limit, offset, cancellationToken),
             items => new ExternalTrackListResponse(provider!.Provider, items));
     }
 
@@ -51,15 +52,16 @@ public class ExternalSearchController(IExternalMusicSearch? provider = null) : C
     public async Task<IActionResult> Artists(
         [FromQuery] string? search,
         [FromQuery] int limit = DefaultLimit,
+        [FromQuery] int offset = 0,
         CancellationToken cancellationToken = default)
     {
-        if (Validate(search, limit) is { } invalid)
+        if (Validate(search, limit, offset) is { } invalid)
         {
             return invalid;
         }
 
         return await Query(
-            p => p.SearchArtistsAsync(search!.Trim(), limit, cancellationToken),
+            p => p.SearchArtistsAsync(search!.Trim(), limit, offset, cancellationToken),
             items => new ExternalArtistListResponse(provider!.Provider, items));
     }
 
@@ -67,7 +69,7 @@ public class ExternalSearchController(IExternalMusicSearch? provider = null) : C
         Func<IExternalMusicSearch, Task<IReadOnlyList<T>>> search, Func<IReadOnlyList<T>, object> respond) =>
         this.WithProvider(provider, async p => Ok(respond(await search(p))));
 
-    private IActionResult? Validate(string? search, int limit)
+    private IActionResult? Validate(string? search, int limit, int offset)
     {
         var errors = new Dictionary<string, string[]>();
         if (string.IsNullOrWhiteSpace(search))
@@ -78,7 +80,7 @@ public class ExternalSearchController(IExternalMusicSearch? provider = null) : C
         {
             errors["limit"] = [$"Limit must be between 1 and {MaxLimit}."];
         }
-        return errors.Count == 0 ? null : BadRequest(new ValidationProblemDetails(errors));
+        return errors.Count == 0 ? this.InvalidOffset(offset) : BadRequest(new ValidationProblemDetails(errors));
     }
 
     private static ExternalSearchFields? ParseFields(string? fields)

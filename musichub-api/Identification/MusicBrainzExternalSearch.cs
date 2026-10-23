@@ -10,7 +10,7 @@ public sealed partial class MusicBrainzCandidateSearch : IExternalMusicSearch
     public string Provider => Source;
 
     public async Task<IReadOnlyList<ExternalTrack>> SearchTracksAsync(
-        string term, ExternalSearchFields fields, int limit, CancellationToken ct)
+        string term, ExternalSearchFields fields, int limit, int offset, CancellationToken ct)
     {
         var phrase = Quote(term);
         var clauses = new List<string>();
@@ -28,14 +28,16 @@ public sealed partial class MusicBrainzCandidateSearch : IExternalMusicSearch
         }
 
         var query = string.Join(" OR ", clauses);
-        using var json = await GetJsonAsync($"recording?query={Uri.EscapeDataString(query)}&limit={limit}&fmt=json", ct);
+        using var json = await GetJsonAsync(
+            $"recording?query={Uri.EscapeDataString(query)}&limit={limit}&offset={offset}&fmt=json", ct);
         return Parse(json, "recordings", ToExternalTrack);
     }
 
-    public async Task<IReadOnlyList<ExternalArtist>> SearchArtistsAsync(string term, int limit, CancellationToken ct)
+    public async Task<IReadOnlyList<ExternalArtist>> SearchArtistsAsync(string term, int limit, int offset, CancellationToken ct)
     {
         var query = $"artist:\"{Quote(term)}\"";
-        using var json = await GetJsonAsync($"artist?query={Uri.EscapeDataString(query)}&limit={limit}&fmt=json", ct);
+        using var json = await GetJsonAsync(
+            $"artist?query={Uri.EscapeDataString(query)}&limit={limit}&offset={offset}&fmt=json", ct);
         return Parse(json, "artists", ToExternalArtist);
     }
 
