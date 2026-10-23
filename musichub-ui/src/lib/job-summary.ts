@@ -26,13 +26,22 @@ export const downloadLabels: Record<DownloadStatus, string> = {
   Imported: "Imported",
 }
 
+export type SummaryFact = { label: string; value: string | number; count: number }
+
 const plural = (count: number, one: string, many: string) =>
   `${count} ${count === 1 ? one : many}`
 
+// A labelled number; `count` is the raw number, `value` what is shown (with its unit when one is given).
+const countFact = (label: string, count: number, one?: string, many?: string): SummaryFact => ({
+  label,
+  value: one && many ? plural(count, one, many) : count,
+  count,
+})
+
 // Only a run that re-identified linked files has these; they are not shown for a default run.
-function reIdentifiedFacts(summary: JobSummary): [string, string][] {
+function reIdentifiedFacts(summary: JobSummary): SummaryFact[] {
   if (summary.retained === 0) return []
-  return [["Link kept", plural(summary.retained, "file", "files")]]
+  return [countFact("Link kept", summary.retained, "file", "files")]
 }
 
 // How many items a Succeeded run could not process.
@@ -44,26 +53,26 @@ export function summaryFailures(summary: TaskSummary | null) {
 }
 
 // The labelled numbers of the execution details.
-export function summaryFacts(summary: TaskSummary): [string, string | number][] {
+export function summaryFacts(summary: TaskSummary): SummaryFact[] {
   if (isMissingMusicSummary(summary)) {
     return [
-      ["Searched", plural(summary.examined, "track", "tracks")],
-      ["Queued for download", plural(summary.enqueued, "track", "tracks")],
-      ["Already queued", plural(summary.alreadyQueued, "track", "tracks")],
-      ["Nothing found", plural(summary.nothingFound, "track", "tracks")],
-      ["Provider unavailable", plural(summary.providerUnavailable, "track", "tracks")],
-      ["Skipped", plural(summary.skipped, "track", "tracks")],
-      ["Errors", summary.failed],
+      countFact("Searched", summary.examined, "track", "tracks"),
+      countFact("Queued for download", summary.enqueued, "track", "tracks"),
+      countFact("Already queued", summary.alreadyQueued, "track", "tracks"),
+      countFact("Nothing found", summary.nothingFound, "track", "tracks"),
+      countFact("Provider unavailable", summary.providerUnavailable, "track", "tracks"),
+      countFact("Skipped", summary.skipped, "track", "tracks"),
+      countFact("Errors", summary.failed),
     ]
   }
   return [
-    ["Attempted", plural(summary.examined, "file", "files")],
-    ["Newly linked", plural(summary.linked, "file", "files")],
-    ["Tracks created", summary.tracksCreated],
+    countFact("Attempted", summary.examined, "file", "files"),
+    countFact("Newly linked", summary.linked, "file", "files"),
+    countFact("Tracks created", summary.tracksCreated),
     ...reIdentifiedFacts(summary),
-    ["Not identified", plural(summary.unresolved, "file", "files")],
-    ["Skipped", plural(summary.skipped, "file", "files")],
-    ["Errors", summary.failed],
+    countFact("Not identified", summary.unresolved, "file", "files"),
+    countFact("Skipped", summary.skipped, "file", "files"),
+    countFact("Errors", summary.failed),
   ]
 }
 
