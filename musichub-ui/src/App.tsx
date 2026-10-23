@@ -2,7 +2,6 @@ import { useEffect, useState } from "react"
 
 import { AppSidebar } from "@/components/app-sidebar"
 import { ArtistPage } from "@/components/artist-page"
-import { DownloadsView } from "@/components/downloads-view"
 import { FilesView } from "@/components/files-view"
 import { FilterSidebar } from "@/components/filter-sidebar"
 import { JobsView } from "@/components/jobs-view"
@@ -12,9 +11,9 @@ import { SearchPage } from "@/components/search-page"
 import { SettingsView } from "@/components/settings-view"
 import { TrackDetailsSheet } from "@/components/track-details-sheet"
 import { TrackTable } from "@/components/track-table"
+import { WishlistView } from "@/components/wishlist-view"
 import { openArtist, type ArtistSource } from "@/lib/artist-route"
 import type { AudioFilter } from "@/lib/catalog-api"
-import type { DownloadStatusFilter } from "@/lib/downloads-api"
 import {
   activeNav,
   formatLocation,
@@ -25,11 +24,12 @@ import {
   type AppLocation,
 } from "@/lib/navigation"
 import { useTracks } from "@/lib/use-catalog"
-import { useDownloadQueue } from "@/lib/use-download-queue"
 import { useFiles } from "@/lib/use-files"
 import { useJobs } from "@/lib/use-jobs"
 import { useLocation } from "@/lib/use-location"
 import { useIsDesktop } from "@/lib/use-media-query"
+import { useWishlist } from "@/lib/use-wishlist"
+import type { WishlistFilter } from "@/lib/wishlist-api"
 
 const searchDelayMs = 300
 
@@ -53,7 +53,7 @@ export function App() {
   // Held here so uploads survive navigation and the desktop/mobile layout swap.
   const filesState = useFiles()
   const jobsState = useJobs()
-  const downloadsState = useDownloadQueue(location.downloadStatus)
+  const wishlist = useWishlist(location.wishlistFilter)
 
   useEffect(() => {
     const term = searchInput.trim()
@@ -89,8 +89,8 @@ export function App() {
     navigate({ ...locationOf("library"), audio: value })
   }
 
-  const changeDownloadStatus = (value: DownloadStatusFilter) =>
-    navigate({ ...locationOf("downloads"), downloadStatus: value })
+  const changeWishlistFilter = (value: WishlistFilter) =>
+    navigate({ ...locationOf("wishlist"), wishlistFilter: value })
 
   const filters = (className?: string) => (
     <FilterSidebar
@@ -153,8 +153,8 @@ export function App() {
           table={table(false)}
           filesState={filesState}
           jobsState={jobsState}
-          downloadsState={downloadsState}
-          onDownloadStatusChange={changeDownloadStatus}
+          wishlist={wishlist}
+          onWishlistFilterChange={changeWishlistFilter}
           searchQuery={searchQuery}
           onSearchQueryChange={setSearchQuery}
           onSelectTrack={selectSearchTrack}
@@ -191,11 +191,11 @@ export function App() {
               autoFocus
               className="min-h-0"
             />
-          ) : tab === "downloads" ? (
-            <DownloadsView
-              state={downloadsState}
-              status={location.downloadStatus}
-              onStatusChange={changeDownloadStatus}
+          ) : tab === "wishlist" ? (
+            <WishlistView
+              model={wishlist}
+              filter={location.wishlistFilter}
+              onFilterChange={changeWishlistFilter}
               className="min-h-0"
             />
           ) : tab === "files" ? (

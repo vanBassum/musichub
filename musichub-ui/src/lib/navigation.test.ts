@@ -54,7 +54,7 @@ describe("navigation entries", () => {
     expect(primaryNav).toEqual([
       "search",
       "library",
-      "downloads",
+      "wishlist",
       "files",
       "jobs",
       "settings",
@@ -73,7 +73,7 @@ describe("navigation entries", () => {
 describe("location", () => {
   it.each([
     ["#/library", locationOf("library")],
-    ["#/downloads", locationOf("downloads")],
+    ["#/wishlist", locationOf("wishlist")],
     ["#/player", locationOf("player")],
     ["#/player/queue", locationOf("player", "queue")],
     ["#/settings", locationOf("settings")],
@@ -84,20 +84,29 @@ describe("location", () => {
     expect(formatLocation(location)).toBe(hash)
   })
 
-  it("round-trips the Library and Downloads filters", () => {
+  it("round-trips the Library and Wishlist filters", () => {
     const missing = { ...locationOf("library"), audio: "without" as const }
     expect(parseLocation("#/library?audio=without")).toEqual(missing)
     expect(formatLocation(missing)).toBe("#/library?audio=without")
 
-    const failed = { ...locationOf("downloads"), downloadStatus: "Failed" as const }
-    expect(parseLocation("#/downloads?status=failed")).toEqual(failed)
-    expect(formatLocation(failed)).toBe("#/downloads?status=failed")
+    const notFound = { ...locationOf("wishlist"), wishlistFilter: "NotFound" as const }
+    expect(parseLocation("#/wishlist?state=notfound")).toEqual(notFound)
+    expect(formatLocation(notFound)).toBe("#/wishlist?state=notfound")
   })
 
   it("ignores an unknown filter value and filters of another page", () => {
     expect(parseLocation("#/library?audio=x")).toEqual(locationOf("library"))
-    expect(parseLocation("#/downloads?status=x")).toEqual(locationOf("downloads"))
-    expect(parseLocation("#/downloads?audio=without")).toEqual(locationOf("downloads"))
+    expect(parseLocation("#/wishlist?state=x")).toEqual(locationOf("wishlist"))
+    expect(parseLocation("#/wishlist?audio=without")).toEqual(locationOf("wishlist"))
+  })
+
+  it("opens the Wishlist for the earlier Downloads links, keeping a status it still has", () => {
+    expect(parseLocation("#/downloads")).toEqual(locationOf("wishlist"))
+    expect(parseLocation("#/downloads?status=x")).toEqual(locationOf("wishlist"))
+    expect(parseLocation("#/downloads?status=failed")).toEqual({
+      ...locationOf("wishlist"),
+      wishlistFilter: "Failed",
+    })
   })
 
   it("opens Files and Jobs for the earlier Settings links", () => {
@@ -126,7 +135,7 @@ describe("location", () => {
     expect(parseLocation("#/more/files")).toEqual(locationOf("files"))
     expect(parseLocation("#/more/jobs")).toEqual(locationOf("jobs"))
     expect(parseLocation("#/more/library")).toEqual(locationOf("library"))
-    expect(parseLocation("#/more/downloads")).toEqual(locationOf("downloads"))
+    expect(parseLocation("#/more/downloads")).toEqual(locationOf("wishlist"))
     expect(parseLocation("#/more/artists")).toEqual(locationOf("search"))
   })
 

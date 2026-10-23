@@ -38,10 +38,12 @@ public sealed class MissingMusicAcquisition(
 
     /// <param name="executionId">The Hangfire execution the downloads and attempts are recorded under; null when not a job.</param>
     /// <param name="total">Told how many tracks the run goes through, before it starts on them.</param>
-    public async Task<MissingMusicSummary> RunAsync(string? executionId, Action<int>? total, CancellationToken cancellationToken)
+    /// <param name="onlyTrackId">Narrows the run to this one track (the wishlist's Search now), still only when it is missing.</param>
+    public async Task<MissingMusicSummary> RunAsync(
+        string? executionId, Action<int>? total, CancellationToken cancellationToken, int? onlyTrackId = null)
     {
         options.Value.Validate();
-        var (ids, queued) = await MissingTracksAsync(cancellationToken);
+        var (ids, queued) = await MissingTracksAsync(onlyTrackId, cancellationToken);
         logger.LogInformation(
             "Missing music search started: {Count} tracks without a stored file, {Queued} already queued.", ids.Count, queued.Count);
         total?.Invoke(ids.Count);
@@ -70,7 +72,7 @@ public sealed class MissingMusicAcquisition(
     private const string AlreadyQueuedDetail = "The track already has an active download request.";
 
     /// <summary>The tracks without a stored file, and those of them that already have an active download request.</summary>
-    private async Task<(List<int> Ids, HashSet<int> Queued)> MissingTracksAsync(CancellationToken cancellationToken)
+    private async Task<(List<int> Ids, HashSet<int> Queued)> MissingTracksAsync(int? onlyTrackId, CancellationToken cancellationToken)
     {
         using var scope = scopes.CreateScope();
         if (!AcquisitionProviderConfigured(scope.ServiceProvider))
@@ -78,7 +80,7 @@ public sealed class MissingMusicAcquisition(
 
         var db = scope.ServiceProvider.GetRequiredService<MusicHubDbContext>();
         var ids = await db.Tracks.AsNoTracking()
-            .Where(t => !t.Files.AsQueryable().Any(TrackResponse.IsStoredAudio))
+            .Where(t => !t.Files.AsQueryable().Any(TrackResponse.IsStoredAudio) && (onlyTrackId == null || t.Id == onlyTrackId))
             .OrderBy(t => t.Id)
             .Select(t => t.Id)
             .ToListAsync(cancellationToken);

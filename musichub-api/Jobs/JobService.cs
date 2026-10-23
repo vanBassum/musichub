@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Hangfire;
 using Hangfire.Common;
 using Hangfire.Storage;
 using Hangfire.Storage.Monitoring;
@@ -72,6 +73,11 @@ public sealed class JobService(JobEngine engine, JobSchedule schedule, TimeProvi
             StartLock.Release();
         }
     }
+
+    /// <summary>Enqueues the Search for Missing Music run for one track and returns its execution id.</summary>
+    public async Task<string> EnqueueTrackSearchAsync(int trackId, CancellationToken cancellationToken) =>
+        (await engine.ClientAsync(cancellationToken))
+            .Enqueue<MissingMusicAcquisitionJob>(job => job.RunForTrack(trackId, null, CancellationToken.None));
 
     /// <summary>The id of the run of <paramref name="kind"/> that is enqueued, waiting for a retry or processing, or null when none is.</summary>
     public async Task<string?> ActiveExecutionIdAsync(JobKind kind, CancellationToken cancellationToken)

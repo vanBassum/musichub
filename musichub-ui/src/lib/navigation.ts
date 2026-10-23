@@ -1,8 +1,8 @@
 import {
-  Download,
   FolderOpen,
   Library,
   ListChecks,
+  ListMusic,
   Music,
   Search,
   Settings,
@@ -16,18 +16,18 @@ import {
 } from "@/lib/artist-route"
 import type { AudioFilter } from "@/lib/catalog-api"
 import {
-  formatDownloadStatus,
-  parseDownloadStatus,
-  type DownloadStatusFilter,
-} from "@/lib/downloads-api"
+  formatWishlistFilter,
+  parseWishlistFilter,
+  type WishlistFilter,
+} from "@/lib/wishlist-api"
 
-// Where the app can be. Search, Library, Downloads, Files and Jobs are the working
+// Where the app can be. Search, Library, Wishlist, Files and Jobs are the working
 // destinations, Settings holds configuration, Player is the phone's playback page, and
 // Artist is a contextual page reached from Search (it has no navigation entry).
 export const destinations = {
   search: { label: "Search", icon: Search },
   library: { label: "Library", icon: Library },
-  downloads: { label: "Downloads", icon: Download },
+  wishlist: { label: "Wishlist", icon: ListMusic },
   files: { label: "Files", icon: FolderOpen },
   jobs: { label: "Jobs", icon: ListChecks },
   player: { label: "Player", icon: Music },
@@ -41,7 +41,7 @@ export type TabId = NavId | "artist"
 export const primaryNav = [
   "search",
   "library",
-  "downloads",
+  "wishlist",
   "files",
   "jobs",
   "settings",
@@ -49,7 +49,7 @@ export const primaryNav = [
 
 // The phone's navigation bar: the music destinations and the Player page, then a menu
 // with the rest.
-export const mobileNav = ["search", "library", "downloads", "player"] as const
+export const mobileNav = ["search", "library", "wishlist", "player"] as const
 export const mobileMenuNav = ["files", "jobs", "settings"] as const
 
 export type PlayerView = "now-playing" | "queue"
@@ -59,9 +59,9 @@ export interface AppLocation {
   playerView: PlayerView
   // The artist page's artist and where it was opened from; set when `tab` is "artist".
   artist: ArtistRoute | null
-  // The Library's wanted/missing filter, and the Downloads status filter.
+  // The Library's wanted/missing filter, and the Wishlist state filter.
   audio: AudioFilter
-  downloadStatus: DownloadStatusFilter
+  wishlistFilter: WishlistFilter
 }
 
 const isTab = (value: string): value is TabId =>
@@ -71,15 +71,20 @@ const isTab = (value: string): value is TabId =>
 // to sit under `#/more`. The old Artists screen needs an artist that a link can't carry.
 function legacyTab(first: "more" | "settings", sub: string | undefined) {
   if (sub === "files" || sub === "jobs") return sub
-  if (first === "more" && (sub === "library" || sub === "downloads")) return sub
+  if (first === "more" && sub === "library") return sub
+  if (first === "more" && sub === "downloads") return "wishlist"
   return first === "more" && sub === "artists" ? "search" : "settings"
 }
 
-// The location lives in the URL hash (#/search, #/library, #/downloads, #/files,
+// The Downloads page became the Wishlist: its links open it, and a status they carry
+// (`#/downloads?status=failed`) is the state filter when the Wishlist has that state.
+const renamedTab = (first: string) => (first === "downloads" ? "wishlist" : first)
+
+// The location lives in the URL hash (#/search, #/library, #/wishlist, #/files,
 // #/jobs, #/player, #/player/queue, #/settings, #/artist/local/7), so browser back and
-// shared links work. The earlier `#/settings/files`, `#/settings/jobs` and `#/more/...`
-// links still resolve to where those screens went. An artist link that names no artist
-// opens Search.
+// shared links work. The earlier `#/downloads`, `#/settings/files`, `#/settings/jobs` and
+// `#/more/...` links still resolve to where those screens went. An artist link that names
+// no artist opens Search.
 export function parseLocation(hash: string): AppLocation {
   const [first, sub] = hash.replace(/^#\/?/, "").split("?")[0].split("/")
   const params = new URLSearchParams(hash.split("?")[1] ?? "")
@@ -88,10 +93,12 @@ export function parseLocation(hash: string): AppLocation {
     playerView: "now-playing",
     artist: null,
     audio: "all",
-    downloadStatus: "all",
+    wishlistFilter: "all",
   }
   const tab =
-    first === "more" || first === "settings" ? legacyTab(first, sub) : first
+    first === "more" || first === "settings"
+      ? legacyTab(first, sub)
+      : renamedTab(first)
   if (!isTab(tab)) return location
   if (tab === "artist") {
     const artist = parseArtistHash(hash)
@@ -102,8 +109,10 @@ export function parseLocation(hash: string): AppLocation {
     tab,
     playerView: tab === "player" && sub === "queue" ? "queue" : "now-playing",
     audio: tab === "library" ? parseAudio(params.get("audio")) : "all",
-    downloadStatus:
-      tab === "downloads" ? parseDownloadStatus(params.get("status")) : "all",
+    wishlistFilter:
+      tab === "wishlist"
+        ? parseWishlistFilter(params.get("state") ?? params.get("status"))
+        : "all",
   }
 }
 
@@ -150,18 +159,18 @@ export function syncJobsHash(filter: JobFilter) {
   window.history.replaceState(null, "", formatJobsHash(filter))
 }
 
-// `searchQuery` is the term Search reopens with. Library and Downloads carry their
-// filter (`#/library?audio=without`, `#/downloads?status=failed`).
+// `searchQuery` is the term Search reopens with. Library and Wishlist carry their
+// filter (`#/library?audio=without`, `#/wishlist?state=notfound`).
 export function formatLocation(
-  { tab, playerView, artist, audio, downloadStatus }: AppLocation,
+  { tab, playerView, artist, audio, wishlistFilter }: AppLocation,
   searchQuery = ""
 ): string {
   if (tab === "search") return formatSearchHash(searchQuery)
   if (tab === "artist" && artist) return formatArtistHash(artist)
   if (tab === "player" && playerView === "queue") return "#/player/queue"
   if (tab === "library") return withQuery("#/library", "audio", audio)
-  if (tab === "downloads")
-    return withQuery("#/downloads", "status", formatDownloadStatus(downloadStatus))
+  if (tab === "wishlist")
+    return withQuery("#/wishlist", "state", formatWishlistFilter(wishlistFilter))
   return `#/${tab}`
 }
 
@@ -174,7 +183,7 @@ export function locationOf(
     playerView,
     artist: null,
     audio: "all",
-    downloadStatus: "all",
+    wishlistFilter: "all",
   }
 }
 
