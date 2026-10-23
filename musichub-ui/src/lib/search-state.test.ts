@@ -15,18 +15,21 @@ describe("limitFor", () => {
   })
 
   it("never asks for more than the API allows", () => {
-    expect(limitFor("artists", "artists", 10)).toBe(100)
+    expect(limitFor("albums", "albums", 10)).toBe(100)
+    expect(limitFor("tracks", "tracks", 10)).toBe(20)
+    expect(limitFor("artists", "artists", 10)).toBe(20)
   })
 })
 
 describe("canShowMore", () => {
   it("offers more only when the answer filled its limit", () => {
-    expect(canShowMore(20, 20)).toBe(true)
-    expect(canShowMore(7, 20)).toBe(false)
+    expect(canShowMore("albums", 20, 20)).toBe(true)
+    expect(canShowMore("albums", 7, 20)).toBe(false)
   })
 
   it("stops at the maximum and for a kind that isn't shown", () => {
-    expect(canShowMore(100, 100)).toBe(false)
-    expect(canShowMore(0, 0)).toBe(false)
+    expect(canShowMore("albums", 100, 100)).toBe(false)
+    expect(canShowMore("tracks", 20, 20)).toBe(false)
+    expect(canShowMore("albums", 0, 0)).toBe(false)
   })
 })

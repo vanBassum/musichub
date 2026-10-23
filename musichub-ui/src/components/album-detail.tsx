@@ -2,8 +2,8 @@ import { ArrowLeft } from "lucide-react"
 import { useCallback, useId, useState } from "react"
 
 import { AddToLibraryButton } from "@/components/add-to-library-button"
+import { FailureAlert, LoadingRows } from "@/components/result-states"
 import { Button } from "@/components/ui/button"
-import { Skeleton } from "@/components/ui/skeleton"
 import {
   albumSubtitle,
   editionLabel,
@@ -17,26 +17,6 @@ import {
 import { addExternalTrackToLibrary } from "@/lib/catalog-api"
 import { providerLabel } from "@/lib/artist"
 import { useLoader } from "@/lib/use-loader"
-
-function Loading({ label }: { label: string }) {
-  return (
-    <div role="status" aria-label={label} className="flex flex-col gap-1.5 p-2">
-      <Skeleton className="h-4 w-3/5" />
-      <Skeleton className="h-4 w-1/2" />
-    </div>
-  )
-}
-
-function Failure({ message, onRetry }: { message: string; onRetry: () => void }) {
-  return (
-    <div role="alert" className="flex items-center gap-2 p-2 text-xs">
-      <span className="flex-1">{message}</span>
-      <Button size="sm" variant="outline" onClick={onRetry}>
-        Retry
-      </Button>
-    </div>
-  )
-}
 
 // The tracks of the edition that was chosen, with what is missing from the list said
 // plainly. "Add all" adds exactly these tracks to the library, one by one: a track the
@@ -53,10 +33,10 @@ function EditionTrackList({
     [editionId]
   )
   const { data, error, refreshing, refresh } = useLoader(fetcher)
-  if (refreshing && !data) return <Loading label="Loading tracklist" />
+  if (refreshing && !data) return <LoadingRows label="Loading tracklist" />
   if (!data) {
     return (
-      <Failure
+      <FailureAlert
         message={error ?? "The tracklist could not be loaded."}
         onRetry={() => void refresh()}
       />
@@ -203,9 +183,9 @@ export function AlbumDetail({
         </p>
       </div>
       {refreshing && !data ? (
-        <Loading label="Loading editions" />
+        <LoadingRows label="Loading editions" />
       ) : !data ? (
-        <Failure
+        <FailureAlert
           message={error ?? "The editions could not be loaded."}
           onRetry={() => void refresh()}
         />

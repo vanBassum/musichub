@@ -3,6 +3,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react"
 
 import { AlbumDetail } from "@/components/album-detail"
 import { AddToLibraryButton } from "@/components/add-to-library-button"
+import { FailureAlert, LoadingRows } from "@/components/result-states"
 import { ProviderTrackRow, SourceLink } from "@/components/provider-track-row"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -13,7 +14,6 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover"
-import { Skeleton } from "@/components/ui/skeleton"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { albumSubtitle, type ExternalAlbum } from "@/lib/album-api"
 import { providerLabel, type ArtistRef } from "@/lib/artist"
@@ -52,6 +52,7 @@ interface Results<T> {
 // and a way to see more of them. Everything stays inside the page.
 function Group<T>({
   label,
+  kind,
   results,
   limit,
   focused,
@@ -60,6 +61,7 @@ function Group<T>({
   renderRow,
 }: {
   label: string
+  kind: ResultKind
   results: Results<T>
   limit: number
   // The category is open on its own; otherwise this is a few rows of the overview.
@@ -71,26 +73,13 @@ function Group<T>({
   const { status, error, items, retry } = results
   let body: ReactNode = null
   if (status === "loading") {
-    body = (
-      <div
-        role="status"
-        aria-label={`Searching ${label.toLowerCase()}`}
-        className="flex flex-col gap-1.5 p-2"
-      >
-        <Skeleton className="h-4 w-3/5" />
-        <Skeleton className="h-4 w-1/2" />
-      </div>
-    )
+    body = <LoadingRows label={`Searching ${label.toLowerCase()}`} />
   } else if (status === "error") {
     body = (
-      <div role="alert" className="flex items-center gap-2 p-2 text-xs">
-        <span className="flex-1">
-          {error ?? `The ${label.toLowerCase()} search failed.`}
-        </span>
-        <Button size="sm" variant="outline" onClick={retry}>
-          Retry
-        </Button>
-      </div>
+      <FailureAlert
+        message={error ?? `The ${label.toLowerCase()} search failed.`}
+        onRetry={retry}
+      />
     )
   } else if (status === "ready" && items.length === 0) {
     body = (
@@ -102,7 +91,7 @@ function Group<T>({
     body = (
       <>
         <ul>{items.map(renderRow)}</ul>
-        {canShowMore(items.length, limit) && (
+        {canShowMore(kind, items.length, limit) && (
           <Button
             variant="ghost"
             size="sm"
@@ -299,6 +288,7 @@ export function SearchPage({
               {shows("albums") && (
                 <Group
                   label="Albums"
+                  kind="albums"
                   results={external.albums}
                   limit={limits.albums}
                   focused={focused}
@@ -320,6 +310,7 @@ export function SearchPage({
               {shows("tracks") && (
                 <Group
                   label="Tracks"
+                  kind="tracks"
                   results={external.tracks}
                   limit={limits.tracks}
                   focused={focused}
@@ -335,6 +326,7 @@ export function SearchPage({
               {shows("artists") && (fields.artist || focused) && (
                 <Group
                   label="Artists"
+                  kind="artists"
                   results={external.artists}
                   limit={limits.artists}
                   focused={focused}
