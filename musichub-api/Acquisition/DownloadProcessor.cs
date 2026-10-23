@@ -8,12 +8,14 @@ namespace MusicHub.Api.Acquisition;
 /// attempt ended, both on the request and as an <see cref="AcquisitionDownload"/> that stays diagnosable. A delivered
 /// file moves the request to Downloaded; identifying and importing it, and so Completed, belong to the handoff after
 /// the download. A failed attempt is retried with a growing wait until <see cref="DownloadWorkerOptions.MaxAttempts"/>,
-/// except a failure that another attempt at the same source cannot change. Scoped, like the services it uses.
+/// except a failure that another attempt at the same source cannot change. A source confirmed offline ends the request
+/// at once and hands the track to <see cref="AcquisitionFailover"/>. Scoped, like the services it uses.
 /// </summary>
 public sealed class DownloadProcessor(
     IDownloadQueueService queue,
     IAcquisitionProvider provider,
     AcquisitionHistory history,
+    AcquisitionFailover failover,
     IOptions<DownloadWorkerOptions> options,
     TimeProvider time,
     ILogger<DownloadProcessor> logger)
@@ -35,6 +37,17 @@ public sealed class DownloadProcessor(
         var failure = outcome.Failure ?? AcquisitionFailure.TransferFailed;
         var detail = outcome.Detail ?? "";
         await history.FailedAsync(download, failure, detail, ct);
+        if (failure == AcquisitionFailure.SourceOffline)
+        {
+            // Retrying the same offline peer would only repeat the refusal: the request ends, the source is skipped for the
+            // cooldown, and the track moves on to its next candidate or a scheduled fresh search.
+            logger.LogInformation("The source of request {RequestId} is offline; failing over for track {TrackId}.",
+                claim.RequestId, claim.TrackId);
+            await queue.FailAsync(claim.RequestId, failure, detail, download.Id, ct);
+            if (claim.TrackId is { } trackId)
+                await failover.FailOverAsync(trackId, ct);
+            return;
+        }
         if (Final.Contains(failure) || claim.AttemptNumber >= options.Value.MaxAttempts)
         {
             await queue.FailAsync(claim.RequestId, failure, detail, download.Id, ct);

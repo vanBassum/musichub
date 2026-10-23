@@ -39,16 +39,11 @@ public enum TrackActivityKind
     /// <summary>The user queued a failed download again.</summary>
     DownloadRetriedManually,
 
-    ImportStarted,
-
     /// <summary>The downloaded file was identified as the wanted recording and imported.</summary>
     ImportAccepted,
 
     /// <summary>The downloaded file was not accepted as the wanted recording; the source is not downloaded again.</summary>
     ImportRejected,
-
-    /// <summary>Storing or identifying the downloaded file failed.</summary>
-    ImportFailed,
 }
 
 /// <summary>

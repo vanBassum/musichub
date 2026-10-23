@@ -489,6 +489,33 @@ public sealed class SlskdAcquisitionProviderTests : IDisposable
         Assert.Contains("Slskd__ApiKey", outcome.Detail);
     }
 
+    [Theory]
+    [InlineData(HttpStatusCode.InternalServerError, "Soulseek.UserOfflineException: User peer1 appears to be offline.")]
+    [InlineData(HttpStatusCode.NotFound, "User peer1 appears to be offline.")]
+    public async Task A_download_slskd_refuses_because_the_peer_is_offline_fails_as_source_offline(HttpStatusCode status, string body)
+    {
+        var fake = new FakeSlskd((call, _) => call.Method == HttpMethod.Post ? Json($$"""{"error":"{{body}}"}""", status) : NoTransfers());
+
+        var outcome = await Provider(fake).ResumeDownloadAsync(Candidate, _ => Task.CompletedTask, CancellationToken.None);
+
+        Assert.Equal(AcquisitionFailure.SourceOffline, outcome.Failure);
+        // Not retried against the same peer, and the answer's text is not passed on.
+        Assert.Equal(1, fake.Count(HttpMethod.Post, "/api/v0/transfers/downloads/peer1"));
+        Assert.DoesNotContain("UserOfflineException", outcome.Detail);
+    }
+
+    [Theory]
+    [InlineData(HttpStatusCode.InternalServerError, "Object reference not set to an instance of an object.")]
+    [InlineData(HttpStatusCode.NotFound, "")]
+    public async Task Another_500_or_404_on_the_enqueue_is_not_an_offline_peer(HttpStatusCode status, string body)
+    {
+        var fake = new FakeSlskd((call, _) => call.Method == HttpMethod.Post ? Json($$"""{"error":"{{body}}"}""", status) : NoTransfers());
+
+        var outcome = await Provider(fake).ResumeDownloadAsync(Candidate, _ => Task.CompletedTask, CancellationToken.None);
+
+        Assert.Equal(AcquisitionFailure.Unavailable, outcome.Failure);
+    }
+
     private static HttpResponseMessage TooManyRequests(int? retryAfterSeconds = null)
     {
         var response = Empty(HttpStatusCode.TooManyRequests);

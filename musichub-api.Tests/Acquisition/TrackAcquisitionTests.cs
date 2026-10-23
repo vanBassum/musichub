@@ -102,7 +102,9 @@ public sealed class TrackAcquisitionTests : IDisposable
     {
         using var db = CreateDb();
         var activity = new TrackActivityLog(db, TimeProvider.System);
-        var acquisition = new TrackAcquisition(db, new AcquisitionHistory(db, TimeProvider.System, activity), activity, _provider);
+        var acquisition = new TrackAcquisition(
+            db, new AcquisitionHistory(db, TimeProvider.System, activity), activity, _provider,
+            Microsoft.Extensions.Options.Options.Create(new DownloadWorkerOptions()), TimeProvider.System);
         return await acquisition.DiscoverAsync(trackId, CancellationToken.None);
     }
 

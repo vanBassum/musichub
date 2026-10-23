@@ -28,7 +28,8 @@ public sealed class DownloadWorker(
 
             await RequeueInterruptedAsync(poll, stoppingToken);
             await Task.WhenAll(Enumerable.Range(0, settings.MaxConcurrentDownloads)
-                .Select(_ => RunLoopAsync(poll, stoppingToken)));
+                .Select(_ => RunLoopAsync(poll, stoppingToken))
+                .Append(RunResearchLoopAsync(poll, stoppingToken)));
         }
         catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
         {
@@ -62,6 +63,24 @@ public sealed class DownloadWorker(
         {
             if (!await ProcessNextAsync(ct))
                 await Task.Delay(poll, ct);
+        }
+    }
+
+    /// <summary>Runs the scheduled fresh searches of tracks that ran out of candidates, when they are due.</summary>
+    private async Task RunResearchLoopAsync(TimeSpan poll, CancellationToken ct)
+    {
+        while (!ct.IsCancellationRequested)
+        {
+            try
+            {
+                using var scope = scopes.CreateScope();
+                await scope.ServiceProvider.GetRequiredService<AcquisitionFailover>().RunDueAsync(ct);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                logger.LogError(ex, "Running the scheduled searches failed; trying again.");
+            }
+            await Task.Delay(poll, ct);
         }
     }
 

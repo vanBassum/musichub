@@ -1,0 +1,145 @@
+using System.Text.Json;
+using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.Options;
+using MusicHub.Api.Identification;
+
+namespace MusicHub.Api.ExternalSearch;
+
+/// <summary>Binds the <c>ListenBrainz</c> configuration section (environment variables <c>ListenBrainz__*</c>).</summary>
+public sealed class ListenBrainzOptions : IRateLimitedJsonOptions
+{
+    public const string SectionName = "ListenBrainz";
+
+    /// <summary>Popularity enrichment is off unless enabled. The popularity endpoint is public: no token is needed.</summary>
+    public bool Enabled { get; set; }
+
+    public string BaseUrl { get; set; } = "https://api.listenbrainz.org/1/";
+
+    /// <summary>How ListenBrainz can reach whoever runs this (an email address or URL); sent in the User-Agent when set.</summary>
+    public string? Contact { get; set; }
+
+    public int TimeoutSeconds { get; set; } = 10;
+
+    public int MinRequestIntervalMs { get; set; } = 500;
+
+    public int MaxRetries { get; set; } = 2;
+
+    public int RetryDelayMs { get; set; } = 2000;
+
+    public int MaxRetryDelayMs { get; set; } = 10000;
+
+    /// <summary>How long an artist's popularity is reused before ListenBrainz is asked again.</summary>
+    public int CacheMinutes { get; set; } = 360;
+}
+
+/// <summary>
+/// ListenBrainz as a popularity source: it supplies popularity by MusicBrainz recording identifier and nothing
+/// else. Answers are cached per artist (failures are not); a failure throws
+/// <see cref="CandidateSearchUnavailableException"/>, never an empty result.
+/// </summary>
+public sealed class ListenBrainzProvider : IExternalPopularitySource
+{
+    public const string ProviderName = "listenbrainz";
+
+    private readonly RateLimitedJsonClient client;
+    private readonly IMemoryCache cache;
+    private readonly TimeSpan cacheFor;
+
+    public ListenBrainzProvider(HttpClient http, ListenBrainzOptions options, IMemoryCache cache)
+    {
+        this.cache = cache;
+        cacheFor = TimeSpan.FromMinutes(options.CacheMinutes);
+        client = new RateLimitedJsonClient(http, RateLimitedJsonSettings.From("ListenBrainz", options));
+    }
+
+    public string Provider => ProviderName;
+
+    /// <summary>Builds the provider from configuration; throws when the options cannot work, so a bad setup is loud.</summary>
+    public static ListenBrainzProvider Create(ListenBrainzOptions options, IHttpClientFactory factory, IMemoryCache cache)
+    {
+        var http = RateLimitedJsonClient.CreateHttpClient(
+            factory, ProviderName, options, "ListenBrainz", options.CacheMinutes < 0);
+        return new ListenBrainzProvider(http, options, cache);
+    }
+
+    public async Task<IReadOnlyList<ExternalTrackPopularity>> GetArtistPopularityAsync(
+        string externalId, CancellationToken ct)
+    {
+        // The identifier is a MusicBrainz artist ID: anything else is not an artist ListenBrainz can know.
+        if (!Guid.TryParseExact(externalId, "D", out var artistId))
+        {
+            return [];
+        }
+
+        var key = $"{ProviderName}:artist:{artistId:D}";
+        if (cache.TryGetValue(key, out IReadOnlyList<ExternalTrackPopularity>? cached) && cached is not null)
+        {
+            return cached;
+        }
+
+        using var json = await client.GetJsonOrNullAsync($"popularity/top-recordings-for-artist/{artistId:D}", ct);
+        var popularity = json is null ? [] : Parse(json);
+        if (cacheFor > TimeSpan.Zero)
+        {
+            cache.Set(key, popularity, cacheFor);
+        }
+        return popularity;
+    }
+
+    // Entries without a recording identifier or a usable count are dropped: no count is ever invented.
+    private IReadOnlyList<ExternalTrackPopularity> Parse(JsonDocument json)
+    {
+        if (json.RootElement.ValueKind != JsonValueKind.Array)
+        {
+            throw new CandidateSearchUnavailableException("ListenBrainz answered in an unexpected shape.");
+        }
+
+        var byRecording = new Dictionary<string, ExternalTrackPopularity>();
+        foreach (var entry in json.RootElement.EnumerateArray())
+        {
+            if (entry.ValueKind != JsonValueKind.Object
+                || !Guid.TryParseExact(Text(entry, "recording_mbid"), "D", out var recordingId)
+                || Count(entry, "total_listen_count") is not { } listens)
+            {
+                continue;
+            }
+            var id = recordingId.ToString("D");
+            byRecording.TryAdd(id, new ExternalTrackPopularity(Provider, id, listens, Count(entry, "total_user_count") ?? 0));
+        }
+        return [.. byRecording.Values];
+    }
+
+    private static string? Text(JsonElement element, string property) => JsonText.Read(element, property);
+
+    private static long? Count(JsonElement element, string property) =>
+        element.TryGetProperty(property, out var value) && value.ValueKind == JsonValueKind.Number
+            && value.TryGetInt64(out var count) && count >= 0
+            ? count
+            : null;
+}
+
+public static class ListenBrainzServiceCollectionExtensions
+{
+    /// <summary>
+    /// Registers <see cref="ListenBrainzProvider"/> as the <see cref="IExternalPopularitySource"/> when
+    /// <c>ListenBrainz:Enabled</c> is set. Popularity is optional enrichment: nothing is registered otherwise.
+    /// </summary>
+    public static IServiceCollection AddListenBrainz(this IServiceCollection services, IConfiguration configuration)
+    {
+        var section = configuration.GetSection(ListenBrainzOptions.SectionName);
+        services.Configure<ListenBrainzOptions>(section);
+        if (section.Get<ListenBrainzOptions>()?.Enabled != true)
+        {
+            return services;
+        }
+
+        services.AddMemoryCache();
+        services.AddHttpClient(ListenBrainzProvider.ProviderName);
+        services.AddSingleton<IExternalPopularitySource>(sp =>
+            ListenBrainzProvider.Create(
+                sp.GetRequiredService<IOptions<ListenBrainzOptions>>().Value,
+                sp.GetRequiredService<IHttpClientFactory>(),
+                sp.GetRequiredService<IMemoryCache>()));
+        return services;
+    }
+}

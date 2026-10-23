@@ -28,6 +28,7 @@ public static class AcquisitionServiceCollectionExtensions
         services.AddScoped<TrackAcquisition>();
         // The queue only gets worked off with a provider: without one requests wait.
         services.Configure<DownloadWorkerOptions>(configuration.GetSection(DownloadWorkerOptions.SectionName));
+        services.AddScoped<AcquisitionFailover>();
         services.AddScoped<DownloadProcessor>();
         services.AddHostedService<DownloadWorker>();
         // Each request and each wait applies its own configured timeout, so the client's is switched off.

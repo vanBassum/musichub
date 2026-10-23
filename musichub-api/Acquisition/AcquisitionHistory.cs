@@ -84,6 +84,21 @@ public class AcquisitionHistory(MusicHubDbContext db, TimeProvider time, TrackAc
     }
 
     /// <summary>
+    /// Whether the provider confirmed this candidate's source offline since <paramref name="since"/>. The source, not
+    /// the file, is what is offline, so any file of that source counts.
+    /// </summary>
+    public async Task<bool> WasSourceOfflineSinceAsync(AcquisitionCandidate candidate, DateTimeOffset since, CancellationToken ct)
+    {
+        var (provider, source, _) = StoredIdentity(candidate);
+        // Compared in memory: the time is a time zone aware value that not every database can compare.
+        var finished = await db.AcquisitionDownloads
+            .Where(d => d.Failure == AcquisitionFailure.SourceOffline && d.Provider == provider && d.Source == source)
+            .Select(d => d.FinishedAt)
+            .ToListAsync(ct);
+        return finished.Any(at => at >= since);
+    }
+
+    /// <summary>
     /// Whether byte-identical content was rejected before, for a file that is already downloaded (a hash is only
     /// known then). Identical bytes are not proof of the same recording, so this is a signal, not an identity. With
     /// <paramref name="intendedTrackId"/> only a rejection for that track counts: equal bytes say nothing about any

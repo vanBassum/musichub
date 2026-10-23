@@ -87,6 +87,8 @@ public sealed class DownloadWorkerTests : IDisposable
             .AddScoped<IDownloadQueueService, DownloadQueueService>()
             .AddScoped<TrackActivityLog>()
             .AddScoped<AcquisitionHistory>()
+            .AddScoped<TrackAcquisition>()
+            .AddScoped<AcquisitionFailover>()
             .AddScoped<DownloadProcessor>()
             .BuildServiceProvider();
     }

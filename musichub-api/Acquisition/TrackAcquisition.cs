@@ -1,5 +1,6 @@
 using System.Text.Json.Serialization;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using MusicHub.Api.Catalog;
 using MusicHub.Api.Data;
 
@@ -53,7 +54,9 @@ public sealed class TrackAcquisition(
     MusicHubDbContext db,
     AcquisitionHistory history,
     TrackActivityLog activity,
-    IAcquisitionProvider provider)
+    IAcquisitionProvider provider,
+    IOptions<DownloadWorkerOptions> options,
+    TimeProvider time)
 {
     /// <summary>
     /// Searches for the track and ranks what is offered, without downloading anything. <see cref="TrackDiscovery.Stopped"/>
@@ -101,16 +104,24 @@ public sealed class TrackAcquisition(
         var plausible = CandidateRanking.Rank(wanted, offered);
         // A candidate rejected before is not downloaded again. A failed or cancelled transfer judged nothing, so it may be
         // tried again.
+        // A source confirmed offline is skipped for the cooldown, whatever file it offers.
+        var offlineSince = time.GetUtcNow().AddMinutes(-options.Value.SourceOfflineCooldownMinutes);
         var fresh = new List<AcquisitionCandidate>();
+        var offline = 0;
         foreach (var candidate in plausible)
-            if (!await history.WasRejectedAsync(candidate, cancellationToken))
+        {
+            if (await history.WasSourceOfflineSinceAsync(candidate, offlineSince, cancellationToken))
+                offline++;
+            else if (!await history.WasRejectedAsync(candidate, cancellationToken))
                 fresh.Add(candidate);
+        }
         var counts = $"{offered.Count} results, {plausible.Count} plausible MP3s, {fresh.Count} eligible.";
         if (fresh.Count == 0)
         {
             await Record(TrackActivityKind.NotFound, $"Nothing to download: {counts}", null, offered.Count, plausible.Count, 0);
             return Ended(TrackAcquisitionOutcome.NothingFound,
-                $"{offered.Count} results, {plausible.Count} plausible MP3s, {plausible.Count - fresh.Count} of them rejected earlier.");
+                $"{offered.Count} results, {plausible.Count} plausible MP3s, {offline} from sources offline, " +
+                $"{plausible.Count - offline - fresh.Count} rejected earlier.");
         }
 
         await Record(TrackActivityKind.SearchCompleted, $"Search finished: {counts}", null, offered.Count, plausible.Count, fresh.Count);

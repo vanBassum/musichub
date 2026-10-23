@@ -248,22 +248,23 @@ public class DownloadQueueService(MusicHubDbContext db, TimeProvider time, Track
         apply(request);
         request.Status = to;
         request.UpdatedAt = time.GetUtcNow();
+        TrackActivity? staged = null;
         if (note is not null && request.TrackId is { } trackId)
         {
             var n = note(request);
-            activity.Stage(trackId, n.Kind, n.Summary, n.Detail, new TrackActivityLinks
+            staged = activity.Stage(trackId, n.Kind, n.Summary, n.Detail, new TrackActivityLinks
             {
                 DownloadRequestId = request.Id, DownloadId = request.AcquisitionDownloadId,
                 JobExecutionId = request.JobExecutionId, AttemptNumber = request.AttemptCount,
             });
         }
 
-        return await SaveAsync(request, ct);
+        return await SaveAsync(request, ct, staged);
     }
 
     private sealed record ActivityNote(TrackActivityKind Kind, string Summary, string? Detail = null);
 
-    private async Task<bool> SaveAsync(DownloadRequest request, CancellationToken ct)
+    private async Task<bool> SaveAsync(DownloadRequest request, CancellationToken ct, TrackActivity? staged = null)
     {
         try
         {
@@ -274,8 +275,8 @@ public class DownloadQueueService(MusicHubDbContext db, TimeProvider time, Track
         {
             // Another caller changed the status first; forget our stale copy and the event that reported it.
             db.Entry(request).State = EntityState.Detached;
-            foreach (var staged in db.ChangeTracker.Entries<TrackActivity>().Where(e => e.State == EntityState.Added).ToList())
-                staged.State = EntityState.Detached;
+            if (staged is not null)
+                db.Entry(staged).State = EntityState.Detached;
             return false;
         }
     }
