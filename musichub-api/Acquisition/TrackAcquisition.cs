@@ -80,8 +80,11 @@ public sealed class TrackAcquisition(
 
         var searchId = Guid.NewGuid();
         Task Record(TrackActivityKind kind, string summary, string? detail = null, int? results = null, int? plausible = null, int? eligible = null) =>
-            activity.RecordAsync(trackId, kind, summary, cancellationToken, detail, searchId, jobExecutionId: jobExecutionId,
-                resultCount: results, plausibleCount: plausible, eligibleCount: eligible);
+            activity.RecordAsync(trackId, kind, summary, cancellationToken, detail, new TrackActivityLinks
+            {
+                SearchId = searchId, JobExecutionId = jobExecutionId,
+                ResultCount = results, PlausibleCount = plausible, EligibleCount = eligible,
+            });
 
         await Record(TrackActivityKind.SearchStarted, "Search started.");
         IReadOnlyList<AcquisitionCandidate> offered;

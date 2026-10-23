@@ -13,6 +13,10 @@ public class MusicHubDbContext(DbContextOptions<MusicHubDbContext> options) : Db
     public DbSet<TrackArtist> TrackArtists => Set<TrackArtist>();
     public DbSet<TrackExternalId> TrackExternalIds => Set<TrackExternalId>();
     public DbSet<ArtistExternalLink> ArtistExternalLinks => Set<ArtistExternalLink>();
+    public DbSet<Album> Albums => Set<Album>();
+    public DbSet<AlbumEdition> AlbumEditions => Set<AlbumEdition>();
+    public DbSet<AlbumEditionTrack> AlbumEditionTracks => Set<AlbumEditionTrack>();
+    public DbSet<AlbumEditionExternalId> AlbumEditionExternalIds => Set<AlbumEditionExternalId>();
 
     public DbSet<IdentificationOutcome> IdentificationOutcomes => Set<IdentificationOutcome>();
 
@@ -146,6 +150,39 @@ public class MusicHubDbContext(DbContextOptions<MusicHubDbContext> options) : Db
             // A provider recording is one catalog track.
             external.HasIndex(e => new { e.Provider, e.ExternalId }).IsUnique();
             external.HasIndex(e => e.TrackId);
+        });
+
+        modelBuilder.Entity<Album>().Property(a => a.Title).HasMaxLength(CatalogLimits.Title);
+
+        modelBuilder.Entity<AlbumEdition>(edition =>
+        {
+            edition.Property(e => e.Name).HasMaxLength(CatalogLimits.Version);
+            edition.Property(e => e.ReleaseDate).HasMaxLength(CatalogLimits.ReleaseDate);
+            edition.HasOne(e => e.Album).WithMany(a => a.Editions)
+                .HasForeignKey(e => e.AlbumId).OnDelete(DeleteBehavior.Cascade);
+            edition.HasIndex(e => e.AlbumId);
+        });
+
+        modelBuilder.Entity<AlbumEditionTrack>(entry =>
+        {
+            entry.HasOne(t => t.AlbumEdition).WithMany(e => e.Tracks)
+                .HasForeignKey(t => t.AlbumEditionId).OnDelete(DeleteBehavior.Cascade);
+            // A track on an edition is part of its fixed list: it cannot be deleted from under it.
+            entry.HasOne(t => t.Track).WithMany()
+                .HasForeignKey(t => t.TrackId).OnDelete(DeleteBehavior.Restrict);
+            entry.HasIndex(t => new { t.AlbumEditionId, t.Position }).IsUnique();
+            entry.HasIndex(t => t.TrackId);
+        });
+
+        modelBuilder.Entity<AlbumEditionExternalId>(external =>
+        {
+            external.Property(e => e.Provider).HasMaxLength(CatalogLimits.Provider);
+            external.Property(e => e.ExternalId).HasMaxLength(CatalogLimits.ExternalId);
+            external.HasOne(e => e.AlbumEdition).WithMany(e => e.ExternalIds)
+                .HasForeignKey(e => e.AlbumEditionId).OnDelete(DeleteBehavior.Cascade);
+            // A provider release is one edition.
+            external.HasIndex(e => new { e.Provider, e.ExternalId }).IsUnique();
+            external.HasIndex(e => e.AlbumEditionId);
         });
 
         modelBuilder.Entity<Artist>().Property(a => a.Name).HasMaxLength(CatalogLimits.ArtistName);

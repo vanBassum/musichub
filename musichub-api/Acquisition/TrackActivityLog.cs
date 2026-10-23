@@ -21,6 +21,19 @@ public sealed record TrackActivityView(
     int? PlausibleCount,
     int? EligibleCount);
 
+/// <summary>The optional correlation ids and counts an event can carry; set only the ones that apply.</summary>
+public sealed record TrackActivityLinks
+{
+    public Guid? SearchId { get; init; }
+    public int? DownloadRequestId { get; init; }
+    public int? DownloadId { get; init; }
+    public string? JobExecutionId { get; init; }
+    public int? AttemptNumber { get; init; }
+    public int? ResultCount { get; init; }
+    public int? PlausibleCount { get; init; }
+    public int? EligibleCount { get; init; }
+}
+
 /// <summary>One page of a track's timeline, oldest event first.</summary>
 public sealed record TrackActivityPage(IReadOnlyList<TrackActivityView> Items, int Total, int Page, int PageSize);
 
@@ -42,10 +55,9 @@ public class TrackActivityLog(MusicHubDbContext db, TimeProvider time)
     /// reports: the event exists exactly when the transition happened.
     /// </summary>
     public TrackActivity Stage(
-        int trackId, TrackActivityKind kind, string summary, string? detail = null, Guid? searchId = null,
-        int? downloadRequestId = null, int? downloadId = null, string? jobExecutionId = null, int? attemptNumber = null,
-        int? resultCount = null, int? plausibleCount = null, int? eligibleCount = null)
+        int trackId, TrackActivityKind kind, string summary, string? detail = null, TrackActivityLinks? links = null)
     {
+        links ??= new TrackActivityLinks();
         var activity = new TrackActivity
         {
             TrackId = trackId,
@@ -53,15 +65,15 @@ public class TrackActivityLog(MusicHubDbContext db, TimeProvider time)
             OccurredAt = time.GetUtcNow(),
             Summary = Sanitize(summary, TrackActivity.SummaryMaxLength),
             Detail = detail is null ? null : Sanitize(detail, TrackActivity.DetailMaxLength),
-            SearchId = searchId,
-            DownloadRequestId = downloadRequestId,
-            AcquisitionDownloadId = downloadId,
-            JobExecutionId = jobExecutionId is null
-                ? null : AcquisitionHistory.Truncate(jobExecutionId, AcquisitionDownload.JobExecutionIdMaxLength),
-            AttemptNumber = attemptNumber,
-            ResultCount = resultCount,
-            PlausibleCount = plausibleCount,
-            EligibleCount = eligibleCount,
+            SearchId = links.SearchId,
+            DownloadRequestId = links.DownloadRequestId,
+            AcquisitionDownloadId = links.DownloadId,
+            JobExecutionId = links.JobExecutionId is null
+                ? null : AcquisitionHistory.Truncate(links.JobExecutionId, AcquisitionDownload.JobExecutionIdMaxLength),
+            AttemptNumber = links.AttemptNumber,
+            ResultCount = links.ResultCount,
+            PlausibleCount = links.PlausibleCount,
+            EligibleCount = links.EligibleCount,
         };
         db.TrackActivities.Add(activity);
         return activity;
@@ -70,11 +82,9 @@ public class TrackActivityLog(MusicHubDbContext db, TimeProvider time)
     /// <summary>Stores one event on its own.</summary>
     public async Task RecordAsync(
         int trackId, TrackActivityKind kind, string summary, CancellationToken ct, string? detail = null,
-        Guid? searchId = null, int? downloadRequestId = null, int? downloadId = null, string? jobExecutionId = null,
-        int? attemptNumber = null, int? resultCount = null, int? plausibleCount = null, int? eligibleCount = null)
+        TrackActivityLinks? links = null)
     {
-        Stage(trackId, kind, summary, detail, searchId, downloadRequestId, downloadId, jobExecutionId, attemptNumber,
-            resultCount, plausibleCount, eligibleCount);
+        Stage(trackId, kind, summary, detail, links);
         await db.SaveChangesAsync(ct);
     }
 

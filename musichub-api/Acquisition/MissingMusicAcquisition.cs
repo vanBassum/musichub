@@ -132,7 +132,7 @@ public sealed class MissingMusicAcquisition(
             using var scope = scopes.CreateScope();
             await scope.ServiceProvider.GetRequiredService<TrackActivityLog>().RecordAsync(
                 trackId, TrackActivityKind.SearchFailed, "The search run failed for this track.", CancellationToken.None,
-                detail, jobExecutionId: executionId);
+                detail, new TrackActivityLinks { JobExecutionId = executionId });
         }
         catch (Exception ex)
         {

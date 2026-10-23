@@ -56,8 +56,11 @@ public class DownloadQueueService(MusicHubDbContext db, TimeProvider time, Track
         }
 
         await activity.RecordAsync(
-            command.TrackId, TrackActivityKind.DownloadQueued, "Download queued.", ct, searchId: command.SearchId,
-            downloadRequestId: request.Id, jobExecutionId: request.JobExecutionId);
+            command.TrackId, TrackActivityKind.DownloadQueued, "Download queued.", ct,
+            links: new TrackActivityLinks
+            {
+                SearchId = command.SearchId, DownloadRequestId = request.Id, JobExecutionId = request.JobExecutionId,
+            });
         return new EnqueueResult(EnqueueOutcome.Created, await GetAsync(request.Id, ct));
     }
 
@@ -248,9 +251,11 @@ public class DownloadQueueService(MusicHubDbContext db, TimeProvider time, Track
         if (note is not null && request.TrackId is { } trackId)
         {
             var n = note(request);
-            activity.Stage(trackId, n.Kind, n.Summary, n.Detail, downloadRequestId: request.Id,
-                downloadId: request.AcquisitionDownloadId, jobExecutionId: request.JobExecutionId,
-                attemptNumber: request.AttemptCount);
+            activity.Stage(trackId, n.Kind, n.Summary, n.Detail, new TrackActivityLinks
+            {
+                DownloadRequestId = request.Id, DownloadId = request.AcquisitionDownloadId,
+                JobExecutionId = request.JobExecutionId, AttemptNumber = request.AttemptCount,
+            });
         }
 
         return await SaveAsync(request, ct);

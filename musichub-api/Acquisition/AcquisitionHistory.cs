@@ -118,7 +118,7 @@ public class AcquisitionHistory(MusicHubDbContext db, TimeProvider time, TrackAc
                 accepted ? TrackActivityKind.ImportAccepted : TrackActivityKind.ImportRejected,
                 accepted ? "The file was identified as the wanted recording and imported."
                     : "The file was not accepted as the wanted recording and was not imported.",
-                download.Reason, downloadId: download.Id, jobExecutionId: download.JobExecutionId);
+                download.Reason, new TrackActivityLinks { DownloadId = download.Id, JobExecutionId = download.JobExecutionId });
         }
 
         return db.SaveChangesAsync(ct);

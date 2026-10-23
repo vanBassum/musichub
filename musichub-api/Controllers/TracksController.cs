@@ -31,8 +31,7 @@ public class TracksController(MusicHubDbContext db, LibraryTracks library) : Con
         CancellationToken cancellationToken = default)
     {
         var errors = new Dictionary<string, string[]>();
-        if (page < 1) errors["page"] = ["Page must be 1 or greater."];
-        if (pageSize is < 1 or > MaxPageSize) errors["pageSize"] = [$"Page size must be between 1 and {MaxPageSize}."];
+        Paging.Validate(errors, page, pageSize, MaxPageSize);
         var searchFields = TrackListQuery.ParseFields(fields);
         if (searchFields is null) errors["fields"] = ["Fields must be a comma-separated list of: title, artist."];
         if (errors.Count > 0)
