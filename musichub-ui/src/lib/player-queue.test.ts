@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest"
 
 import {
+  appendEntry,
   clearExcept,
   insertAfter,
+  isQueued,
   moveEntry,
   neighbour,
   removeEntry,
@@ -16,6 +18,28 @@ describe("player queue", () => {
     expect(keys(insertAfter(q(1, 2, 3), 2, { key: 9 }))).toEqual([1, 2, 9, 3])
     expect(keys(insertAfter(q(1, 2), null, { key: 9 }))).toEqual([9, 1, 2])
     expect(keys(insertAfter(q(1, 2), 7, { key: 9 }))).toEqual([9, 1, 2])
+  })
+
+  it("appends repeated fast additions in order, duplicates included", () => {
+    const entry = (key: number, id: string) => ({ key, source: { id } })
+    let queue = [entry(0, "a")]
+    for (const [key, id] of [[1, "a"], [2, "a"], [3, "b"]] as const) {
+      expect(isQueued(queue, id)).toBe(id === "a")
+      queue = appendEntry(queue, entry(key, id))
+    }
+    expect(keys(queue)).toEqual([0, 1, 2, 3])
+    expect(isQueued(queue, "c")).toBe(false)
+  })
+
+  it("undo removes only the appended entry, after later queue changes", () => {
+    let queue = [{ key: 0 }, { key: 1 }]
+    queue = appendEntry(queue, { key: 2 })
+    queue = appendEntry(queue, { key: 3 })
+    queue = moveEntry(queue, 3, -1)
+    queue = insertAfter(queue, 0, { key: 4 })
+    expect(keys(removeEntry(queue, 2))).toEqual([0, 4, 1, 3])
+    expect(keys(removeEntry(removeEntry(queue, 2), 2))).toEqual([0, 4, 1, 3])
+    expect(keys(removeEntry(clearExcept(queue, 1), 2))).toEqual([1])
   })
 
   it("removes one entry", () => {

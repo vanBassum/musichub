@@ -19,6 +19,16 @@ export function insertAfter<T extends Keyed>(
   return [...queue.slice(0, at), entry, ...queue.slice(at)]
 }
 
+// At the end of the queue; never starts or moves anything.
+export function appendEntry<T extends Keyed>(queue: T[], entry: T) {
+  return [...queue, entry]
+}
+
+// Whether a Stored file already has an entry in the queue.
+export function isQueued(queue: { source: { id: string } }[], fileId: string) {
+  return queue.some((entry) => entry.source.id === fileId)
+}
+
 export function removeEntry<T extends Keyed>(queue: T[], key: number) {
   return queue.filter((entry) => entry.key !== key)
 }
