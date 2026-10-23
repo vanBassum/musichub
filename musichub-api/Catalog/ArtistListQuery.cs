@@ -9,10 +9,7 @@ public record ArtistListResponse(List<ArtistResponse> Items, int Total);
 public static class ArtistListQuery
 {
     public static IQueryable<Artist> Filter(IQueryable<Artist> artists, string? search)
-    {
-        var term = search?.Trim().ToLower();
-        return string.IsNullOrEmpty(term) ? artists : artists.Where(a => a.Name.ToLower().Contains(term));
-    }
+        => SearchTerm.Filter(artists, a => a.Name, search);
 
     public static IQueryable<ArtistResponse> Page(IQueryable<Artist> artists, int pageSize) => artists
         .OrderBy(a => a.Name).ThenBy(a => a.Id)

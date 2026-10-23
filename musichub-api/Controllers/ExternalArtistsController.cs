@@ -47,46 +47,32 @@ public class ExternalArtistsController(
     IExternalMusicSearch? provider = null,
     IExternalPopularitySource? popularitySource = null) : ControllerBase
 {
-    public const int MaxLimit = 100;
-    private const int DefaultLimit = 25;
-
     [HttpGet]
-    public async Task<IActionResult> Get(string externalId, CancellationToken cancellationToken)
-    {
-        if (Check(externalId) is { } invalid)
-            return invalid;
-        try
+    public Task<IActionResult> Get(string externalId, CancellationToken cancellationToken) =>
+        this.WithProvider(provider, async p =>
         {
-            var artist = await provider!.GetArtistAsync(externalId, cancellationToken);
-            return artist is null ? NotFound() : Ok(new ExternalArtistResponse(provider.Provider, artist));
-        }
-        catch (CandidateSearchUnavailableException e)
-        {
-            return Unavailable(e.Message);
-        }
-    }
+            if (Check(p, externalId) is { } invalid)
+                return invalid;
+            var artist = await p.GetArtistAsync(externalId, cancellationToken);
+            return artist is null ? NotFound() : Ok(new ExternalArtistResponse(p.Provider, artist));
+        });
 
     /// <summary>The artist's recordings as the provider lists them (no ranking), each marked with the catalog track it already is.</summary>
     [HttpGet("tracks")]
     public async Task<IActionResult> Tracks(
-        string externalId, [FromQuery] int limit = DefaultLimit, CancellationToken cancellationToken = default)
+        string externalId, [FromQuery] int limit = ExternalResults.DefaultListLimit, CancellationToken cancellationToken = default)
     {
-        if (limit is < 1 or > MaxLimit)
-        {
-            return BadRequest(new ValidationProblemDetails(new Dictionary<string, string[]>
-            {
-                ["limit"] = [$"Limit must be between 1 and {MaxLimit}."],
-            }));
-        }
-        if (Check(externalId) is { } invalid)
-            return invalid;
+        if (this.InvalidLimit(limit) is { } invalidLimit)
+            return invalidLimit;
 
-        try
+        return await this.WithProvider(provider, async p =>
         {
-            var tracks = await provider!.GetArtistTracksAsync(externalId, limit, cancellationToken);
+            if (Check(p, externalId) is { } invalid)
+                return invalid;
+            var tracks = await p.GetArtistTracksAsync(externalId, limit, cancellationToken);
             var ids = tracks.Select(t => t.ExternalId).ToList();
             var known = await db.TrackExternalIds.AsNoTracking()
-                .Where(e => e.Provider == provider.Provider && ids.Contains(e.ExternalId))
+                .Where(e => e.Provider == p.Provider && ids.Contains(e.ExternalId))
                 .Select(e => new
                 {
                     e.ExternalId,
@@ -106,12 +92,8 @@ public class ExternalArtistsController(
                         : new ExternalArtistTrack(t, null, null, listens);
                 })
                 .ToList();
-            return Ok(new ExternalArtistTrackListResponse(provider.Provider, items, status));
-        }
-        catch (CandidateSearchUnavailableException e)
-        {
-            return Unavailable(e.Message);
-        }
+            return Ok(new ExternalArtistTrackListResponse(p.Provider, items, status));
+        });
     }
 
     // Optional enrichment: its failure is reported in the status and never fails the track list.
@@ -132,22 +114,7 @@ public class ExternalArtistsController(
         }
     }
 
-    // Null when the provider is configured and the identifier is one of its valid ones.
-    private IActionResult? Check(string externalId)
-    {
-        if (provider is null)
-            return Unavailable("External search is not configured.");
-        if (ExternalSources.Normalize(provider.Provider, externalId) is not { } normalized
-            || normalized.ExternalId != externalId)
-        {
-            return BadRequest(new ValidationProblemDetails(new Dictionary<string, string[]>
-            {
-                ["externalId"] = [$"Not a valid {provider.Provider} artist identifier."],
-            }));
-        }
-        return null;
-    }
-
-    private ObjectResult Unavailable(string detail) =>
-        Problem(detail, statusCode: StatusCodes.Status503ServiceUnavailable, title: "External search is unavailable.");
+    // Null when the identifier is one of the provider's valid ones.
+    private IActionResult? Check(IExternalMusicSearch p, string externalId) =>
+        this.InvalidId(p.Provider, externalId, "artist");
 }

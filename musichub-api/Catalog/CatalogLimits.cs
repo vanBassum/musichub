@@ -9,4 +9,5 @@ public static class CatalogLimits
     public const int Version = 500;
     public const int ArtistName = 500;
     public const int Role = 100;
+    public const int ReleaseDate = 10;
 }

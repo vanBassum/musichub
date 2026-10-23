@@ -221,7 +221,8 @@ public sealed class SlskdAcquisitionProviderTests : IDisposable
           {"id":"{{id}}","filename":{{System.Text.Json.JsonSerializer.Serialize(path)}},"state":"{{state}}"}]}]}
         """;
 
-    private const string NoTransfers = """{"username":"peer1","directories":[]}""";
+    /// <summary>What slskd answers for a user it has no transfers of: 404, not an empty list.</summary>
+    private static HttpResponseMessage NoTransfers() => Empty(HttpStatusCode.NotFound);
 
     private static bool IsTransferList(Call c) =>
         c.Method == HttpMethod.Get && c.PathAndQuery == "/api/v0/transfers/downloads/peer1";
@@ -243,7 +244,7 @@ public sealed class SlskdAcquisitionProviderTests : IDisposable
             var polls = self!.Calls.Count(c => IsTransferList(c));
             if (self.Count(HttpMethod.Post, "/api/v0/transfers/downloads/peer1") == 0)
             {
-                return Json(NoTransfers);
+                return NoTransfers();
             }
             return Json(Transfers("t1", states[Math.Min(polls - 2, states.Length - 1)], candidate.Path));
         });
@@ -269,6 +270,27 @@ public sealed class SlskdAcquisitionProviderTests : IDisposable
         await using var content = outcome.File.OpenRead();
         Assert.Equal(3, content.Length);
         Assert.Contains("\"filename\":\"@@share\\\\Music\\\\An Artist\\\\Album\\\\01 A Title.mp3\"", fake.Calls.Single(c => c.Method == HttpMethod.Post).Body);
+    }
+
+    [Fact]
+    public async Task A_transfer_slskd_does_not_list_yet_right_after_queueing_is_waited_for()
+    {
+        StoreDownloadedFile();
+        FakeSlskd? self = null;
+        self = new FakeSlskd((call, _) =>
+        {
+            if (call.Method == HttpMethod.Post)
+            {
+                return Empty(HttpStatusCode.Created);
+            }
+            var polls = self!.Calls.Count(c => IsTransferList(c));
+            return polls <= 2 ? NoTransfers() : Json(Transfers("t1", "Completed, Succeeded", Candidate.Path));
+        });
+
+        var outcome = await Provider(self).DownloadAsync(Candidate, CancellationToken.None);
+
+        Assert.NotNull(outcome.File);
+        Assert.Equal(1, self.Count(HttpMethod.Post, "/api/v0/transfers/downloads/peer1"));
     }
 
     [Fact]
@@ -459,7 +481,7 @@ public sealed class SlskdAcquisitionProviderTests : IDisposable
     {
         var fake = new FakeSlskd((call, _) => call.Method == HttpMethod.Post
             ? Empty(HttpStatusCode.Forbidden)
-            : Json(NoTransfers));
+            : NoTransfers());
 
         var outcome = await Provider(fake).DownloadAsync(Candidate, CancellationToken.None);
 
@@ -580,7 +602,7 @@ public sealed class SlskdAcquisitionProviderTests : IDisposable
             {
                 { Method: "POST" } => posts <= 2 ? TooManyRequests() : Empty(HttpStatusCode.Created),
                 { Method: "DELETE" } => Empty(),
-                _ => posts < 3 ? Json(NoTransfers) : Json(Transfers("t1", "Completed, Succeeded", Candidate.Path)),
+                _ => posts < 3 ? NoTransfers() : Json(Transfers("t1", "Completed, Succeeded", Candidate.Path)),
             };
         });
         var fake = self;
@@ -595,7 +617,7 @@ public sealed class SlskdAcquisitionProviderTests : IDisposable
     [Fact]
     public async Task A_download_slskd_keeps_throttling_fails_as_unavailable_and_leaves_no_transfer()
     {
-        var fake = new FakeSlskd((call, _) => call.Method == HttpMethod.Post ? TooManyRequests() : Json(NoTransfers));
+        var fake = new FakeSlskd((call, _) => call.Method == HttpMethod.Post ? TooManyRequests() : NoTransfers());
 
         var outcome = await Provider(fake, o => o.RateLimitMaxRetries = 2).DownloadAsync(Candidate, CancellationToken.None);
 

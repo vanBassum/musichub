@@ -239,8 +239,10 @@ public sealed class SlskdAcquisitionProvider(
 
     private async Task<List<TransferFile>> FindTransfersAsync(AcquisitionCandidate candidate, CancellationToken ct)
     {
+        // slskd answers 404, not an empty list, for a user it has no transfers of.
         var user = await ReadAsync<TransferUser>(
-            HttpMethod.Get, $"api/v0/transfers/downloads/{Uri.EscapeDataString(candidate.Source)}", ct);
+            HttpMethod.Get, $"api/v0/transfers/downloads/{Uri.EscapeDataString(candidate.Source)}", ct,
+            notFoundIsNone: true);
         return (user?.Directories ?? [])
             .SelectMany(d => d.Files ?? [])
             .Where(f => f.Filename == candidate.Path && !string.IsNullOrEmpty(f.Id))
@@ -275,9 +277,13 @@ public sealed class SlskdAcquisitionProvider(
     private AcquisitionDownloadOutcome Failed(AcquisitionFailure failure, string detail) =>
         AcquisitionDownloadOutcome.Failed(Name, failure, detail);
 
-    private async Task<T?> ReadAsync<T>(HttpMethod method, string path, CancellationToken ct)
+    private async Task<T?> ReadAsync<T>(HttpMethod method, string path, CancellationToken ct, bool notFoundIsNone = false)
     {
-        using var response = await SendAsync(method, path, null, ct);
+        using var response = await SendAsync(method, path, null, ct, notFoundIsNone);
+        if (response.StatusCode == HttpStatusCode.NotFound)
+        {
+            return default;
+        }
         try
         {
             return await response.Content.ReadFromJsonAsync<T>(Json, ct);
@@ -291,14 +297,16 @@ public sealed class SlskdAcquisitionProvider(
     /// <summary>
     /// One request; any answer but a success is an <see cref="AcquisitionUnavailableException"/>. A 429 means slskd
     /// refused the request before acting on it, so it is repeated (same body, so the same search id or transfer) after
-    /// <c>Retry-After</c> or an exponential backoff, within the configured attempts and maximum delay.
+    /// <c>Retry-After</c> or an exponential backoff, within the configured attempts and maximum delay. With
+    /// <paramref name="notFoundIsNone"/>, a 404 is returned as an answer instead.
     /// </summary>
-    private async Task<HttpResponseMessage> SendAsync(HttpMethod method, string path, object? body, CancellationToken ct)
+    private async Task<HttpResponseMessage> SendAsync(
+        HttpMethod method, string path, object? body, CancellationToken ct, bool notFoundIsNone = false)
     {
         for (var retry = 0; ; retry++)
         {
             var response = await SendOnceAsync(method, path, body, ct);
-            if (response.IsSuccessStatusCode)
+            if (response.IsSuccessStatusCode || (notFoundIsNone && response.StatusCode == HttpStatusCode.NotFound))
             {
                 return response;
             }

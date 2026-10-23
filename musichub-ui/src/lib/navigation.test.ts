@@ -7,9 +7,12 @@ import {
   formatLocation,
   formatSearchHash,
   locationOf,
+  mobileMenuNav,
+  mobileNav,
   parseJobsFilter,
   parseLocation,
   parseSearchQuery,
+  primaryNav,
 } from "@/lib/navigation"
 
 describe("search deep link", () => {
@@ -29,16 +32,41 @@ describe("search deep link", () => {
 describe("jobs history deep link", () => {
   it.each(["failed", "stuck"] as const)("round-trips the %s filter", (filter) => {
     const hash = formatJobsHash(filter)
-    expect(hash).toBe(`#/settings/jobs?state=${filter}`)
+    expect(hash).toBe(`#/jobs?state=${filter}`)
     expect(parseJobsFilter(hash)).toBe(filter)
-    expect(parseLocation(hash)).toEqual(locationOf("settings", "jobs"))
+    expect(parseLocation(hash)).toEqual(locationOf("jobs"))
   })
 
   it("lists all runs without a valid filter or on another screen", () => {
-    expect(formatJobsHash("all")).toBe("#/settings/jobs")
-    expect(parseJobsFilter("#/settings/jobs")).toBe("all")
-    expect(parseJobsFilter("#/settings/jobs?state=bogus")).toBe("all")
-    expect(parseJobsFilter("#/settings/files?state=failed")).toBe("all")
+    expect(formatJobsHash("all")).toBe("#/jobs")
+    expect(parseJobsFilter("#/jobs")).toBe("all")
+    expect(parseJobsFilter("#/jobs?state=bogus")).toBe("all")
+    expect(parseJobsFilter("#/files?state=failed")).toBe("all")
+  })
+
+  it("still reads the earlier Settings link", () => {
+    expect(parseJobsFilter("#/settings/jobs?state=failed")).toBe("failed")
+  })
+})
+
+describe("navigation entries", () => {
+  it("lists the six destinations in the sidebar and all of them on the phone", () => {
+    expect(primaryNav).toEqual([
+      "search",
+      "library",
+      "downloads",
+      "files",
+      "jobs",
+      "settings",
+    ])
+    expect([...mobileNav, ...mobileMenuNav].sort()).toEqual(
+      [...primaryNav, "player"].sort()
+    )
+  })
+
+  it("highlights Files and Jobs as their own destinations", () => {
+    expect(activeNav(locationOf("files"))).toBe("files")
+    expect(activeNav(locationOf("jobs"))).toBe("jobs")
   })
 })
 
@@ -47,10 +75,10 @@ describe("location", () => {
     ["#/library", locationOf("library")],
     ["#/downloads", locationOf("downloads")],
     ["#/player", locationOf("player")],
-    ["#/player/queue", locationOf("player", null, "queue")],
+    ["#/player/queue", locationOf("player", "queue")],
     ["#/settings", locationOf("settings")],
-    ["#/settings/files", locationOf("settings", "files")],
-    ["#/settings/jobs", locationOf("settings", "jobs")],
+    ["#/files", locationOf("files")],
+    ["#/jobs", locationOf("jobs")],
   ])("round-trips %s", (hash, location) => {
     expect(parseLocation(hash)).toEqual(location)
     expect(formatLocation(location)).toBe(hash)
@@ -72,7 +100,12 @@ describe("location", () => {
     expect(parseLocation("#/downloads?audio=without")).toEqual(locationOf("downloads"))
   })
 
-  it("opens Settings, on its first section, for the removed Problems links", () => {
+  it("opens Files and Jobs for the earlier Settings links", () => {
+    expect(parseLocation("#/settings/files")).toEqual(locationOf("files"))
+    expect(parseLocation("#/settings/jobs")).toEqual(locationOf("jobs"))
+  })
+
+  it("opens Settings for the removed Problems links", () => {
     expect(parseLocation("#/settings/problems")).toEqual(locationOf("settings"))
     expect(parseLocation("#/more/problems")).toEqual(locationOf("settings"))
   })
@@ -90,10 +123,8 @@ describe("location", () => {
 
   it("keeps the earlier #/more links working", () => {
     expect(parseLocation("#/more")).toEqual(locationOf("settings"))
-    expect(parseLocation("#/more/files")).toEqual(
-      locationOf("settings", "files")
-    )
-    expect(parseLocation("#/more/jobs")).toEqual(locationOf("settings", "jobs"))
+    expect(parseLocation("#/more/files")).toEqual(locationOf("files"))
+    expect(parseLocation("#/more/jobs")).toEqual(locationOf("jobs"))
     expect(parseLocation("#/more/library")).toEqual(locationOf("library"))
     expect(parseLocation("#/more/downloads")).toEqual(locationOf("downloads"))
     expect(parseLocation("#/more/artists")).toEqual(locationOf("search"))
