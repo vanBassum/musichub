@@ -13,6 +13,7 @@ public static class AcquisitionServiceCollectionExtensions
     public static IServiceCollection AddAcquisition(this IServiceCollection services, IConfiguration configuration)
     {
         services.AddScoped<AcquisitionHandoff>();
+        services.AddScoped<TrackActivityLog>();
         services.AddScoped<AcquisitionHistory>();
         services.AddScoped<IDownloadQueueService, DownloadQueueService>();
         services.Configure<MissingMusicOptions>(configuration.GetSection(MissingMusicOptions.SectionName));

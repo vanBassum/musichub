@@ -37,7 +37,8 @@ public sealed record TrackAcquisitionResult(
 /// <paramref name="Fresh"/> holds the candidates worth downloading, best first.
 /// </summary>
 public sealed record TrackDiscovery(
-    int TrackId, Track? Track, WantedRecording? Wanted, IReadOnlyList<AcquisitionCandidate> Fresh, TrackAcquisitionResult? Stopped)
+    int TrackId, Track? Track, WantedRecording? Wanted, IReadOnlyList<AcquisitionCandidate> Fresh, TrackAcquisitionResult? Stopped,
+    Guid? SearchId = null)
 {
     public static TrackDiscovery Ended(int trackId, TrackAcquisitionResult result) => new(trackId, null, null, [], result);
 
@@ -52,6 +53,7 @@ public sealed record TrackDiscovery(
 public sealed class TrackAcquisition(
     MusicHubDbContext db,
     AcquisitionHistory history,
+    TrackActivityLog activity,
     IAcquisitionProvider provider,
     IOptions<DownloadWorkerOptions> options,
     TimeProvider time)
@@ -59,9 +61,11 @@ public sealed class TrackAcquisition(
     /// <summary>
     /// Searches for the track and ranks what is offered, without downloading anything. <see cref="TrackDiscovery.Stopped"/>
     /// is the result when there is nothing to download; otherwise <see cref="TrackDiscovery.Fresh"/> lists the plausible
-    /// candidates not rejected before, best first.
+    /// candidates not rejected before, best first. Each search writes its start and its outcome, with the counts, to the
+    /// track's activity timeline under one <see cref="TrackDiscovery.SearchId"/>.
     /// </summary>
-    public async Task<TrackDiscovery> DiscoverAsync(int trackId, CancellationToken cancellationToken)
+    public async Task<TrackDiscovery> DiscoverAsync(
+        int trackId, CancellationToken cancellationToken, string? jobExecutionId = null)
     {
         var track = await db.Tracks.AsNoTracking()
             .Include(t => t.Artists).ThenInclude(a => a.Artist)
@@ -77,6 +81,12 @@ public sealed class TrackAcquisition(
             TrackDiscovery.Ended(trackId, new TrackAcquisitionResult(
                 trackId, track.Title, string.Join(", ", wanted.Artists), outcome, detail));
 
+        var searchId = Guid.NewGuid();
+        Task Record(TrackActivityKind kind, string summary, string? detail = null, TrackActivityLinks? counts = null) =>
+            activity.RecordAsync(trackId, kind, summary, cancellationToken, detail,
+                (counts ?? new TrackActivityLinks()) with { SearchId = searchId, JobExecutionId = jobExecutionId });
+
+        await Record(TrackActivityKind.SearchStarted, "Search started.");
         IReadOnlyList<AcquisitionCandidate> offered;
         try
         {
@@ -84,6 +94,7 @@ public sealed class TrackAcquisition(
         }
         catch (AcquisitionUnavailableException e)
         {
+            await Record(TrackActivityKind.SearchFailed, "The provider could not search; nothing is known about this track.", e.Message);
             return Ended(TrackAcquisitionOutcome.ProviderUnavailable, e.Message);
         }
 
@@ -101,12 +112,19 @@ public sealed class TrackAcquisition(
             else if (!await history.WasRejectedAsync(candidate, cancellationToken))
                 fresh.Add(candidate);
         }
+        var counts = $"{offered.Count} results, {plausible.Count} plausible MP3s, {fresh.Count} eligible.";
         if (fresh.Count == 0)
+        {
+            await Record(TrackActivityKind.NotFound, $"Nothing to download: {counts}", null,
+                new TrackActivityLinks { ResultCount = offered.Count, PlausibleCount = plausible.Count, EligibleCount = 0 });
             return Ended(TrackAcquisitionOutcome.NothingFound,
                 $"{offered.Count} results, {plausible.Count} plausible MP3s, {offline} from sources offline, " +
                 $"{plausible.Count - offline - fresh.Count} rejected earlier.");
+        }
 
-        return new TrackDiscovery(trackId, track, wanted, fresh, null);
+        await Record(TrackActivityKind.SearchCompleted, $"Search finished: {counts}", null,
+            new TrackActivityLinks { ResultCount = offered.Count, PlausibleCount = plausible.Count, EligibleCount = fresh.Count });
+        return new TrackDiscovery(trackId, track, wanted, fresh, null, searchId);
     }
 
     private Task<bool> HasStoredAudioAsync(int trackId, CancellationToken cancellationToken) =>

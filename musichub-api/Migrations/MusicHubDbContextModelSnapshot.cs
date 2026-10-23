@@ -220,6 +220,70 @@ namespace MusicHub.Api.Migrations
                     b.ToTable("DownloadRequests");
                 });
 
+            modelBuilder.Entity("MusicHub.Api.Acquisition.TrackActivity", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<int?>("AcquisitionDownloadId")
+                        .HasColumnType("integer");
+
+                    b.Property<int?>("AttemptNumber")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Detail")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.Property<int?>("DownloadRequestId")
+                        .HasColumnType("integer");
+
+                    b.Property<int?>("EligibleCount")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("JobExecutionId")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)");
+
+                    b.Property<DateTimeOffset>("OccurredAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int?>("PlausibleCount")
+                        .HasColumnType("integer");
+
+                    b.Property<int?>("ResultCount")
+                        .HasColumnType("integer");
+
+                    b.Property<Guid?>("SearchId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Summary")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<int>("TrackId")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("DownloadRequestId");
+
+                    b.HasIndex("SearchId");
+
+                    b.HasIndex("TrackId", "Id");
+
+                    b.ToTable("TrackActivities");
+                });
+
             modelBuilder.Entity("MusicHub.Api.Acquisition.PendingResearch", b =>
                 {
                     b.Property<int>("Id")
@@ -715,6 +779,17 @@ namespace MusicHub.Api.Migrations
                 });
 
             modelBuilder.Entity("MusicHub.Api.Acquisition.PendingResearch", b =>
+                {
+                    b.HasOne("MusicHub.Api.Catalog.Track", "Track")
+                        .WithMany()
+                        .HasForeignKey("TrackId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Track");
+                });
+
+            modelBuilder.Entity("MusicHub.Api.Acquisition.TrackActivity", b =>
                 {
                     b.HasOne("MusicHub.Api.Catalog.Track", "Track")
                         .WithMany()
