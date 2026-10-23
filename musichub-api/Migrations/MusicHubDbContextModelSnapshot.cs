@@ -220,6 +220,114 @@ namespace MusicHub.Api.Migrations
                     b.ToTable("DownloadRequests");
                 });
 
+            modelBuilder.Entity("MusicHub.Api.Catalog.Album", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("Albums");
+                });
+
+            modelBuilder.Entity("MusicHub.Api.Catalog.AlbumEdition", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("AlbumId")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Name")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<string>("ReleaseDate")
+                        .HasMaxLength(10)
+                        .HasColumnType("character varying(10)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AlbumId");
+
+                    b.ToTable("AlbumEditions");
+                });
+
+            modelBuilder.Entity("MusicHub.Api.Catalog.AlbumEditionExternalId", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("AlbumEditionId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("ExternalId")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("Provider")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AlbumEditionId");
+
+                    b.HasIndex("Provider", "ExternalId")
+                        .IsUnique();
+
+                    b.ToTable("AlbumEditionExternalIds");
+                });
+
+            modelBuilder.Entity("MusicHub.Api.Catalog.AlbumEditionTrack", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("AlbumEditionId")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("Position")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("TrackId")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TrackId");
+
+                    b.HasIndex("AlbumEditionId", "Position")
+                        .IsUnique();
+
+                    b.ToTable("AlbumEditionTracks");
+                });
+
             modelBuilder.Entity("MusicHub.Api.Catalog.AppliedIdentification", b =>
                 {
                     b.Property<int>("Id")
@@ -569,6 +677,47 @@ namespace MusicHub.Api.Migrations
                     b.Navigation("Track");
                 });
 
+            modelBuilder.Entity("MusicHub.Api.Catalog.AlbumEdition", b =>
+                {
+                    b.HasOne("MusicHub.Api.Catalog.Album", "Album")
+                        .WithMany("Editions")
+                        .HasForeignKey("AlbumId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Album");
+                });
+
+            modelBuilder.Entity("MusicHub.Api.Catalog.AlbumEditionExternalId", b =>
+                {
+                    b.HasOne("MusicHub.Api.Catalog.AlbumEdition", "AlbumEdition")
+                        .WithMany("ExternalIds")
+                        .HasForeignKey("AlbumEditionId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("AlbumEdition");
+                });
+
+            modelBuilder.Entity("MusicHub.Api.Catalog.AlbumEditionTrack", b =>
+                {
+                    b.HasOne("MusicHub.Api.Catalog.AlbumEdition", "AlbumEdition")
+                        .WithMany("Tracks")
+                        .HasForeignKey("AlbumEditionId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("MusicHub.Api.Catalog.Track", "Track")
+                        .WithMany()
+                        .HasForeignKey("TrackId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("AlbumEdition");
+
+                    b.Navigation("Track");
+                });
+
             modelBuilder.Entity("MusicHub.Api.Catalog.AppliedIdentification", b =>
                 {
                     b.HasOne("MusicHub.Api.Catalog.IdentificationOutcome", "Attempt")
@@ -660,6 +809,18 @@ namespace MusicHub.Api.Migrations
                         .OnDelete(DeleteBehavior.SetNull);
 
                     b.Navigation("Track");
+                });
+
+            modelBuilder.Entity("MusicHub.Api.Catalog.Album", b =>
+                {
+                    b.Navigation("Editions");
+                });
+
+            modelBuilder.Entity("MusicHub.Api.Catalog.AlbumEdition", b =>
+                {
+                    b.Navigation("ExternalIds");
+
+                    b.Navigation("Tracks");
                 });
 
             modelBuilder.Entity("MusicHub.Api.Catalog.Artist", b =>
