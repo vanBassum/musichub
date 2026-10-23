@@ -247,6 +247,60 @@ export const getDownloads = (id: string, signal?: AbortSignal) =>
     signal
   )
 
+export type TrackActivityKind =
+  | "SearchStarted"
+  | "SearchCompleted"
+  | "NotFound"
+  | "SearchFailed"
+  | "DownloadQueued"
+  | "DownloadStarted"
+  | "DownloadCompleted"
+  | "DownloadRetryScheduled"
+  | "DownloadInterrupted"
+  | "DownloadFailed"
+  | "DownloadRetriedManually"
+  | "ImportAccepted"
+  | "ImportRejected"
+
+// One persisted event in a track's acquisition history, with the time it was recorded. `jobExecutionId` names the
+// run that wrote it (events written outside a run have none).
+export interface TrackActivity {
+  id: number
+  trackId: number
+  kind: TrackActivityKind
+  occurredAt: string
+  summary: string
+  detail: string | null
+  jobExecutionId: string | null
+  acquisitionDownloadId: number | null
+  attemptNumber: number | null
+  resultCount: number | null
+  plausibleCount: number | null
+  eligibleCount: number | null
+}
+
+// The API takes at most this many tracks per request.
+const activityTracksPerRequest = 200
+// Events a run writes per track stay far below the API's per-track limit (20).
+const activityPerTrack = 20
+
+// GET /api/tracks/activity: the latest events of the given tracks, oldest first (one request per 200 tracks).
+export async function getTrackActivity(trackIds: number[], signal?: AbortSignal) {
+  const chunks: number[][] = []
+  for (let i = 0; i < trackIds.length; i += activityTracksPerRequest)
+    chunks.push(trackIds.slice(i, i + activityTracksPerRequest))
+  const answers = await Promise.all(
+    chunks.map((chunk) =>
+      getJson<Record<string, TrackActivity[]>>(
+        `/api/tracks/activity?${new URLSearchParams({ trackIds: chunk.join(","), perTrack: String(activityPerTrack) })}`,
+        "The track activity",
+        signal
+      )
+    )
+  )
+  return answers.flatMap((answer) => Object.values(answer).flat())
+}
+
 // What a manual start chooses. `reIdentifyAll` (Synchronize catalog only) also identifies files that already
 // have a track; their link is never changed.
 export interface JobStartOptions {
