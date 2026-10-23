@@ -1,5 +1,6 @@
 import { ArtistLinks } from "@/components/artist-links"
 import { AudioBadge } from "@/components/audio-badge"
+import { LibrarySearch } from "@/components/library-search"
 import { TrackPlayControl } from "@/components/track-play-control"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -22,6 +23,9 @@ interface TrackTableProps {
   error: string | undefined
   onRetry: () => void
   onPageChange: (page: number) => void
+  // What the Library search box shows, and its change handler.
+  search: string
+  onSearchChange: (search: string) => void
   // Whether a search or filter is applied, to word the empty state.
   filtered: boolean
   selectedId: number | null
@@ -37,6 +41,8 @@ export function TrackTable({
   error,
   onRetry,
   onPageChange,
+  search,
+  onSearchChange,
   filtered,
   selectedId,
   onSelect,
@@ -67,6 +73,7 @@ export function TrackTable({
           )}
         </div>
       )}
+      <LibrarySearch value={search} onChange={onSearchChange} />
       {status === "error" && (
         <div
           role="alert"

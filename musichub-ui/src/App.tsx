@@ -117,6 +117,8 @@ export function App() {
       error={catalog.error}
       onRetry={catalog.retry}
       onPageChange={setPage}
+      search={searchInput}
+      onSearchChange={setSearchInput}
       filtered={filtered}
       selectedId={selectedId}
       onSelect={(id) => selectTrack(id, "library")}

@@ -38,7 +38,7 @@ public class ExternalSearchTests
               {"id":"rec-2","title":""}]}
             """));
 
-        var tracks = await Search(handler).SearchTracksAsync("Song", new ExternalSearchFields(true, true), 5, CancellationToken.None);
+        var tracks = await Search(handler).SearchTracksAsync("Song", new ExternalSearchFields(true, true), 5, 0, CancellationToken.None);
 
         var track = Assert.Single(tracks);
         Assert.Equal("musicbrainz", track.Provider);
@@ -54,9 +54,9 @@ public class ExternalSearchTests
         var handler = new StubHandler(_ => Json("{}"));
         var search = Search(handler);
 
-        await search.SearchTracksAsync("x", new ExternalSearchFields(true, false), 5, CancellationToken.None);
-        await search.SearchTracksAsync("x", new ExternalSearchFields(false, true), 5, CancellationToken.None);
-        await search.SearchTracksAsync("x", new ExternalSearchFields(true, true), 5, CancellationToken.None);
+        await search.SearchTracksAsync("x", new ExternalSearchFields(true, false), 5, 0, CancellationToken.None);
+        await search.SearchTracksAsync("x", new ExternalSearchFields(false, true), 5, 0, CancellationToken.None);
+        await search.SearchTracksAsync("x", new ExternalSearchFields(true, true), 5, 0, CancellationToken.None);
 
         Assert.Contains("query=recording:\"x\"&", handler.Urls[0]);
         Assert.Contains("query=artist:\"x\"&", handler.Urls[1]);
@@ -68,7 +68,7 @@ public class ExternalSearchTests
     {
         var handler = new StubHandler(_ => Json("""{"artists":[{"id":"art-1","name":"The Band","disambiguation":"UK"},{"name":"No id"}]}"""));
 
-        var artists = await Search(handler).SearchArtistsAsync("band", 5, CancellationToken.None);
+        var artists = await Search(handler).SearchArtistsAsync("band", 5, 0, CancellationToken.None);
 
         var artist = Assert.Single(artists);
         Assert.Equal(new ExternalArtist("musicbrainz", "art-1", "The Band", "UK", "https://musicbrainz.org/artist/art-1"), artist);
@@ -80,17 +80,17 @@ public class ExternalSearchTests
         var handler = new StubHandler(_ => new HttpResponseMessage(HttpStatusCode.TooManyRequests));
 
         await Assert.ThrowsAsync<CandidateSearchUnavailableException>(
-            () => Search(handler).SearchArtistsAsync("band", 5, CancellationToken.None));
+            () => Search(handler).SearchArtistsAsync("band", 5, 0, CancellationToken.None));
     }
 
     private sealed class FailingSearch : IExternalMusicSearch
     {
         public string Provider => "stub";
 
-        public Task<IReadOnlyList<ExternalTrack>> SearchTracksAsync(string term, ExternalSearchFields fields, int limit, CancellationToken ct) =>
+        public Task<IReadOnlyList<ExternalTrack>> SearchTracksAsync(string term, ExternalSearchFields fields, int limit, int offset, CancellationToken ct) =>
             throw new CandidateSearchUnavailableException("rate limited");
 
-        public Task<IReadOnlyList<ExternalArtist>> SearchArtistsAsync(string term, int limit, CancellationToken ct) =>
+        public Task<IReadOnlyList<ExternalArtist>> SearchArtistsAsync(string term, int limit, int offset, CancellationToken ct) =>
             throw new CandidateSearchUnavailableException("rate limited");
 
         public Task<ExternalArtist?> GetArtistAsync(string externalId, CancellationToken ct) =>
@@ -155,5 +155,7 @@ public class ExternalSearchTests
         Assert.IsType<BadRequestObjectResult>(await controller.Tracks("  ", null));
         Assert.IsType<BadRequestObjectResult>(await controller.Tracks("x", "album"));
         Assert.IsType<BadRequestObjectResult>(await controller.Artists("x", limit: 0));
+        Assert.IsType<BadRequestObjectResult>(await controller.Artists("x", offset: -1));
+        Assert.IsType<BadRequestObjectResult>(await controller.Tracks("x", null, offset: ExternalResults.MaxOffset + 1));
     }
 }

@@ -1,7 +1,4 @@
-import { Search } from "lucide-react"
-
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
 import type { AudioFilter } from "@/lib/catalog-api"
 import { cn } from "@/lib/utils"
 
@@ -10,6 +7,7 @@ interface FilterSidebarProps {
   onSearchChange: (search: string) => void
   audio: AudioFilter
   onAudioChange: (audio: AudioFilter) => void
+  // The search box itself sits above the track table; "Clear all" resets it too.
   // Extra classes, e.g. to drop the card chrome inside the mobile sheet.
   className?: string
 }
@@ -51,20 +49,6 @@ export function FilterSidebar({
         >
           Clear all
         </Button>
-      </div>
-      <div className="relative">
-        <Search
-          className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground"
-          aria-hidden="true"
-        />
-        <Input
-          type="search"
-          value={search}
-          onChange={(event) => onSearchChange(event.target.value)}
-          placeholder="Search title or artist..."
-          aria-label="Search library"
-          className="h-9 pl-8"
-        />
       </div>
       <fieldset className="flex flex-col gap-2">
         <legend className="mb-1 text-sm font-medium">Library view</legend>
