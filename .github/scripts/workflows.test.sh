@@ -51,6 +51,23 @@ claude_steps() {
     | awk -v want="$1" '{ v = $NF; sub(/ [^ ]*$/, "") } want == "all" || v != "false"'
 }
 
+# job_permission <job> <scope> <workflow>: prints the level the job's own
+# `permissions:` block gives <scope>, or "-" when it doesn't name it.
+job_permission() {
+  awk -v job="$1" -v scope="$2" '
+    { sub(/\r$/, "") }
+    /^[[:space:]]*(#.*)?$/ { next }
+    { match($0, /^ */); ind = RLENGTH }
+    /^jobs:/ { injobs = 1; next }
+    injobs && ind == 2 { inj = ($0 ~ ("^  " job ":")); inp = 0; next }
+    inj && ind == 4 { inp = ($0 ~ /^    permissions:[[:space:]]*$/); next }
+    inp && ind == 6 && $0 ~ ("^ *" scope ":") {
+      val = $0; sub(/^ *[a-z-]+:[[:space:]]*/, "", val); sub(/[[:space:]]*(#.*)?$/, "", val)
+    }
+    END { print (val == "" ? "-" : val) }
+  ' "$3"
+}
+
 PASS=0; FAILED=0
 ok() { PASS=$((PASS + 1)); echo "ok    $1"; }
 no() { FAILED=$((FAILED + 1)); echo "FAIL  $1"; }
@@ -72,8 +89,36 @@ reviewer_tools=$(sed -nE 's/^[[:space:]]*--allowedTools "([^"]*)"[[:space:]]*\r?
 [ "$reviewer_tools" = 'Read,Grep,Glob,mcp__github_inline_comment__create_inline_comment,Bash(gh pr diff:*),Bash(gh pr view:*),Bash(git log:*),Bash(git show:*)' ] \
   && ok "the reviewers only read and comment" || no "the reviewers only read and comment (found: $reviewer_tools)"
 
+# review-report.sh posts a comment on the PR through the issues API. On a PR that
+# needs pull-requests: write as well as issues: write, or GitHub answers HTTP 403.
+expect_permission() {
+  local got
+  got=$(job_permission "$2" "$3" "$5")
+  if [ "$got" = "$4" ]; then ok "$1"; else no "$1 (found $got, want $4)"; fi
+}
+for scope in pull-requests issues; do
+  expect_permission "the review report job has $scope: write" report "$scope" write "$WORKFLOWS/claude-review.yml"
+done
+
 # --- the check catches what it should ------------------------------------------
 fixture() { printf '%s\n' "$2" >"$WORK/$1.yml"; echo "$WORK/$1.yml"; }
+
+f=$(fixture permissions 'permissions: {}
+jobs:
+  review:
+    permissions:
+      pull-requests: write
+  report:
+    runs-on: x
+    permissions:
+      pull-requests: read  # comment
+      issues: write
+    steps:
+      - env:
+          issues: read')
+expect_permission "a job's own permission level is read" report pull-requests read "$f"
+expect_permission "a scope the job doesn't name is caught" report checks - "$f"
+expect_permission "a step's env is no permission" review issues - "$f"
 
 f=$(fixture default 'jobs:
   analysis:
