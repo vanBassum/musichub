@@ -167,6 +167,9 @@ namespace MusicHub.Api.Migrations
                     b.Property<DateTimeOffset?>("NextAttemptAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<int>("ProcessingAttempts")
+                        .HasColumnType("integer");
+
                     b.Property<string>("Provider")
                         .IsRequired()
                         .HasMaxLength(50)
@@ -211,11 +214,11 @@ namespace MusicHub.Api.Migrations
 
                     b.HasIndex("TrackId")
                         .IsUnique()
-                        .HasFilter("\"Status\" IN ('Queued', 'Downloading', 'Downloaded')");
+                        .HasFilter("\"Status\" IN ('Queued', 'Downloading', 'Downloaded', 'Processing')");
 
                     b.HasIndex("Provider", "Source", "RemotePath")
                         .IsUnique()
-                        .HasFilter("\"Status\" IN ('Queued', 'Downloading', 'Downloaded')");
+                        .HasFilter("\"Status\" IN ('Queued', 'Downloading', 'Downloaded', 'Processing')");
 
                     b.ToTable("DownloadRequests");
                 });

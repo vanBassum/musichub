@@ -58,6 +58,9 @@ public enum AcquisitionFailure
     /// <summary>The file arrived, but MusicHub failed while processing it (hashing, identifying, importing).</summary>
     ProcessingFailed,
 
+    /// <summary>The file arrived and was identified, but it is not the recording that was wanted (or cannot be shown to be). It stays outside the library.</summary>
+    IdentityRejected,
+
     /// <summary>The provider confirmed the source is offline. The source, not the track, failed: it is skipped for a while.</summary>
     SourceOffline,
 }
@@ -125,6 +128,12 @@ public interface IAcquisitionProvider
 
     /// <summary>Downloads the candidate within the provider's bound. Failures are returned, not thrown.</summary>
     Task<AcquisitionDownloadOutcome> DownloadAsync(AcquisitionCandidate candidate, CancellationToken ct);
+
+    /// <summary>
+    /// Finds the file of a download that already finished, without starting or following any transfer: it never queues
+    /// anything, so it can never download again. A file that cannot be read is a <see cref="AcquisitionFailure.FileNotAccessible"/> outcome.
+    /// </summary>
+    Task<AcquisitionDownloadOutcome> LocateDownloadAsync(AcquisitionCandidate candidate, CancellationToken ct);
 
     /// <summary>
     /// Like <see cref="DownloadAsync"/>, for a download that may already be under way at the provider (after a restart):

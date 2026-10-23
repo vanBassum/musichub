@@ -90,6 +90,7 @@ public class DownloadQueueService(MusicHubDbContext db, TimeProvider time) : IDo
             if (!await TransitionAsync(request, DownloadRequestStatus.Queued, r =>
                 {
                     r.AttemptCount = 0;
+                    r.ProcessingAttempts = 0;
                     r.BytesTransferred = 0;
                     r.NextAttemptAt = null;
                     r.FinishedAt = null;
@@ -126,30 +127,49 @@ public class DownloadQueueService(MusicHubDbContext db, TimeProvider time) : IDo
     public async Task<ClaimedDownload?> ClaimNextAsync(CancellationToken ct)
     {
         var now = time.GetUtcNow();
-        // Compared in memory: only queued requests are loaded, and the schedule is a time zone aware value.
-        var queued = (await db.DownloadRequests.Where(r => r.Status == DownloadRequestStatus.Queued)
-                .OrderBy(r => r.Id).ToListAsync(ct))
+        var request = await ClaimNextAsync(DownloadRequestStatus.Queued, DownloadRequestStatus.Downloading, r =>
+        {
+            r.AttemptCount++;
+            r.StartedAt ??= now;
+            r.BytesTransferred = 0;
+        }, ct);
+        return request is null ? null : new ClaimedDownload(request.Id, request.TrackId, CandidateOf(request), request.AttemptCount);
+    }
+
+    public async Task<ClaimedHandoff?> ClaimNextDownloadedAsync(CancellationToken ct)
+    {
+        var request = await ClaimNextAsync(
+            DownloadRequestStatus.Downloaded, DownloadRequestStatus.Processing, r => r.ProcessingAttempts++, ct);
+        return request is null
+            ? null
+            : new ClaimedHandoff(
+                request.Id, request.TrackId, CandidateOf(request), request.AcquisitionDownloadId, request.ProcessingAttempts);
+    }
+
+    /// <summary>Takes the oldest request in <paramref name="from"/> that may start now, or null when there is none.</summary>
+    private async Task<DownloadRequest?> ClaimNextAsync(
+        DownloadRequestStatus from, DownloadRequestStatus to, Action<DownloadRequest> apply, CancellationToken ct)
+    {
+        var now = time.GetUtcNow();
+        // Compared in memory: only the requests in one status are loaded, and the schedule is a time zone aware value.
+        var waiting = (await db.DownloadRequests.Where(r => r.Status == from).OrderBy(r => r.Id).ToListAsync(ct))
             .Where(r => r.NextAttemptAt is null || r.NextAttemptAt <= now);
-        foreach (var request in queued)
+        foreach (var request in waiting)
         {
             // Losing the race for one request means another worker has it: try the next.
-            if (!await TransitionAsync(request, DownloadRequestStatus.Downloading, r =>
+            if (await TransitionAsync(request, to, r =>
                 {
-                    r.AttemptCount++;
-                    r.StartedAt ??= now;
+                    apply(r);
                     r.NextAttemptAt = null;
-                    r.BytesTransferred = 0;
                 }, ct))
-                continue;
-
-            var candidate = new AcquisitionCandidate(
-                request.Provider, request.Source, request.RemotePath, request.SizeBytes ?? 0,
-                request.Format, request.BitrateKbps);
-            return new ClaimedDownload(request.Id, request.TrackId, candidate, request.AttemptCount);
+                return request;
         }
 
         return null;
     }
+
+    private static AcquisitionCandidate CandidateOf(DownloadRequest request) => new(
+        request.Provider, request.Source, request.RemotePath, request.SizeBytes ?? 0, request.Format, request.BitrateKbps);
 
     public async Task<bool> ReportProgressAsync(int id, long bytesTransferred, CancellationToken ct)
     {
@@ -173,6 +193,14 @@ public class DownloadQueueService(MusicHubDbContext db, TimeProvider time) : IDo
     public Task<bool> MarkCompletedAsync(int id, CancellationToken ct) =>
         TransitionAsync(id, DownloadRequestStatus.Completed, r => r.FinishedAt = time.GetUtcNow(), ct);
 
+    public Task<bool> RetryHandoffLaterAsync(
+        int id, AcquisitionFailure failure, string error, TimeSpan delay, CancellationToken ct) =>
+        TransitionAsync(id, DownloadRequestStatus.Downloaded, r =>
+        {
+            RecordFailure(r, failure, error, null);
+            r.NextAttemptAt = time.GetUtcNow() + delay;
+        }, ct);
+
     public Task<bool> RetryLaterAsync(
         int id, AcquisitionFailure failure, string error, DateTimeOffset notBefore, int? attemptId, CancellationToken ct) =>
         TransitionAsync(id, DownloadRequestStatus.Queued, r =>
@@ -191,11 +219,14 @@ public class DownloadQueueService(MusicHubDbContext db, TimeProvider time) : IDo
     public async Task<int> RequeueInterruptedAsync(CancellationToken ct)
     {
         var interrupted = await db.DownloadRequests
-            .Where(r => r.Status == DownloadRequestStatus.Downloading).ToListAsync(ct);
+            .Where(r => r.Status == DownloadRequestStatus.Downloading || r.Status == DownloadRequestStatus.Processing)
+            .ToListAsync(ct);
         var requeued = 0;
         foreach (var request in interrupted)
         {
-            if (await TransitionAsync(request, DownloadRequestStatus.Queued, r =>
+            var back = request.Status == DownloadRequestStatus.Downloading
+                ? DownloadRequestStatus.Queued : DownloadRequestStatus.Downloaded;
+            if (await TransitionAsync(request, back, r =>
                 {
                     r.Failure = null;
                     r.Error = "Interrupted by a restart; queued again.";

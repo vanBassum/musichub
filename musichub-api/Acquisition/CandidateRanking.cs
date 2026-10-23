@@ -1,7 +1,14 @@
+using MusicHub.Api.Catalog;
+
 namespace MusicHub.Api.Acquisition;
 
 /// <summary>The recording a search is for, as the catalog track names it.</summary>
-public sealed record WantedRecording(string Title, string? Version, IReadOnlyList<string> Artists);
+public sealed record WantedRecording(string Title, string? Version, IReadOnlyList<string> Artists)
+{
+    /// <summary>The recording a track names; its artists (loaded with it) in the order they were credited.</summary>
+    public static WantedRecording Of(Track track) => new(
+        track.Title, track.Version, track.Artists.OrderBy(a => a.Id).Select(a => a.Artist.Name).ToList());
+}
 
 /// <summary>
 /// Orders what a provider offers. Which recording a candidate is comes first: only MP3s whose name claims the wanted

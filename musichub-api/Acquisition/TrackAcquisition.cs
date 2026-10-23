@@ -71,8 +71,7 @@ public sealed class TrackAcquisition(
                 trackId, track?.Title ?? "", "", TrackAcquisitionOutcome.Skipped,
                 "The track was gone or had a stored file when its turn came."));
 
-        var wanted = new WantedRecording(
-            track.Title, track.Version, track.Artists.OrderBy(a => a.Id).Select(a => a.Artist.Name).ToList());
+        var wanted = WantedRecording.Of(track);
         TrackDiscovery Ended(TrackAcquisitionOutcome outcome, string detail) =>
             TrackDiscovery.Ended(trackId, new TrackAcquisitionResult(
                 trackId, track.Title, string.Join(", ", wanted.Artists), outcome, detail));
