@@ -2,14 +2,14 @@ import { ChevronLeft, SlidersHorizontal } from "lucide-react"
 import type { ReactNode } from "react"
 
 import { ArtistPage } from "@/components/artist-page"
-import { BuildInfoSheet } from "@/components/build-info-sheet"
 import { CompactPlayer } from "@/components/compact-player"
 import { DownloadsView } from "@/components/downloads-view"
+import { FilesView } from "@/components/files-view"
+import { JobsView } from "@/components/jobs-view"
 import { MobileNav } from "@/components/mobile-nav"
 import { NowPlaying, QueueList } from "@/components/player-panel"
 import { SearchPage } from "@/components/search-page"
-import { defaultSettingsSection } from "@/components/settings-sections"
-import { SettingsView, type SettingsStates } from "@/components/settings-view"
+import { SettingsView } from "@/components/settings-view"
 import { Button } from "@/components/ui/button"
 import {
   Sheet,
@@ -27,9 +27,14 @@ import {
 } from "@/lib/navigation"
 import type { DownloadStatusFilter } from "@/lib/downloads-api"
 import type { DownloadQueueState } from "@/lib/use-download-queue"
+import type { FilesState } from "@/lib/use-files"
+import type { JobsState } from "@/lib/use-jobs"
 import { cn } from "@/lib/utils"
 
-interface MobileShellProps extends SettingsStates {
+interface MobileShellProps {
+  // Held by the App so uploads and job history survive navigation.
+  filesState: FilesState
+  jobsState: JobsState
   location: AppLocation
   onNavigate: (location: AppLocation) => void
   // The catalog's track count, once known.
@@ -103,7 +108,7 @@ function PageHeader({
 }
 
 // Below `lg` the phone's navigation bar has Search, Library, Downloads, Player (Now
-// Playing and Queue) and Settings (Files, Jobs). An artist page opens from
+// Playing and Queue) and a Menu with Files, Jobs and Settings. An artist page opens from
 // Search or the Library and shows under the one it came from. The location is the URL
 // hash. Outside the Player page a compact player sits above the navigation.
 export function MobileShell({
@@ -118,9 +123,10 @@ export function MobileShell({
   searchQuery,
   onSearchQueryChange,
   onSelectTrack,
-  ...settings
+  filesState,
+  jobsState,
 }: MobileShellProps) {
-  const { tab, screen, playerView, artist } = location
+  const { tab, playerView, artist } = location
 
   return (
     <div className="flex h-dvh flex-col overflow-hidden">
@@ -182,7 +188,7 @@ export function MobileShell({
         <Tabs
           value={playerView}
           onValueChange={(value) =>
-            onNavigate(locationOf("player", null, value as PlayerView))
+            onNavigate(locationOf("player", value as PlayerView))
           }
           className="p-2 pb-0"
         >
@@ -203,16 +209,14 @@ export function MobileShell({
           </div>
         </div>
       </Page>
-      <Page show={tab === "settings"} label="Settings" className="gap-3 p-3">
-        <PageHeader title="Settings">
-          <BuildInfoSheet className="ml-auto" />
-        </PageHeader>
-        <SettingsView
-          section={screen ?? defaultSettingsSection}
-          onSectionChange={(id) => onNavigate(locationOf("settings", id))}
-          className="flex-1"
-          {...settings}
-        />
+      <Page show={tab === "files"} label="Files" className="p-3">
+        <FilesView state={filesState} className="min-h-0 flex-1" />
+      </Page>
+      <Page show={tab === "jobs"} label="Jobs" className="p-3">
+        <JobsView state={jobsState} className="min-h-0 flex-1" />
+      </Page>
+      <Page show={tab === "settings"} label="Settings" className="p-3">
+        <SettingsView className="flex-1" />
       </Page>
       {artist && (
         <Page show label="Artist" className="p-2">
