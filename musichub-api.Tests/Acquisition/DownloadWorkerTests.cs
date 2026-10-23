@@ -86,6 +86,8 @@ public sealed class DownloadWorkerTests : IDisposable
             .AddDbContext<MusicHubDbContext>(o => o.UseSqlite($"Data Source={_path};Pooling=False"))
             .AddScoped<IDownloadQueueService, DownloadQueueService>()
             .AddScoped<AcquisitionHistory>()
+            .AddScoped<TrackAcquisition>()
+            .AddScoped<AcquisitionFailover>()
             .AddScoped<DownloadProcessor>()
             .BuildServiceProvider();
     }

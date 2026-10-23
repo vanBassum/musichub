@@ -24,6 +24,7 @@ public sealed class SlskdAcquisitionProvider(
 
     private const int MaxResponses = 100;
     private const int MaxFiles = 1000;
+    private const int MaxReasonChars = 2000;
 
     private readonly SlskdOptions _options = options.Value;
 
@@ -121,6 +122,12 @@ public sealed class SlskdAcquisitionProvider(
                 await CancelTransfersAsync(candidate, known);
             }
             throw;
+        }
+        catch (AcquisitionSourceOfflineException)
+        {
+            // The enqueue itself was refused, so nothing is left in slskd to follow or cancel.
+            return Failed(AcquisitionFailure.SourceOffline,
+                $"{candidate.Source} is offline in Soulseek (slskd refused to queue the file). It is skipped for a while; try another source.");
         }
         catch (AcquisitionUnavailableException e)
         {
@@ -313,7 +320,12 @@ public sealed class SlskdAcquisitionProvider(
 
             var status = response.StatusCode;
             var retryAfter = response.Headers.RetryAfter;
+            var reason = status == HttpStatusCode.TooManyRequests ? null : await ReadReasonAsync(response, ct);
             response.Dispose();
+            if (IsOfflineReason(reason))
+            {
+                throw new AcquisitionSourceOfflineException();
+            }
             if (status != HttpStatusCode.TooManyRequests)
             {
                 throw new AcquisitionUnavailableException(status is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden
@@ -334,6 +346,29 @@ public sealed class SlskdAcquisitionProvider(
             logger.LogWarning("slskd {Operation} answered 429; retry {Retry} of {Max} in {DelayMs} ms.",
                 operation, retry + 1, _options.RateLimitMaxRetries, (int)delay.TotalMilliseconds);
             await Task.Delay(delay, ct);
+        }
+    }
+
+    /// <summary>
+    /// What slskd's offline answer looks like: the legacy enqueue answers 500 with Soulseek's <c>UserOfflineException</c>
+    /// in its body. The words decide, never the status: another 500, or a 404, is not an offline peer.
+    /// </summary>
+    private static bool IsOfflineReason(string? reason) =>
+        reason is not null
+        && (reason.Contains("UserOfflineException", StringComparison.OrdinalIgnoreCase)
+            || reason.Contains("appears to be offline", StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>The start of an error body, only to be matched by <see cref="IsOfflineReason"/>; never logged or shown.</summary>
+    private static async Task<string?> ReadReasonAsync(HttpResponseMessage response, CancellationToken ct)
+    {
+        try
+        {
+            var body = await response.Content.ReadAsStringAsync(ct);
+            return body.Length <= MaxReasonChars ? body : body[..MaxReasonChars];
+        }
+        catch (HttpRequestException)
+        {
+            return null;
         }
     }
 

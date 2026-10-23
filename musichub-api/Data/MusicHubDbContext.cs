@@ -26,8 +26,19 @@ public class MusicHubDbContext(DbContextOptions<MusicHubDbContext> options) : Db
 
     public DbSet<DownloadRequest> DownloadRequests => Set<DownloadRequest>();
 
+    public DbSet<PendingResearch> PendingResearches => Set<PendingResearch>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
+        modelBuilder.Entity<PendingResearch>(research =>
+        {
+            research.Property(r => r.Reason).HasMaxLength(PendingResearch.ReasonMaxLength);
+            research.Property(r => r.Searches).IsConcurrencyToken();
+            // A track has one schedule; it goes with the track.
+            research.HasOne(r => r.Track).WithMany().HasForeignKey(r => r.TrackId).OnDelete(DeleteBehavior.Cascade);
+            research.HasIndex(r => r.TrackId).IsUnique();
+        });
+
         modelBuilder.Entity<DownloadRequest>(request =>
         {
             request.Property(r => r.Provider).HasMaxLength(AcquisitionDownload.ProviderMaxLength);
