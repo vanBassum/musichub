@@ -90,7 +90,6 @@ export interface PlayerState {
   playFile: (file: { id: string; originalFilename: string }) => void
   // Starts the track right after the current entry; the rest of the queue stays.
   playNow: (track: PlayableTrack) => void
-  playNext: (track: PlayableTrack) => void
   // Appends to the end of the queue without starting playback.
   enqueue: (track: PlayableTrack) => EnqueueResult
   playEntry: (key: number) => void
@@ -265,14 +264,6 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     [newEntry, updateQueue]
   )
 
-  const playNext = useCallback(
-    (track: PlayableTrack) =>
-      updateQueue((current) =>
-        insertAfter(current, currentKey, newEntry(track))
-      ),
-    [currentKey, newEntry, updateQueue]
-  )
-
   const playNow = useCallback(
     (track: PlayableTrack) => {
       const entry = newEntry(track)
@@ -364,7 +355,6 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       hasNext: following !== undefined,
       playFile,
       playNow,
-      playNext,
       enqueue,
       playEntry,
       removeEntry,
@@ -386,7 +376,6 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       following,
       playFile,
       playNow,
-      playNext,
       enqueue,
       playEntry,
       removeEntry,
