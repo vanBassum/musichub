@@ -154,6 +154,24 @@ public sealed class TracksControllerTests : IDisposable
     }
 
     [Fact]
+    public async Task List_SearchCombinesWithAudioFilterAndPagesOverAllMatches()
+    {
+        foreach (var title in new[] { "Echo 1", "Echo 2", "Echo 3", "Echo 4" })
+            await AddFile(await Seed(title, null, ("Echoes", null)));
+        await Seed("Echo 5", null, ("Echoes", null));
+        await AddFile(await Seed("Unrelated"));
+
+        var firstPage = await List("echo", hasAudio: true, page: 1, pageSize: 3);
+        var secondPage = await List("echo", hasAudio: true, page: 2, pageSize: 3);
+
+        Assert.Equal(4, firstPage.Total);
+        Assert.Equal(["Echo 1", "Echo 2", "Echo 3"], firstPage.Items.Select(t => t.Title));
+        Assert.Equal(["Echo 4"], secondPage.Items.Select(t => t.Title));
+        Assert.Equal(["Echo 5"], (await List("echo", hasAudio: false)).Items.Select(t => t.Title));
+        Assert.Equal(6, (await List()).Total);
+    }
+
+    [Fact]
     public async Task List_ReportsAudioFromStoredFilesOnly()
     {
         var withAudio = await Seed("With");
