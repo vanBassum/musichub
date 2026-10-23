@@ -43,9 +43,10 @@ export function useDebouncedSearch<T>(
     return () => clearTimeout(timer)
   }, [typed, delayMs])
 
-  // `attempt` is part of the key so a retry shows the loading state again.
-  const queryKey = `${term}|${fields.title}|${fields.artist}|${limit}|${attempt}`
-  const key = `${queryKey}|${page}`
+  // `attempt` is only in `key` (not `queryKey`), so a retry shows the loading state
+  // again but still appends to the pages already loaded.
+  const queryKey = `${term}|${fields.title}|${fields.artist}|${limit}`
+  const key = `${queryKey}|${page}|${attempt}`
 
   useEffect(() => {
     if (term === "") return
@@ -65,13 +66,15 @@ export function useDebouncedSearch<T>(
       })
       .catch((error: unknown) => {
         if (signal.aborted) return
-        setResult({
+        setResult((previous) => ({
           key,
           queryKey,
-          items: [],
+          // A failed later page keeps the pages before it.
+          items:
+            page > 0 && previous?.queryKey === queryKey ? previous.items : [],
           error:
             error instanceof Error ? error.message : "Something went wrong.",
-        })
+        }))
       })
     return () => controller.abort()
   }, [term, fields, key, queryKey, fetcher, limit, page])

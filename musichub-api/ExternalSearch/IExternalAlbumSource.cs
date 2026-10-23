@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace MusicHub.Api.ExternalSearch;
 
 /// <summary>
@@ -38,6 +40,7 @@ public record ExternalEdition(
 public record ExternalAlbumEditions(ExternalAlbum Album, IReadOnlyList<ExternalEdition> Editions, bool Truncated);
 
 /// <summary>Whether an edition's track list can be trusted as the provider's full list.</summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
 public enum TrackListState
 {
     /// <summary>Every track the provider says the edition has is present and named.</summary>
