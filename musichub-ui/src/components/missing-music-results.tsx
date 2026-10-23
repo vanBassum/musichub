@@ -14,7 +14,7 @@ import {
 } from "@/lib/jobs-api"
 import { useDownloads } from "@/lib/use-downloads"
 
-const downloadLabels: Record<DownloadStatus, string> = {
+export const downloadLabels: Record<DownloadStatus, string> = {
   Downloading: "Downloading",
   Failed: "Download failed",
   Cancelled: "Cancelled",

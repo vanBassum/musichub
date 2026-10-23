@@ -18,11 +18,7 @@ const pageSize = 25
 // The API returns at most this many runs per request.
 const maxLimit = 100
 
-export type JobsTab = "tasks" | "history"
-
 export interface JobsState {
-  tab: JobsTab
-  setTab: (tab: JobsTab) => void
   tasks: JobTask[] | null
   // The newest runs that match `filter`; null until they are loaded for it.
   executions: JobExecution[] | null
@@ -37,7 +33,7 @@ export interface JobsState {
   refreshing: boolean
   // The execution whose details show: the user's pick, else the newest.
   selectedId: string | null
-  // Whether the user opened a run: the stacked mobile History then shows its details instead of the list.
+  // Whether the user opened a run: a narrow screen then shows its details instead of the lists.
   detailOpen: boolean
   select: (id: string) => void
   closeDetails: () => void
@@ -72,7 +68,6 @@ export function useJobs(): JobsState {
     refresh,
     reload,
   } = useLoader(fetchLists)
-  const [tab, setTab] = useState<JobsTab>("tasks")
   const [picked, setPicked] = useState<string | null>(null)
   const [loaded, setLoaded] = useState<JobExecutionDetails | null>(null)
   const [detailsRevision, setDetailsRevision] = useState(0)
@@ -140,11 +135,7 @@ export function useJobs(): JobsState {
     [refresh]
   )
 
-  // Picking a run, also from another page, shows it in History.
-  const select = useCallback((id: string) => {
-    setPicked(id)
-    setTab("history")
-  }, [])
+  const select = useCallback((id: string) => setPicked(id), [])
   const closeDetails = useCallback(() => setPicked(null), [])
 
   // A new filter starts at the newest page again.
@@ -155,8 +146,6 @@ export function useJobs(): JobsState {
   const showMore = useCallback(() => setLimit((current) => Math.min(current + pageSize, maxLimit)), [])
 
   return {
-    tab,
-    setTab,
     tasks,
     executions,
     total: page?.total ?? null,

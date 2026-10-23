@@ -6,8 +6,19 @@ export interface DownloadsState {
   error: string | null
 }
 
-// The candidates one Search for Missing Music execution downloaded (see `useExecutionData`).
-export function useDownloads(executionId: string, version: string): DownloadsState {
-  const { data, error } = useExecutionData(getDownloads, executionId, version)
+const noDownloads = async (): Promise<DownloadItem[]> => []
+
+// The candidates one Search for Missing Music execution downloaded (see `useExecutionData`). A run of another task
+// has none, so with `enabled` off nothing is requested.
+export function useDownloads(
+  executionId: string,
+  version: string,
+  enabled = true
+): DownloadsState {
+  const { data, error } = useExecutionData(
+    enabled ? getDownloads : noDownloads,
+    executionId,
+    version
+  )
   return { downloads: data, error }
 }
