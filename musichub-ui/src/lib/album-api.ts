@@ -60,12 +60,13 @@ export interface EditionTracks {
 }
 
 export function fetchExternalAlbums(
-  query: { search: string; limit: number },
+  query: { search: string; limit: number; offset: number },
   signal: AbortSignal
 ) {
   const params = new URLSearchParams({
     search: query.search,
     limit: String(query.limit),
+    offset: String(query.offset),
   })
   return getExternal<{ provider: string; items: ExternalAlbum[] }>(
     `/api/external/albums?${params}`,

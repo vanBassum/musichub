@@ -136,12 +136,13 @@ export async function getExternal<T>(url: string, signal: AbortSignal): Promise<
 }
 
 export function fetchExternalTracks(
-  query: { search: string; limit: number; fields: SearchFields },
+  query: { search: string; limit: number; offset: number; fields: SearchFields },
   signal: AbortSignal
 ) {
   const params = new URLSearchParams({
     search: query.search,
     limit: String(query.limit),
+    offset: String(query.offset),
     fields: fieldsParam(query.fields),
   })
   return getExternal<{ provider: string; items: ExternalTrack[] }>(
@@ -174,12 +175,13 @@ export async function addExternalTrackToLibrary(track: ExternalTrack) {
 }
 
 export function fetchExternalArtists(
-  query: { search: string; limit: number },
+  query: { search: string; limit: number; offset: number },
   signal: AbortSignal
 ) {
   const params = new URLSearchParams({
     search: query.search,
     limit: String(query.limit),
+    offset: String(query.offset),
   })
   return getExternal<{ provider: string; items: ExternalArtist[] }>(
     `/api/external/artists?${params}`,

@@ -52,18 +52,19 @@ interface Results<T> {
 // and a way to see more of them. Everything stays inside the page.
 function Group<T>({
   label,
-  kind,
   results,
   limit,
+  pages,
   focused,
   onShowMore,
   emptyHint,
   renderRow,
 }: {
   label: string
-  kind: ResultKind
   results: Results<T>
   limit: number
+  // The "Show more" pages already loaded behind the first one.
+  pages: number
   // The category is open on its own; otherwise this is a few rows of the overview.
   focused: boolean
   onShowMore: () => void
@@ -91,7 +92,7 @@ function Group<T>({
     body = (
       <>
         <ul>{items.map(renderRow)}</ul>
-        {canShowMore(kind, items.length, limit) && (
+        {canShowMore(items.length, limit, pages) && (
           <Button
             variant="ghost"
             size="sm"
@@ -184,11 +185,11 @@ export function SearchPage({
   const [album, setAlbum] = useState<ExternalAlbum | null>(null)
   const { fields, setField } = useSearchFields()
   const limits = {
-    albums: limitFor("albums", category, pages),
-    tracks: limitFor("tracks", category, pages),
-    artists: limitFor("artists", category, pages),
+    albums: limitFor("albums", category),
+    tracks: limitFor("tracks", category),
+    artists: limitFor("artists", category),
   }
-  const external = useExternalSearch(query, fields, limits)
+  const external = useExternalSearch(query, fields, limits, pages)
   const inputRef = useRef<HTMLInputElement>(null)
   const focused = category !== "all"
   const idle = query.trim() === ""
@@ -288,9 +289,9 @@ export function SearchPage({
               {shows("albums") && (
                 <Group
                   label="Albums"
-                  kind="albums"
                   results={external.albums}
                   limit={limits.albums}
+                  pages={pages}
                   focused={focused}
                   onShowMore={() => showMore("albums")}
                   renderRow={(item) => (
@@ -310,9 +311,9 @@ export function SearchPage({
               {shows("tracks") && (
                 <Group
                   label="Tracks"
-                  kind="tracks"
                   results={external.tracks}
                   limit={limits.tracks}
+                  pages={pages}
                   focused={focused}
                   onShowMore={() => showMore("tracks")}
                   renderRow={(item) => (
@@ -326,9 +327,9 @@ export function SearchPage({
               {shows("artists") && (fields.artist || focused) && (
                 <Group
                   label="Artists"
-                  kind="artists"
                   results={external.artists}
                   limit={limits.artists}
+                  pages={pages}
                   focused={focused}
                   onShowMore={() => showMore("artists")}
                   emptyHint={
