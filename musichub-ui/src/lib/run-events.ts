@@ -132,11 +132,9 @@ function untimedTrackEvents(summary: TaskSummary | null, activity: TrackActivity
 
 // The run's numbers in one line, zero counts left out. It has no time: it sums up the run.
 function totalsEvents(summary: TaskSummary | null): RunEvent[] {
-  const facts = summary
-    ? summaryFacts(summary).filter(([, value]) => value !== 0 && !String(value).startsWith("0 "))
-    : []
+  const facts = summary ? summaryFacts(summary).filter((fact) => fact.count !== 0) : []
   if (facts.length === 0) return []
-  return [{ at: null, text: `Totals: ${facts.map(([label, value]) => `${label} ${value}`).join(" · ")}`, tone: "info" }]
+  return [{ at: null, text: `Totals: ${facts.map(({ label, value }) => `${label} ${value}`).join(" · ")}`, tone: "info" }]
 }
 
 // A track's name in a log line: the title the run or its downloads know it by.
