@@ -21,13 +21,10 @@ public record ExternalEditionTracksResponse(string Provider, ExternalEditionTrac
 [Route("api/external")]
 public class ExternalAlbumsController(IExternalAlbumSource? provider = null) : ControllerBase
 {
-    public const int MaxLimit = 100;
-    private const int DefaultLimit = 25;
-
     /// <summary>Searches albums (studio albums, greatest hits, compilations) by title.</summary>
     [HttpGet("albums")]
     public async Task<IActionResult> Search(
-        [FromQuery] string? search, [FromQuery] int limit = DefaultLimit, CancellationToken cancellationToken = default)
+        [FromQuery] string? search, [FromQuery] int limit = ExternalResults.DefaultListLimit, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(search))
         {
@@ -36,7 +33,7 @@ public class ExternalAlbumsController(IExternalAlbumSource? provider = null) : C
                 ["search"] = ["Search text is required."],
             }));
         }
-        return Invalid(limit) ?? await Read(
+        return this.InvalidLimit(limit) ?? await Read(
             p => p.SearchAlbumsAsync(search.Trim(), limit, cancellationToken),
             items => new ExternalAlbumListResponse(provider!.Provider, items));
     }
@@ -44,9 +41,9 @@ public class ExternalAlbumsController(IExternalAlbumSource? provider = null) : C
     /// <summary>The albums the provider credits to the artist, as it lists them (no ranking).</summary>
     [HttpGet("artists/{externalId}/albums")]
     public async Task<IActionResult> ArtistAlbums(
-        string externalId, [FromQuery] int limit = DefaultLimit, CancellationToken cancellationToken = default)
+        string externalId, [FromQuery] int limit = ExternalResults.DefaultListLimit, CancellationToken cancellationToken = default)
     {
-        return Invalid(limit) ?? Check(externalId, "artist") ?? await Read(
+        return this.InvalidLimit(limit) ?? Check(externalId, "artist") ?? await Read(
             p => p.GetArtistAlbumsAsync(externalId, limit, cancellationToken),
             items => new ExternalAlbumListResponse(provider!.Provider, items));
     }
@@ -77,29 +74,8 @@ public class ExternalAlbumsController(IExternalAlbumSource? provider = null) : C
     private Task<IActionResult> Read<T>(Func<IExternalAlbumSource, Task<T>> read, Func<T, object> respond) =>
         Run(async p => Ok(respond(await read(p))));
 
-    private async Task<IActionResult> Run(Func<IExternalAlbumSource, Task<IActionResult>> answer)
-    {
-        if (provider is null)
-        {
-            return this.Unavailable("External search is not configured.");
-        }
-        try
-        {
-            return await answer(provider);
-        }
-        catch (CandidateSearchUnavailableException e)
-        {
-            return this.Unavailable(e.Message);
-        }
-    }
-
-    private IActionResult? Invalid(int limit) =>
-        limit is >= 1 and <= MaxLimit
-            ? null
-            : BadRequest(new ValidationProblemDetails(new Dictionary<string, string[]>
-            {
-                ["limit"] = [$"Limit must be between 1 and {MaxLimit}."],
-            }));
+    private Task<IActionResult> Run(Func<IExternalAlbumSource, Task<IActionResult>> answer) =>
+        this.WithProvider(provider, answer);
 
     // Null when the identifier is one of the provider's valid ones, or when there is no provider: Run answers that.
     private IActionResult? Check(string externalId, string what) =>
