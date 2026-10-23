@@ -17,6 +17,10 @@ public sealed class DownloadWorkerOptions
     /// <summary>The wait before the second attempt; each further attempt waits that much longer again.</summary>
     public int RetryDelaySeconds { get; set; } = 60;
 
+    /// <summary>The wait after failed attempt <paramref name="attemptNumber"/>, or null when no attempts are left.</summary>
+    public TimeSpan? RetryWait(int attemptNumber) =>
+        attemptNumber >= MaxAttempts ? null : TimeSpan.FromSeconds(RetryDelaySeconds * attemptNumber);
+
     /// <summary>How long a source that was confirmed offline is left out of every search result.</summary>
     public int SourceOfflineCooldownMinutes { get; set; } = 60;
 

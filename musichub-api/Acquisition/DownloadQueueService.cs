@@ -7,9 +7,11 @@ namespace MusicHub.Api.Acquisition;
 /// The one owner of the durable download queue (see <see cref="IDownloadQueueService"/>). Races are settled by the
 /// database, not by locks: two filtered unique indexes allow one active request per track and per candidate, and
 /// <see cref="DownloadRequest.Status"/> is a concurrency token, so a transition applies only to the status it was read
-/// in. Scoped: one instance per unit of work, like the context it uses.
+/// in. Every transition writes its event to the track's activity timeline (<see cref="TrackActivityLog"/>) in the same save,
+/// so the timeline shows exactly the transitions that happened. Scoped: one instance per unit of work, like the context it
+/// uses.
 /// </summary>
-public class DownloadQueueService(MusicHubDbContext db, TimeProvider time) : IDownloadQueueService
+public class DownloadQueueService(MusicHubDbContext db, TimeProvider time, TrackActivityLog activity) : IDownloadQueueService
 {
     public async Task<EnqueueResult> EnqueueAsync(EnqueueDownloadCommand command, CancellationToken ct)
     {
@@ -53,6 +55,12 @@ public class DownloadQueueService(MusicHubDbContext db, TimeProvider time) : IDo
             return await AlreadyActiveAsync(winner.Id, ct);
         }
 
+        await activity.RecordAsync(
+            command.TrackId, TrackActivityKind.DownloadQueued, "Download queued.", ct,
+            links: new TrackActivityLinks
+            {
+                SearchId = command.SearchId, DownloadRequestId = request.Id, JobExecutionId = request.JobExecutionId,
+            });
         return new EnqueueResult(EnqueueOutcome.Created, await GetAsync(request.Id, ct));
     }
 
@@ -96,7 +104,7 @@ public class DownloadQueueService(MusicHubDbContext db, TimeProvider time) : IDo
                     r.FinishedAt = null;
                     r.Failure = null;
                     r.Error = null;
-                }, ct))
+                }, ct, _ => new ActivityNote(TrackActivityKind.DownloadRetriedManually, "Download queued again by the user.")))
                 return new RetryResult(RetryOutcome.NotFailed, await GetAsync(id, ct));
         }
         catch (DbUpdateException)
@@ -132,14 +140,14 @@ public class DownloadQueueService(MusicHubDbContext db, TimeProvider time) : IDo
             r.AttemptCount++;
             r.StartedAt ??= now;
             r.BytesTransferred = 0;
-        }, ct);
+        }, ct, r => new ActivityNote(TrackActivityKind.DownloadStarted, $"Download attempt {r.AttemptCount} started."));
         return request is null ? null : new ClaimedDownload(request.Id, request.TrackId, CandidateOf(request), request.AttemptCount);
     }
 
     public async Task<ClaimedHandoff?> ClaimNextDownloadedAsync(CancellationToken ct)
     {
         var request = await ClaimNextAsync(
-            DownloadRequestStatus.Downloaded, DownloadRequestStatus.Processing, r => r.ProcessingAttempts++, ct);
+            DownloadRequestStatus.Downloaded, DownloadRequestStatus.Processing, r => r.ProcessingAttempts++, ct, note: null);
         return request is null
             ? null
             : new ClaimedHandoff(
@@ -148,7 +156,8 @@ public class DownloadQueueService(MusicHubDbContext db, TimeProvider time) : IDo
 
     /// <summary>Takes the oldest request in <paramref name="from"/> that may start now, or null when there is none.</summary>
     private async Task<DownloadRequest?> ClaimNextAsync(
-        DownloadRequestStatus from, DownloadRequestStatus to, Action<DownloadRequest> apply, CancellationToken ct)
+        DownloadRequestStatus from, DownloadRequestStatus to, Action<DownloadRequest> apply, CancellationToken ct,
+        Func<DownloadRequest, ActivityNote>? note)
     {
         var now = time.GetUtcNow();
         // Compared in memory: only the requests in one status are loaded, and the schedule is a time zone aware value.
@@ -161,7 +170,7 @@ public class DownloadQueueService(MusicHubDbContext db, TimeProvider time) : IDo
                 {
                     apply(r);
                     r.NextAttemptAt = null;
-                }, ct))
+                }, ct, note))
                 return request;
         }
 
@@ -188,7 +197,8 @@ public class DownloadQueueService(MusicHubDbContext db, TimeProvider time) : IDo
             r.AcquisitionDownloadId = attemptId ?? r.AcquisitionDownloadId;
             r.Failure = null;
             r.Error = null;
-        }, ct);
+        }, ct, _ => new ActivityNote(
+            TrackActivityKind.DownloadCompleted, "Download completed; the file waits for identification and import."));
 
     public Task<bool> MarkCompletedAsync(int id, CancellationToken ct) =>
         TransitionAsync(id, DownloadRequestStatus.Completed, r => r.FinishedAt = time.GetUtcNow(), ct);
@@ -207,14 +217,18 @@ public class DownloadQueueService(MusicHubDbContext db, TimeProvider time) : IDo
         {
             RecordFailure(r, failure, error, attemptId);
             r.NextAttemptAt = notBefore;
-        }, ct);
+        }, ct, r => new ActivityNote(
+            TrackActivityKind.DownloadRetryScheduled,
+            $"Attempt {r.AttemptCount} failed ({failure}); another attempt is scheduled.", r.Error));
 
     public Task<bool> FailAsync(int id, AcquisitionFailure failure, string error, int? attemptId, CancellationToken ct) =>
         TransitionAsync(id, DownloadRequestStatus.Failed, r =>
         {
             RecordFailure(r, failure, error, attemptId);
             r.FinishedAt = time.GetUtcNow();
-        }, ct);
+        }, ct, r => new ActivityNote(
+            TrackActivityKind.DownloadFailed,
+            $"Download failed after {r.AttemptCount} attempt(s) ({failure}); no more attempts.", r.Error));
 
     public async Task<int> RequeueInterruptedAsync(CancellationToken ct)
     {
@@ -230,7 +244,7 @@ public class DownloadQueueService(MusicHubDbContext db, TimeProvider time) : IDo
                 {
                     r.Failure = null;
                     r.Error = "Interrupted by a restart; queued again.";
-                }, ct))
+                }, ct, _ => new ActivityNote(TrackActivityKind.DownloadInterrupted, "Interrupted by a restart; queued again.")))
                 requeued++;
         }
 
@@ -245,15 +259,20 @@ public class DownloadQueueService(MusicHubDbContext db, TimeProvider time) : IDo
     }
 
     private async Task<bool> TransitionAsync(
-        int id, DownloadRequestStatus to, Action<DownloadRequest> apply, CancellationToken ct)
+        int id, DownloadRequestStatus to, Action<DownloadRequest> apply, CancellationToken ct,
+        Func<DownloadRequest, ActivityNote>? note = null)
     {
         var request = await FindAsync(id, ct);
-        return request is not null && await TransitionAsync(request, to, apply, ct);
+        return request is not null && await TransitionAsync(request, to, apply, ct, note);
     }
 
-    /// <summary>Applies the change only if the transition is allowed and the status is still the one read.</summary>
+    /// <summary>
+    /// Applies the change only if the transition is allowed and the status is still the one read. The
+    /// <paramref name="note"/> is saved with it, so the track's timeline gets the event if and only if the transition applied.
+    /// </summary>
     private async Task<bool> TransitionAsync(
-        DownloadRequest request, DownloadRequestStatus to, Action<DownloadRequest> apply, CancellationToken ct)
+        DownloadRequest request, DownloadRequestStatus to, Action<DownloadRequest> apply, CancellationToken ct,
+        Func<DownloadRequest, ActivityNote>? note = null)
     {
         if (!DownloadRequestStatuses.CanTransition(request.Status, to))
             return false;
@@ -261,10 +280,23 @@ public class DownloadQueueService(MusicHubDbContext db, TimeProvider time) : IDo
         apply(request);
         request.Status = to;
         request.UpdatedAt = time.GetUtcNow();
-        return await SaveAsync(request, ct);
+        TrackActivity? staged = null;
+        if (note is not null && request.TrackId is { } trackId)
+        {
+            var n = note(request);
+            staged = activity.Stage(trackId, n.Kind, n.Summary, n.Detail, new TrackActivityLinks
+            {
+                DownloadRequestId = request.Id, DownloadId = request.AcquisitionDownloadId,
+                JobExecutionId = request.JobExecutionId, AttemptNumber = request.AttemptCount,
+            });
+        }
+
+        return await SaveAsync(request, ct, staged);
     }
 
-    private async Task<bool> SaveAsync(DownloadRequest request, CancellationToken ct)
+    private sealed record ActivityNote(TrackActivityKind Kind, string Summary, string? Detail = null);
+
+    private async Task<bool> SaveAsync(DownloadRequest request, CancellationToken ct, TrackActivity? staged = null)
     {
         try
         {
@@ -273,8 +305,10 @@ public class DownloadQueueService(MusicHubDbContext db, TimeProvider time) : IDo
         }
         catch (DbUpdateConcurrencyException)
         {
-            // Another caller changed the status first; forget our stale copy.
+            // Another caller changed the status first; forget our stale copy and the event that reported it.
             db.Entry(request).State = EntityState.Detached;
+            if (staged is not null)
+                db.Entry(staged).State = EntityState.Detached;
             return false;
         }
     }

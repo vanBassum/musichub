@@ -48,13 +48,12 @@ public sealed class DownloadProcessor(
                 await failover.FailOverAsync(trackId, ct);
             return;
         }
-        if (Final.Contains(failure) || claim.AttemptNumber >= options.Value.MaxAttempts)
+        if (Final.Contains(failure) || options.Value.RetryWait(claim.AttemptNumber) is not { } wait)
         {
             await queue.FailAsync(claim.RequestId, failure, detail, download.Id, ct);
             return;
         }
 
-        var wait = TimeSpan.FromSeconds(options.Value.RetryDelaySeconds * claim.AttemptNumber);
         await queue.RetryLaterAsync(claim.RequestId, failure, detail, time.GetUtcNow() + wait, download.Id, ct);
     }
 

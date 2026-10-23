@@ -111,6 +111,7 @@ public sealed class DownloadHandoffTests : IDisposable
             .AddSingleton<ActiveUploadTracker>()
             .AddDbContext<MusicHubDbContext>(o => o.UseSqlite($"Data Source={_path};Pooling=False"))
             .AddScoped<IDownloadQueueService, DownloadQueueService>()
+            .AddScoped<TrackActivityLog>()
             .AddScoped<AcquisitionHistory>()
             .AddScoped<TrackAcquisition>()
             .AddScoped<AcquisitionFailover>()
@@ -126,10 +127,10 @@ public sealed class DownloadHandoffTests : IDisposable
     private async Task<int> DownloadedRequestAsync()
     {
         await using var db = CreateDb();
-        var queue = new DownloadQueueService(db, TimeProvider.System);
+        var queue = new DownloadQueueService(db, TimeProvider.System, new TrackActivityLog(db, TimeProvider.System));
         var id = (await queue.EnqueueAsync(new EnqueueDownloadCommand(_trackId, Candidate), default)).Request!.Id;
         Assert.NotNull(await queue.ClaimNextAsync(default));
-        var attempt = await new AcquisitionHistory(db, TimeProvider.System).BeginAsync(Candidate, _trackId, default);
+        var attempt = await new AcquisitionHistory(db, TimeProvider.System, new TrackActivityLog(db, TimeProvider.System)).BeginAsync(Candidate, _trackId, default);
         Assert.True(await queue.MarkDownloadedAsync(id, attempt.Id, default));
         return id;
     }
@@ -196,7 +197,7 @@ public sealed class DownloadHandoffTests : IDisposable
         Assert.Equal(BytesHash, download.ContentHash);
         Assert.Equal(IdentificationDecision.Mismatch, (await db.IdentificationOutcomes.SingleAsync()).Decision);
         Assert.True(File.Exists(_source));
-        Assert.True(await new AcquisitionHistory(db, TimeProvider.System).WasRejectedAsync(Candidate, default));
+        Assert.True(await new AcquisitionHistory(db, TimeProvider.System, new TrackActivityLog(db, TimeProvider.System)).WasRejectedAsync(Candidate, default));
     }
 
     [Fact]
@@ -252,7 +253,7 @@ public sealed class DownloadHandoffTests : IDisposable
         Assert.Equal(AcquisitionOutcome.Undecided, (await db.AcquisitionDownloads.SingleAsync()).Outcome);
         Assert.Empty(await db.Files.ToListAsync());
         // Waiting for the retry: not claimable before the time.
-        Assert.Null(await new DownloadQueueService(db, TimeProvider.System).ClaimNextDownloadedAsync(default));
+        Assert.Null(await new DownloadQueueService(db, TimeProvider.System, new TrackActivityLog(db, TimeProvider.System)).ClaimNextDownloadedAsync(default));
     }
 
     [Fact]
@@ -273,7 +274,7 @@ public sealed class DownloadHandoffTests : IDisposable
         Assert.Equal(AcquisitionOutcome.Undecided, download.Outcome);
         Assert.Equal(AcquisitionDownloadState.Failed, download.State);
         Assert.Equal(DownloadStatus.Failed, download.Status);
-        Assert.False(await new AcquisitionHistory(db, TimeProvider.System).WasRejectedAsync(Candidate, default));
+        Assert.False(await new AcquisitionHistory(db, TimeProvider.System, new TrackActivityLog(db, TimeProvider.System)).WasRejectedAsync(Candidate, default));
     }
 
     [Fact]
@@ -388,7 +389,7 @@ public sealed class DownloadHandoffTests : IDisposable
         await using (var db = CreateDb())
         {
             var download = await db.AcquisitionDownloads.SingleAsync();
-            await new AcquisitionHistory(db, TimeProvider.System).RejectedAsync(download, "Identified as another song.", default);
+            await new AcquisitionHistory(db, TimeProvider.System, new TrackActivityLog(db, TimeProvider.System)).RejectedAsync(download, "Identified as another song.", default);
         }
         using var services = Services();
 
@@ -405,7 +406,7 @@ public sealed class DownloadHandoffTests : IDisposable
     {
         var id = await DownloadedRequestAsync();
         await using var db = CreateDb();
-        var queue = new DownloadQueueService(db, TimeProvider.System);
+        var queue = new DownloadQueueService(db, TimeProvider.System, new TrackActivityLog(db, TimeProvider.System));
 
         var claim = await queue.ClaimNextDownloadedAsync(default);
 
@@ -424,7 +425,7 @@ public sealed class DownloadHandoffTests : IDisposable
         var claims = await Task.WhenAll(Enumerable.Range(0, 6).Select(async _ =>
         {
             await using var db = CreateDb();
-            return await new DownloadQueueService(db, TimeProvider.System).ClaimNextDownloadedAsync(default);
+            return await new DownloadQueueService(db, TimeProvider.System, new TrackActivityLog(db, TimeProvider.System)).ClaimNextDownloadedAsync(default);
         }));
 
         Assert.Single(claims, c => c is not null);
@@ -435,7 +436,7 @@ public sealed class DownloadHandoffTests : IDisposable
     {
         var id = await DownloadedRequestAsync();
         await using var db = CreateDb();
-        var queue = new DownloadQueueService(db, TimeProvider.System);
+        var queue = new DownloadQueueService(db, TimeProvider.System, new TrackActivityLog(db, TimeProvider.System));
         Assert.NotNull(await queue.ClaimNextDownloadedAsync(default));
 
         Assert.Equal(1, await queue.RequeueInterruptedAsync(default));

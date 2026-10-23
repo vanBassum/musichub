@@ -138,11 +138,9 @@ public sealed class DownloadHandoffProcessor(
 
     private Task RetryOrFailAsync(ClaimedHandoff claim, string detail, CancellationToken ct)
     {
-        var settings = options.Value;
-        if (claim.AttemptNumber >= settings.MaxAttempts)
+        if (options.Value.RetryWait(claim.AttemptNumber) is not { } wait)
             return FailAsync(claim, AcquisitionFailure.ProcessingFailed, $"{detail} No attempts are left; the file was not imported.", ct);
 
-        var wait = TimeSpan.FromSeconds(settings.RetryDelaySeconds * claim.AttemptNumber);
         return queue.RetryHandoffLaterAsync(
             claim.RequestId, AcquisitionFailure.ProcessingFailed, $"{detail} It is tried again later.", wait, ct);
     }

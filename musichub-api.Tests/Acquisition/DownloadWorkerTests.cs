@@ -106,6 +106,7 @@ public sealed class DownloadWorkerTests : IDisposable
             .AddSingleton<IAcquisitionProvider>(_provider)
             .AddDbContext<MusicHubDbContext>(o => o.UseSqlite($"Data Source={_path};Pooling=False"))
             .AddScoped<IDownloadQueueService, DownloadQueueService>()
+            .AddScoped<TrackActivityLog>()
             .AddScoped<AcquisitionHistory>()
             .AddScoped<TrackAcquisition>()
             .AddScoped<AcquisitionFailover>()
@@ -122,10 +123,13 @@ public sealed class DownloadWorkerTests : IDisposable
 
     private static AcquisitionCandidate Candidate(int n) => new("slskd", "peer", $@"Music\a\song{n}.mp3", 1000, "mp3", 320);
 
+    private static DownloadQueueService Queue(MusicHubDbContext db) =>
+        new(db, TimeProvider.System, new TrackActivityLog(db, TimeProvider.System));
+
     private async Task<int> EnqueueAsync(int n)
     {
         await using var db = CreateDb();
-        var result = await new DownloadQueueService(db, TimeProvider.System)
+        var result = await Queue(db)
             .EnqueueAsync(new EnqueueDownloadCommand(_trackIds[n], Candidate(n)), default);
         return result.Request!.Id;
     }
@@ -133,7 +137,7 @@ public sealed class DownloadWorkerTests : IDisposable
     private async Task<DownloadRequestView> ViewAsync(int id)
     {
         await using var db = CreateDb();
-        return (await new DownloadQueueService(db, TimeProvider.System).GetAsync(id, default))!;
+        return (await Queue(db).GetAsync(id, default))!;
     }
 
     private async Task ProcessOneAsync(ServiceProvider services, CancellationToken ct = default)
@@ -186,7 +190,7 @@ public sealed class DownloadWorkerTests : IDisposable
         var attempt = await db.AcquisitionDownloads.SingleAsync();
         Assert.Equal(AcquisitionDownloadState.Failed, attempt.State);
         Assert.Equal(AcquisitionFailure.TransferFailed, attempt.Failure);
-        Assert.Null(await new DownloadQueueService(db, TimeProvider.System).ClaimNextAsync(default));
+        Assert.Null(await Queue(db).ClaimNextAsync(default));
     }
 
     [Fact]
@@ -257,7 +261,7 @@ public sealed class DownloadWorkerTests : IDisposable
             Assert.Equal(AcquisitionDownloadState.Cancelled, (await db.AcquisitionDownloads.SingleAsync()).State);
 
         await using (var db = CreateDb())
-            Assert.Equal(1, await new DownloadQueueService(db, TimeProvider.System).RequeueInterruptedAsync(default));
+            Assert.Equal(1, await Queue(db).RequeueInterruptedAsync(default));
         _provider.Script = (_, _, _) => Task.FromResult(Delivered);
         await ProcessOneAsync(services);
 
@@ -305,7 +309,7 @@ public sealed class DownloadWorkerTests : IDisposable
     {
         var id = await EnqueueAsync(0);
         await using (var db = CreateDb())
-            Assert.NotNull(await new DownloadQueueService(db, TimeProvider.System).ClaimNextAsync(default));
+            Assert.NotNull(await Queue(db).ClaimNextAsync(default));
         _provider.Script = (_, _, _) => Task.FromResult(Delivered);
         using var services = Services();
         var migrations = new MigrationState();

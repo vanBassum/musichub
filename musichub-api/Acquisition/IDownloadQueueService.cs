@@ -2,7 +2,9 @@ namespace MusicHub.Api.Acquisition;
 
 /// <summary>What to enqueue: the candidate to download for a track, and who asked.</summary>
 /// <param name="JobExecutionId">The job execution that enqueues it, as provenance; null outside a job.</param>
-public sealed record EnqueueDownloadCommand(int TrackId, AcquisitionCandidate Candidate, string? JobExecutionId = null);
+/// <param name="SearchId">The search that found the candidate, to correlate it in the track's activity; null when unknown.</param>
+public sealed record EnqueueDownloadCommand(
+    int TrackId, AcquisitionCandidate Candidate, string? JobExecutionId = null, Guid? SearchId = null);
 
 public enum EnqueueOutcome
 {

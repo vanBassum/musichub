@@ -9,7 +9,7 @@ namespace MusicHub.Api.Acquisition;
 /// The one owner of the durable download history: it records each attempt as it progresses and answers whether a
 /// candidate was rejected before. It decides nothing about acquisition itself; the caller tells it what happened.
 /// </summary>
-public class AcquisitionHistory(MusicHubDbContext db, TimeProvider time)
+public class AcquisitionHistory(MusicHubDbContext db, TimeProvider time, TrackActivityLog activity)
 {
     public async Task<AcquisitionDownload> BeginAsync(
         AcquisitionCandidate candidate, int? intendedTrackId, CancellationToken ct, string? jobExecutionId = null)
@@ -157,6 +157,18 @@ public class AcquisitionHistory(MusicHubDbContext db, TimeProvider time)
         download.Outcome = outcome;
         download.Reason = Truncate(reason, AcquisitionDownload.ReasonMaxLength);
         download.DecidedAt = time.GetUtcNow();
+        // The decision and its timeline event are one save: the track's history shows the decision that was recorded.
+        if (download.IntendedTrackId is { } trackId)
+        {
+            var accepted = outcome == AcquisitionOutcome.Accepted;
+            activity.Stage(
+                trackId,
+                accepted ? TrackActivityKind.ImportAccepted : TrackActivityKind.ImportRejected,
+                accepted ? "The file was identified as the wanted recording and imported."
+                    : "The file was not accepted as the wanted recording and was not imported.",
+                download.Reason, new TrackActivityLinks { DownloadId = download.Id, JobExecutionId = download.JobExecutionId });
+        }
+
         return db.SaveChangesAsync(ct);
     }
 
