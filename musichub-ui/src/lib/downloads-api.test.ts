@@ -105,6 +105,7 @@ describe("download queue api", () => {
     expect(eligible("Queued")).toEqual([false, false])
     expect(eligible("Downloading")).toEqual([false, false])
     expect(eligible("Downloaded")).toEqual([false, false])
+    expect(eligible("Processing")).toEqual([false, false])
   })
 
   it("posts a retry and deletes a removal on the request's own address", async () => {
@@ -159,6 +160,7 @@ describe("download queue api", () => {
     expect(isDownloadActive(item({ status: "Queued" }))).toBe(true)
     expect(isDownloadActive(item({ status: "Downloading" }))).toBe(true)
     expect(isDownloadActive(item({ status: "Downloaded" }))).toBe(true)
+    expect(isDownloadActive(item({ status: "Processing" }))).toBe(true)
     expect(isDownloadActive(item({ status: "Completed" }))).toBe(false)
     expect(isDownloadActive(item({ status: "Failed", error: "Offline." }))).toBe(false)
   })

@@ -4,11 +4,13 @@ using MusicHub.Api.Data;
 namespace MusicHub.Api.Acquisition;
 
 /// <summary>
-/// The background worker of the durable download queue. Once the database is migrated it requeues what a restart
+/// The background worker of the durable download queue. Once the database is migrated it puts back what a restart
 /// interrupted, then runs <see cref="DownloadWorkerOptions.MaxConcurrentDownloads"/> loops that each claim one request
 /// at a time through <see cref="IDownloadQueueService"/> (the database settles who gets a request, so loops, and
-/// instances, never process one twice) and hand it to <see cref="DownloadProcessor"/>. Stopping cancels the loops; the
-/// transfers stay in slskd and are followed again after the restart.
+/// instances, never process one twice). A queued request goes to <see cref="DownloadProcessor"/>; a downloaded one,
+/// including every one that was already downloaded when the application started, to
+/// <see cref="DownloadHandoffProcessor"/>, which identifies and imports it without downloading again. Stopping cancels
+/// the loops; the transfers stay in slskd and are followed again after the restart.
 /// </summary>
 public sealed class DownloadWorker(
     IServiceScopeFactory scopes,
@@ -84,22 +86,31 @@ public sealed class DownloadWorker(
         }
     }
 
-    /// <summary>Claims and processes one request; false when there was none or the attempt could not even start.</summary>
+    /// <summary>
+    /// Claims and processes one request: a downloaded file waiting for its handoff first (so files do not pile up), else a
+    /// queued download. False when there was none or the attempt could not even start.
+    /// </summary>
     private async Task<bool> ProcessNextAsync(CancellationToken ct)
     {
         try
         {
             using var scope = scopes.CreateScope();
-            var claim = await scope.ServiceProvider.GetRequiredService<IDownloadQueueService>().ClaimNextAsync(ct);
-            if (claim is null)
+            var services = scope.ServiceProvider;
+            var queue = services.GetRequiredService<IDownloadQueueService>();
+            if (await queue.ClaimNextDownloadedAsync(ct) is { } handoff)
+            {
+                await services.GetRequiredService<DownloadHandoffProcessor>().ProcessAsync(handoff, ct);
+                return true;
+            }
+            if (await queue.ClaimNextAsync(ct) is not { } claim)
                 return false;
 
-            await scope.ServiceProvider.GetRequiredService<DownloadProcessor>().ProcessAsync(claim, ct);
+            await services.GetRequiredService<DownloadProcessor>().ProcessAsync(claim, ct);
             return true;
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            // A request that was claimed stays Downloading and is requeued at the next start.
+            // A request that was claimed stays Downloading (or Processing) and is put back at the next start.
             logger.LogError(ex, "Processing the download queue failed; trying again.");
             return false;
         }

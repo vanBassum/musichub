@@ -5,6 +5,7 @@ export type DownloadQueueStatus =
   | "Queued"
   | "Downloading"
   | "Downloaded"
+  | "Processing"
   | "Completed"
   | "Failed"
 
@@ -32,7 +33,8 @@ export interface DownloadQueuePage {
 export const isDownloadActive = (item: DownloadQueueItem) =>
   item.status === "Queued" ||
   item.status === "Downloading" ||
-  item.status === "Downloaded"
+  item.status === "Downloaded" ||
+  item.status === "Processing"
 
 // What the Downloads page narrows the queue to: every request, or one status.
 export type DownloadStatusFilter = "all" | DownloadQueueStatus
@@ -41,6 +43,7 @@ export const downloadStatuses: DownloadQueueStatus[] = [
   "Queued",
   "Downloading",
   "Downloaded",
+  "Processing",
   "Completed",
   "Failed",
 ]

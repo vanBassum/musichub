@@ -53,6 +53,9 @@ public sealed class TrackAcquisitionTests : IDisposable
             return Task.FromResult(Downloads[candidate.Path]());
         }
 
+        public Task<AcquisitionDownloadOutcome> LocateDownloadAsync(AcquisitionCandidate candidate, CancellationToken ct) =>
+            throw new NotSupportedException();
+
         public Task<AcquisitionDownloadOutcome> ResumeDownloadAsync(
             AcquisitionCandidate candidate, Func<long, Task> reportProgress, CancellationToken ct) =>
             DownloadAsync(candidate, ct);

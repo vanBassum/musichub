@@ -34,7 +34,8 @@ import { cn } from "@/lib/utils"
 const statusLabels: Record<DownloadQueueStatus, string> = {
   Queued: "Queued",
   Downloading: "Downloading",
-  Downloaded: "Downloaded, importing",
+  Downloaded: "Downloaded, waiting to import",
+  Processing: "Importing",
   Completed: "Completed",
   Failed: "Failed",
 }
@@ -42,7 +43,8 @@ const statusLabels: Record<DownloadQueueStatus, string> = {
 const statusIcons: Record<DownloadQueueStatus, LucideIcon> = {
   Queued: Clock,
   Downloading: Loader2,
-  Downloaded: Loader2,
+  Downloaded: Clock,
+  Processing: Loader2,
   Completed: CheckCircle2,
   Failed: XCircle,
 }
@@ -50,15 +52,16 @@ const statusIcons: Record<DownloadQueueStatus, LucideIcon> = {
 const statusTextClassNames: Record<DownloadQueueStatus, string> = {
   Queued: "text-muted-foreground",
   Downloading: "text-primary",
-  Downloaded: "text-primary",
+  Downloaded: "text-muted-foreground",
+  Processing: "text-primary",
   Completed: "text-success",
   Failed: "text-destructive",
 }
 
 const formatTime = (iso: string) => new Date(iso).toLocaleString()
 
-// Status as icon and text, plus what is relevant for it: a short error hint for a failure, progress for an
-// active transfer. Completed and queued requests show nothing more.
+// Status as icon and text, plus what is relevant for it: a short error hint for a failure (or for a downloaded file
+// whose import will be tried again), progress for an active transfer. Other requests show nothing more.
 function StatusCell({ item }: { item: DownloadQueueItem }) {
   const Icon = statusIcons[item.status]
   return (
@@ -72,7 +75,8 @@ function StatusCell({ item }: { item: DownloadQueueItem }) {
         <Icon aria-hidden className="size-4" />
         {statusLabels[item.status]}
       </span>
-      {item.status === "Failed" && item.error !== null && (
+      {(item.status === "Failed" || item.status === "Downloaded") &&
+        item.error !== null && (
         <span className="truncate text-muted-foreground" title={item.error}>
           {downloadErrorHint(item.error)}
         </span>

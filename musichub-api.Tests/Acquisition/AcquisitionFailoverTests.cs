@@ -54,6 +54,9 @@ public sealed class AcquisitionFailoverTests : IDisposable
         public Task<AcquisitionDownloadOutcome> DownloadAsync(AcquisitionCandidate candidate, CancellationToken ct) =>
             throw new NotSupportedException();
 
+        public Task<AcquisitionDownloadOutcome> LocateDownloadAsync(AcquisitionCandidate candidate, CancellationToken ct) =>
+            throw new NotSupportedException();
+
         public Task<AcquisitionDownloadOutcome> ResumeDownloadAsync(
             AcquisitionCandidate candidate, Func<long, Task> reportProgress, CancellationToken ct) =>
             Task.FromResult(OfflineSources.Contains(candidate.Source)
