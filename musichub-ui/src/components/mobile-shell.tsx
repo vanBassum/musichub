@@ -3,7 +3,6 @@ import type { ReactNode } from "react"
 
 import { ArtistPage } from "@/components/artist-page"
 import { CompactPlayer } from "@/components/compact-player"
-import { DownloadsView } from "@/components/downloads-view"
 import { FilesView } from "@/components/files-view"
 import { JobsView } from "@/components/jobs-view"
 import { MobileNav } from "@/components/mobile-nav"
@@ -18,6 +17,7 @@ import {
   SheetTrigger,
 } from "@/components/ui/sheet"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { WishlistView } from "@/components/wishlist-view"
 import { openArtist } from "@/lib/artist-route"
 import {
   activeNav,
@@ -25,10 +25,10 @@ import {
   type AppLocation,
   type PlayerView,
 } from "@/lib/navigation"
-import type { DownloadStatusFilter } from "@/lib/downloads-api"
-import type { DownloadQueueState } from "@/lib/use-download-queue"
 import type { FilesState } from "@/lib/use-files"
 import type { JobsState } from "@/lib/use-jobs"
+import type { WishlistModel } from "@/lib/use-wishlist"
+import type { WishlistFilter } from "@/lib/wishlist-api"
 import { cn } from "@/lib/utils"
 
 interface MobileShellProps {
@@ -43,8 +43,8 @@ interface MobileShellProps {
   filtersActive: boolean
   filters: ReactNode
   table: ReactNode
-  downloadsState: DownloadQueueState
-  onDownloadStatusChange: (status: DownloadStatusFilter) => void
+  wishlist: WishlistModel
+  onWishlistFilterChange: (filter: WishlistFilter) => void
   searchQuery: string
   onSearchQueryChange: (query: string) => void
   onSelectTrack: (trackId: number) => void
@@ -107,7 +107,7 @@ function PageHeader({
   )
 }
 
-// Below `lg` the phone's navigation bar has Search, Library, Downloads, Player (Now
+// Below `lg` the phone's navigation bar has Search, Library, Wishlist, Player (Now
 // Playing and Queue) and a Menu with Files, Jobs and Settings. An artist page opens from
 // Search or the Library and shows under the one it came from. The location is the URL
 // hash. Outside the Player page a compact player sits above the navigation.
@@ -118,8 +118,8 @@ export function MobileShell({
   filtersActive,
   filters,
   table,
-  downloadsState,
-  onDownloadStatusChange,
+  wishlist,
+  onWishlistFilterChange,
   searchQuery,
   onSearchQueryChange,
   onSelectTrack,
@@ -175,12 +175,12 @@ export function MobileShell({
         </PageHeader>
         {table}
       </Page>
-      <Page show={tab === "downloads"} label="Downloads" className="gap-3 p-3">
-        <PageHeader title="Downloads" />
-        <DownloadsView
-          state={downloadsState}
-          status={location.downloadStatus}
-          onStatusChange={onDownloadStatusChange}
+      <Page show={tab === "wishlist"} label="Wishlist" className="gap-3 p-3">
+        <PageHeader title="Wishlist" />
+        <WishlistView
+          model={wishlist}
+          filter={location.wishlistFilter}
+          onFilterChange={onWishlistFilterChange}
           className="flex-1"
         />
       </Page>
