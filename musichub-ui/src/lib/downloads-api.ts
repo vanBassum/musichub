@@ -98,6 +98,17 @@ export const removeDownload = (id: number) =>
     404
   )
 
+// A one-line hint of why a request failed: the first line of the error, shortened. The full text is in the
+// row's details.
+export const downloadErrorHint = (error: string, maxLength = 48) => {
+  const line = (error.split(/\r?\n/, 1)[0] ?? "").trim()
+  return line.length > maxLength ? `${line.slice(0, maxLength - 1)}…` : line
+}
+
+// The file name without any directory the API may have included, so the details never show a path.
+export const downloadFileName = (fileName: string) =>
+  fileName.split(/[\\/]/).pop() ?? fileName
+
 // The newest requests: the API caps a page at 100.
 const pageSize = 100
 
