@@ -1,6 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
 using MusicHub.Api.ExternalSearch;
-using MusicHub.Api.Identification;
 
 namespace MusicHub.Api.Controllers;
 
@@ -64,22 +63,9 @@ public class ExternalSearchController(IExternalMusicSearch? provider = null) : C
             items => new ExternalArtistListResponse(provider!.Provider, items));
     }
 
-    private async Task<IActionResult> Query<T>(
-        Func<IExternalMusicSearch, Task<IReadOnlyList<T>>> search, Func<IReadOnlyList<T>, object> respond)
-    {
-        if (provider is null)
-        {
-            return this.Unavailable("External search is not configured.");
-        }
-        try
-        {
-            return Ok(respond(await search(provider)));
-        }
-        catch (CandidateSearchUnavailableException e)
-        {
-            return this.Unavailable(e.Message);
-        }
-    }
+    private Task<IActionResult> Query<T>(
+        Func<IExternalMusicSearch, Task<IReadOnlyList<T>>> search, Func<IReadOnlyList<T>, object> respond) =>
+        this.WithProvider(provider, async p => Ok(respond(await search(p))));
 
     private IActionResult? Validate(string? search, int limit)
     {
