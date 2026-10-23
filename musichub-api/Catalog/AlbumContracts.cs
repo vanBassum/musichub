@@ -35,7 +35,7 @@ public static class AlbumQueries
 
     public static IQueryable<AlbumListItemResponse> Page(IQueryable<Album> albums, int page, int pageSize) => albums
         .OrderBy(a => a.Title).ThenBy(a => a.Id)
-        .Skip((int)Math.Min((long)(page - 1) * pageSize, int.MaxValue)).Take(pageSize)
+        .Page(page, pageSize)
         .Select(a => new AlbumListItemResponse(a.Id, a.Title, a.CreatedAt, a.Editions.Count));
 
     /// <summary>

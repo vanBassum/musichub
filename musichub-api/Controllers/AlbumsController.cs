@@ -13,6 +13,7 @@ namespace MusicHub.Api.Controllers;
 [Route("api/albums")]
 public class AlbumsController(MusicHubDbContext db) : ControllerBase
 {
+    public const int MaxPageSize = 100;
     private const int DefaultPageSize = 25;
 
     /// <summary>Lists albums by title, a page at a time.</summary>
@@ -25,9 +26,7 @@ public class AlbumsController(MusicHubDbContext db) : ControllerBase
         CancellationToken cancellationToken = default)
     {
         var errors = new Dictionary<string, string[]>();
-        if (page < 1) errors["page"] = ["Page must be 1 or greater."];
-        if (pageSize is < 1 or > TracksController.MaxPageSize)
-            errors["pageSize"] = [$"Page size must be between 1 and {TracksController.MaxPageSize}."];
+        Paging.Validate(errors, page, pageSize, MaxPageSize);
         if (errors.Count > 0)
             return BadRequest(new ValidationProblemDetails(errors));
 

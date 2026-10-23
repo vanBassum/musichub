@@ -37,6 +37,6 @@ public static class TrackListQuery
 
     public static IQueryable<TrackResponse> Page(IQueryable<Track> tracks, int page, int pageSize) => tracks
         .OrderBy(t => t.Title).ThenBy(t => t.Id)
-        .Skip((int)Math.Min((long)(page - 1) * pageSize, int.MaxValue)).Take(pageSize)
+        .Page(page, pageSize)
         .Select(TrackResponse.Projection);
 }
