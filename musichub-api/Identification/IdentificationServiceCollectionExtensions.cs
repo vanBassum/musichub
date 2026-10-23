@@ -30,6 +30,7 @@ public static class IdentificationServiceCollectionExtensions
             // One instance serves both, so identification and the user's search share MusicBrainz's rate limit.
             services.AddSingleton<ICandidateSearch>(sp => sp.GetRequiredService<MusicBrainzCandidateSearch>());
             services.AddSingleton<IExternalMusicSearch>(sp => sp.GetRequiredService<MusicBrainzCandidateSearch>());
+            services.AddSingleton<IExternalAlbumSource>(sp => sp.GetRequiredService<MusicBrainzCandidateSearch>());
         }
         services.Configure<AcoustIdOptions>(configuration.GetSection(AcoustIdOptions.SectionName));
         if (!string.IsNullOrWhiteSpace(configuration[$"{AcoustIdOptions.SectionName}:{nameof(AcoustIdOptions.ApiKey)}"]))

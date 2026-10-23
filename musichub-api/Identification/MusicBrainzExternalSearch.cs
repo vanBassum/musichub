@@ -99,8 +99,15 @@ public sealed partial class MusicBrainzCandidateSearch : IExternalMusicSearch
             return null;
         }
 
+        return new ExternalTrack(
+            Provider, id, title, NonEmpty(Text(recording, "disambiguation")), $"{SiteUrl}recording/{id}", Credits(recording));
+    }
+
+    // The credited names as the entity prints them (a credit may rename the artist), with the artist's id when given.
+    private static List<ExternalArtistCredit> Credits(JsonElement entity)
+    {
         var artists = new List<ExternalArtistCredit>();
-        if (recording.TryGetProperty("artist-credit", out var credits) && credits.ValueKind == JsonValueKind.Array)
+        if (entity.TryGetProperty("artist-credit", out var credits) && credits.ValueKind == JsonValueKind.Array)
         {
             foreach (var credit in credits.EnumerateArray())
             {
@@ -116,7 +123,7 @@ public sealed partial class MusicBrainzCandidateSearch : IExternalMusicSearch
                 }
             }
         }
-        return new ExternalTrack(Provider, id, title, NonEmpty(Text(recording, "disambiguation")), $"{SiteUrl}recording/{id}", artists);
+        return artists;
     }
 
     private ExternalArtist? ToExternalArtist(JsonElement artist)
