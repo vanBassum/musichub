@@ -1,3 +1,5 @@
+using MusicHub.Api.ExternalSearch;
+
 namespace MusicHub.Api.Identification;
 
 public enum IdentificationStrategy
@@ -25,7 +27,7 @@ public sealed class IdentificationOptions
 }
 
 /// <summary>Binds <c>Identification:MusicBrainz</c> (environment variables <c>Identification__MusicBrainz__*</c>).</summary>
-public sealed class MusicBrainzOptions
+public sealed class MusicBrainzOptions : IRateLimitedJsonOptions
 {
     public bool Enabled { get; set; }
 

@@ -1,4 +1,3 @@
-using System.Net.Http.Headers;
 using System.Text.Json;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Options;
@@ -7,7 +6,7 @@ using MusicHub.Api.Identification;
 namespace MusicHub.Api.ExternalSearch;
 
 /// <summary>Binds the <c>ListenBrainz</c> configuration section (environment variables <c>ListenBrainz__*</c>).</summary>
-public sealed class ListenBrainzOptions
+public sealed class ListenBrainzOptions : IRateLimitedJsonOptions
 {
     public const string SectionName = "ListenBrainz";
 
@@ -50,9 +49,7 @@ public sealed class ListenBrainzProvider : IExternalPopularitySource
     {
         this.cache = cache;
         cacheFor = TimeSpan.FromMinutes(options.CacheMinutes);
-        client = new RateLimitedJsonClient(http, new RateLimitedJsonSettings(
-            "ListenBrainz", options.TimeoutSeconds, options.MinRequestIntervalMs, options.MaxRetries,
-            options.RetryDelayMs, options.MaxRetryDelayMs));
+        client = new RateLimitedJsonClient(http, RateLimitedJsonSettings.From("ListenBrainz", options));
     }
 
     public string Provider => ProviderName;
@@ -60,25 +57,8 @@ public sealed class ListenBrainzProvider : IExternalPopularitySource
     /// <summary>Builds the provider from configuration; throws when the options cannot work, so a bad setup is loud.</summary>
     public static ListenBrainzProvider Create(ListenBrainzOptions options, IHttpClientFactory factory, IMemoryCache cache)
     {
-        if (!Uri.TryCreate(options.BaseUrl, UriKind.Absolute, out var baseUrl))
-        {
-            throw new InvalidOperationException("ListenBrainz__BaseUrl must be an absolute URL.");
-        }
-        if (options.TimeoutSeconds < 1 || options.MaxRetries < 0 || options.MinRequestIntervalMs < 0
-            || options.RetryDelayMs < 0 || options.MaxRetryDelayMs < 0 || options.CacheMinutes < 0)
-        {
-            throw new InvalidOperationException("ListenBrainz has an out-of-range numeric setting.");
-        }
-
-        var http = factory.CreateClient(ProviderName);
-        http.BaseAddress = new Uri(baseUrl.AbsoluteUri.TrimEnd('/') + "/");
-        http.Timeout = TimeSpan.FromSeconds(options.TimeoutSeconds);
-        http.DefaultRequestHeaders.UserAgent.Clear();
-        http.DefaultRequestHeaders.UserAgent.Add(new ProductInfoHeaderValue("MusicHub", "1.0"));
-        if (!string.IsNullOrWhiteSpace(options.Contact))
-        {
-            http.DefaultRequestHeaders.UserAgent.Add(new ProductInfoHeaderValue($"( {options.Contact.Trim()} )"));
-        }
+        var http = RateLimitedJsonClient.CreateHttpClient(
+            factory, ProviderName, options, "ListenBrainz", options.CacheMinutes < 0);
         return new ListenBrainzProvider(http, options, cache);
     }
 

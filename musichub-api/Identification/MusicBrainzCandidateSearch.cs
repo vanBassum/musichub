@@ -1,5 +1,4 @@
 using System.Globalization;
-using System.Net.Http.Headers;
 using System.Text.Json;
 using MusicHub.Api.ExternalSearch;
 
@@ -23,9 +22,7 @@ public sealed partial class MusicBrainzCandidateSearch : ICandidateSearch
     public MusicBrainzCandidateSearch(HttpClient http, MusicBrainzOptions options)
     {
         this.options = options;
-        client = new RateLimitedJsonClient(http, new RateLimitedJsonSettings(
-            "MusicBrainz", options.TimeoutSeconds, options.MinRequestIntervalMs, options.MaxRetries,
-            options.RetryDelayMs, options.MaxRetryDelayMs));
+        client = new RateLimitedJsonClient(http, RateLimitedJsonSettings.From("MusicBrainz", options));
     }
 
     public string Source => "musicbrainz";
@@ -38,22 +35,9 @@ public sealed partial class MusicBrainzCandidateSearch : ICandidateSearch
             throw new InvalidOperationException(
                 "MusicBrainz is not configured: Identification__MusicBrainz__Contact (an email address or URL) is required when it is enabled.");
         }
-        if (!Uri.TryCreate(options.BaseUrl, UriKind.Absolute, out var baseUrl))
-        {
-            throw new InvalidOperationException("Identification__MusicBrainz__BaseUrl must be an absolute URL.");
-        }
-        if (options.TimeoutSeconds < 1 || options.MaxRecordings < 1 || options.MaxReleasesPerRecording < 1
-            || options.MaxRetries < 0 || options.MinRequestIntervalMs < 0 || options.RetryDelayMs < 0 || options.MaxRetryDelayMs < 0)
-        {
-            throw new InvalidOperationException("Identification__MusicBrainz has an out-of-range numeric setting.");
-        }
-
-        var http = factory.CreateClient(HttpClientName);
-        http.BaseAddress = new Uri(baseUrl.AbsoluteUri.TrimEnd('/') + "/");
-        http.Timeout = TimeSpan.FromSeconds(options.TimeoutSeconds);
-        http.DefaultRequestHeaders.UserAgent.Clear();
-        http.DefaultRequestHeaders.UserAgent.Add(new ProductInfoHeaderValue("MusicHub", "1.0"));
-        http.DefaultRequestHeaders.UserAgent.Add(new ProductInfoHeaderValue($"( {options.Contact!.Trim()} )"));
+        var http = RateLimitedJsonClient.CreateHttpClient(
+            factory, HttpClientName, options, "Identification__MusicBrainz",
+            options.MaxRecordings < 1 || options.MaxReleasesPerRecording < 1);
         return new MusicBrainzCandidateSearch(http, options);
     }
 

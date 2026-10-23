@@ -1,13 +1,31 @@
 using System.Diagnostics;
 using System.Net;
+using System.Net.Http.Headers;
 using System.Text.Json;
 using MusicHub.Api.Identification;
 
 namespace MusicHub.Api.ExternalSearch;
 
+/// <summary>The connection options every rate-limited JSON service shares.</summary>
+public interface IRateLimitedJsonOptions
+{
+    string BaseUrl { get; }
+    string? Contact { get; }
+    int TimeoutSeconds { get; }
+    int MinRequestIntervalMs { get; }
+    int MaxRetries { get; }
+    int RetryDelayMs { get; }
+    int MaxRetryDelayMs { get; }
+}
+
 /// <summary>How one external service is called: its name in messages, and its pacing and retry limits.</summary>
 public sealed record RateLimitedJsonSettings(
-    string ServiceName, int TimeoutSeconds, int MinRequestIntervalMs, int MaxRetries, int RetryDelayMs, int MaxRetryDelayMs);
+    string ServiceName, int TimeoutSeconds, int MinRequestIntervalMs, int MaxRetries, int RetryDelayMs, int MaxRetryDelayMs)
+{
+    public static RateLimitedJsonSettings From(string serviceName, IRateLimitedJsonOptions options) =>
+        new(serviceName, options.TimeoutSeconds, options.MinRequestIntervalMs, options.MaxRetries,
+            options.RetryDelayMs, options.MaxRetryDelayMs);
+}
 
 /// <summary>
 /// Reads JSON from an external service. Request starts are spaced to the service's rate limit, and transient
@@ -17,6 +35,37 @@ public sealed record RateLimitedJsonSettings(
 /// </summary>
 public sealed class RateLimitedJsonClient(HttpClient http, RateLimitedJsonSettings settings)
 {
+    /// <summary>
+    /// Builds the named HTTP client for a service from its options; throws when they cannot work, so a bad setup is
+    /// loud. <paramref name="settingPrefix"/> names the configuration section in the messages, and
+    /// <paramref name="otherSettingOutOfRange"/> lets the caller flag its own numeric settings.
+    /// </summary>
+    public static HttpClient CreateHttpClient(
+        IHttpClientFactory factory, string clientName, IRateLimitedJsonOptions options, string settingPrefix,
+        bool otherSettingOutOfRange = false)
+    {
+        if (!Uri.TryCreate(options.BaseUrl, UriKind.Absolute, out var baseUrl))
+        {
+            throw new InvalidOperationException($"{settingPrefix}__BaseUrl must be an absolute URL.");
+        }
+        if (options.TimeoutSeconds < 1 || options.MaxRetries < 0 || options.MinRequestIntervalMs < 0
+            || options.RetryDelayMs < 0 || options.MaxRetryDelayMs < 0 || otherSettingOutOfRange)
+        {
+            throw new InvalidOperationException($"{settingPrefix} has an out-of-range numeric setting.");
+        }
+
+        var http = factory.CreateClient(clientName);
+        http.BaseAddress = new Uri(baseUrl.AbsoluteUri.TrimEnd('/') + "/");
+        http.Timeout = TimeSpan.FromSeconds(options.TimeoutSeconds);
+        http.DefaultRequestHeaders.UserAgent.Clear();
+        http.DefaultRequestHeaders.UserAgent.Add(new ProductInfoHeaderValue("MusicHub", "1.0"));
+        if (!string.IsNullOrWhiteSpace(options.Contact))
+        {
+            http.DefaultRequestHeaders.UserAgent.Add(new ProductInfoHeaderValue($"( {options.Contact.Trim()} )"));
+        }
+        return http;
+    }
+
     private readonly SemaphoreSlim gate = new(1, 1);
     private readonly Stopwatch clock = Stopwatch.StartNew();
     private TimeSpan? lastRequestAt;
