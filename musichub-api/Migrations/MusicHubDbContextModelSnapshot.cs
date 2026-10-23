@@ -220,6 +220,43 @@ namespace MusicHub.Api.Migrations
                     b.ToTable("DownloadRequests");
                 });
 
+            modelBuilder.Entity("MusicHub.Api.Acquisition.PendingResearch", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTimeOffset>("NextSearchAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.Property<int>("Searches")
+                        .IsConcurrencyToken()
+                        .HasColumnType("integer");
+
+                    b.Property<int>("TrackId")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TrackId")
+                        .IsUnique();
+
+                    b.ToTable("PendingResearches");
+                });
+
             modelBuilder.Entity("MusicHub.Api.Catalog.Album", b =>
                 {
                     b.Property<int>("Id")
@@ -673,6 +710,17 @@ namespace MusicHub.Api.Migrations
                         .OnDelete(DeleteBehavior.SetNull);
 
                     b.Navigation("AcquisitionDownload");
+
+                    b.Navigation("Track");
+                });
+
+            modelBuilder.Entity("MusicHub.Api.Acquisition.PendingResearch", b =>
+                {
+                    b.HasOne("MusicHub.Api.Catalog.Track", "Track")
+                        .WithMany()
+                        .HasForeignKey("TrackId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
 
                     b.Navigation("Track");
                 });

@@ -57,6 +57,9 @@ public enum AcquisitionFailure
 
     /// <summary>The file arrived, but MusicHub failed while processing it (hashing, identifying, importing).</summary>
     ProcessingFailed,
+
+    /// <summary>The provider confirmed the source is offline. The source, not the track, failed: it is skipped for a while.</summary>
+    SourceOffline,
 }
 
 /// <summary>A downloaded file, readable by MusicHub. The provider keeps ownership of the underlying storage.</summary>
@@ -97,8 +100,12 @@ public sealed record AcquisitionDownloadOutcome
 }
 
 /// <summary>The provider could not answer (unreachable, timeout, bad credentials, server error): not "no match".</summary>
-public sealed class AcquisitionUnavailableException(string message, Exception? inner = null)
+public class AcquisitionUnavailableException(string message, Exception? inner = null)
     : Exception(message, inner);
+
+/// <summary>The provider confirmed that the candidate's source is offline; nothing else about the provider is wrong.</summary>
+public sealed class AcquisitionSourceOfflineException()
+    : AcquisitionUnavailableException("The source is offline.");
 
 /// <summary>
 /// Finds and downloads music from one acquisition provider. It knows nothing about the catalog, ranking,

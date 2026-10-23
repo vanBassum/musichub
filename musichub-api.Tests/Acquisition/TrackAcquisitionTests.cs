@@ -101,7 +101,9 @@ public sealed class TrackAcquisitionTests : IDisposable
     private async Task<TrackDiscovery> DiscoverAsync(int trackId)
     {
         using var db = CreateDb();
-        var acquisition = new TrackAcquisition(db, new AcquisitionHistory(db, TimeProvider.System), _provider);
+        var acquisition = new TrackAcquisition(
+            db, new AcquisitionHistory(db, TimeProvider.System), _provider,
+            Microsoft.Extensions.Options.Options.Create(new DownloadWorkerOptions()), TimeProvider.System);
         return await acquisition.DiscoverAsync(trackId, CancellationToken.None);
     }
 
