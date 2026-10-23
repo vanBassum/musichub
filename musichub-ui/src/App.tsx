@@ -72,7 +72,7 @@ export function App() {
     return () => clearTimeout(timer)
   }, [location.tab, searchQuery])
 
-  // A Jobs link with a filter (#/jobs?state=failed) lists the recent runs with that filter applied.
+  // A Jobs link with a filter (#/jobs?state=failed) opens Recent runs with that filter applied.
   const { setFilter: setJobsFilter } = jobsState
   useEffect(() => {
     if (location.tab !== "jobs") return

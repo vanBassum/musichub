@@ -1,8 +1,6 @@
-using System.Diagnostics;
 using System.Globalization;
-using System.Net;
-using System.Net.Http.Headers;
 using System.Text.Json;
+using MusicHub.Api.ExternalSearch;
 
 namespace MusicHub.Api.Identification;
 
@@ -18,16 +16,13 @@ public sealed partial class MusicBrainzCandidateSearch : ICandidateSearch
 
     private const string SiteUrl = "https://musicbrainz.org/";
 
-    private readonly HttpClient http;
     private readonly MusicBrainzOptions options;
-    private readonly SemaphoreSlim gate = new(1, 1);
-    private readonly Stopwatch clock = Stopwatch.StartNew();
-    private TimeSpan? lastRequestAt;
+    private readonly RateLimitedJsonClient client;
 
     public MusicBrainzCandidateSearch(HttpClient http, MusicBrainzOptions options)
     {
-        this.http = http;
         this.options = options;
+        client = new RateLimitedJsonClient(http, RateLimitedJsonSettings.From("MusicBrainz", options));
     }
 
     public string Source => "musicbrainz";
@@ -40,22 +35,9 @@ public sealed partial class MusicBrainzCandidateSearch : ICandidateSearch
             throw new InvalidOperationException(
                 "MusicBrainz is not configured: Identification__MusicBrainz__Contact (an email address or URL) is required when it is enabled.");
         }
-        if (!Uri.TryCreate(options.BaseUrl, UriKind.Absolute, out var baseUrl))
-        {
-            throw new InvalidOperationException("Identification__MusicBrainz__BaseUrl must be an absolute URL.");
-        }
-        if (options.TimeoutSeconds < 1 || options.MaxRecordings < 1 || options.MaxReleasesPerRecording < 1
-            || options.MaxRetries < 0 || options.MinRequestIntervalMs < 0 || options.RetryDelayMs < 0 || options.MaxRetryDelayMs < 0)
-        {
-            throw new InvalidOperationException("Identification__MusicBrainz has an out-of-range numeric setting.");
-        }
-
-        var http = factory.CreateClient(HttpClientName);
-        http.BaseAddress = new Uri(baseUrl.AbsoluteUri.TrimEnd('/') + "/");
-        http.Timeout = TimeSpan.FromSeconds(options.TimeoutSeconds);
-        http.DefaultRequestHeaders.UserAgent.Clear();
-        http.DefaultRequestHeaders.UserAgent.Add(new ProductInfoHeaderValue("MusicHub", "1.0"));
-        http.DefaultRequestHeaders.UserAgent.Add(new ProductInfoHeaderValue($"( {options.Contact!.Trim()} )"));
+        var http = RateLimitedJsonClient.CreateHttpClient(
+            factory, HttpClientName, options, "Identification__MusicBrainz",
+            options.MaxRecordings < 1 || options.MaxReleasesPerRecording < 1);
         return new MusicBrainzCandidateSearch(http, options);
     }
 
@@ -179,99 +161,12 @@ public sealed partial class MusicBrainzCandidateSearch : ICandidateSearch
         return (names, references);
     }
 
-    private static string? Text(JsonElement element, string property) =>
-        element.ValueKind == JsonValueKind.Object && element.TryGetProperty(property, out var value) && value.ValueKind == JsonValueKind.String
-            ? value.GetString()
-            : null;
+    private static string? Text(JsonElement element, string property) => JsonText.Read(element, property);
 
     // Inside a quoted Lucene phrase only the quote and the backslash are special.
     private static string Quote(string text) => text.Replace("\\", "\\\\").Replace("\"", "\\\"");
 
-    private async Task<JsonDocument> GetJsonAsync(string url, CancellationToken ct) =>
-        (await GetJsonCoreAsync(url, notFoundIsNull: false, ct))!;
+    private Task<JsonDocument> GetJsonAsync(string url, CancellationToken ct) => client.GetJsonAsync(url, ct);
 
-    /// <summary>Like <see cref="GetJsonAsync"/>, but a 404 (no such entity) answers null instead of failing.</summary>
-    private Task<JsonDocument?> GetJsonOrNullAsync(string url, CancellationToken ct) =>
-        GetJsonCoreAsync(url, notFoundIsNull: true, ct);
-
-    private async Task<JsonDocument?> GetJsonCoreAsync(string url, bool notFoundIsNull, CancellationToken ct)
-    {
-        for (var attempt = 0; ; attempt++)
-        {
-            string failure;
-            TimeSpan? retryAfter = null;
-            try
-            {
-                await WaitForTurnAsync(ct);
-                using var response = await http.GetAsync(url, ct);
-                if (response.IsSuccessStatusCode)
-                {
-                    return await JsonDocument.ParseAsync(await response.Content.ReadAsStreamAsync(ct), cancellationToken: ct);
-                }
-                if (notFoundIsNull && response.StatusCode == HttpStatusCode.NotFound)
-                {
-                    return null;
-                }
-                if (response.StatusCode != HttpStatusCode.TooManyRequests && (int)response.StatusCode < 500)
-                {
-                    throw new CandidateSearchUnavailableException($"MusicBrainz answered {(int)response.StatusCode}.");
-                }
-                failure = $"MusicBrainz answered {(int)response.StatusCode}.";
-                retryAfter = RetryAfter(response);
-            }
-            catch (HttpRequestException e)
-            {
-                failure = $"MusicBrainz could not be reached ({e.Message}).";
-            }
-            catch (TaskCanceledException) when (!ct.IsCancellationRequested)
-            {
-                failure = $"MusicBrainz did not answer within {options.TimeoutSeconds} s.";
-            }
-            catch (JsonException e)
-            {
-                throw new CandidateSearchUnavailableException("MusicBrainz did not answer with JSON.", e);
-            }
-
-            if (attempt >= options.MaxRetries)
-            {
-                throw new CandidateSearchUnavailableException($"{failure} Gave up after {attempt + 1} attempt(s).");
-            }
-            var delay = retryAfter ?? TimeSpan.FromMilliseconds(options.RetryDelayMs * (attempt + 1));
-            var max = TimeSpan.FromMilliseconds(options.MaxRetryDelayMs);
-            await Task.Delay(delay < TimeSpan.Zero ? TimeSpan.Zero : delay > max ? max : delay, ct);
-        }
-    }
-
-    /// <summary>Spaces request starts at least <see cref="MusicBrainzOptions.MinRequestIntervalMs"/> apart; a request may still be in flight when the next starts.</summary>
-    private async Task WaitForTurnAsync(CancellationToken ct)
-    {
-        var interval = TimeSpan.FromMilliseconds(options.MinRequestIntervalMs);
-        await gate.WaitAsync(ct);
-        try
-        {
-            if (lastRequestAt is { } last)
-            {
-                var wait = last + interval - clock.Elapsed;
-                if (wait > TimeSpan.Zero)
-                {
-                    await Task.Delay(wait, ct);
-                }
-            }
-        }
-        finally
-        {
-            lastRequestAt = clock.Elapsed;
-            gate.Release();
-        }
-    }
-
-    private static TimeSpan? RetryAfter(HttpResponseMessage response)
-    {
-        var header = response.Headers.RetryAfter;
-        if (header?.Delta is { } delta)
-        {
-            return delta;
-        }
-        return header?.Date is { } date ? date - DateTimeOffset.UtcNow : null;
-    }
+    private Task<JsonDocument?> GetJsonOrNullAsync(string url, CancellationToken ct) => client.GetJsonOrNullAsync(url, ct);
 }

@@ -254,7 +254,6 @@ export interface JobStartOptions {
 }
 
 export const catalogReconciliationTaskId = "catalog-reconciliation"
-export const missingMusicTaskId = "missing-music-acquisition"
 
 // POST /api/jobs/{taskId}/start: 202 with the new execution; 409 while a run is already active (or, for a search
 // for missing music, while no acquisition provider is configured).
