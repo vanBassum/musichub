@@ -11,10 +11,11 @@ public sealed partial class MusicBrainzCandidateSearch : IExternalAlbumSource
     private const int EditionPageSize = 100;
     private const int MaxEditionPages = 5;
 
-    public async Task<IReadOnlyList<ExternalAlbum>> SearchAlbumsAsync(string term, int limit, CancellationToken ct)
+    public async Task<IReadOnlyList<ExternalAlbum>> SearchAlbumsAsync(string term, int limit, int offset, CancellationToken ct)
     {
         var query = $"releasegroup:\"{Quote(term)}\" AND primarytype:album";
-        using var json = await GetJsonAsync($"release-group?query={Uri.EscapeDataString(query)}&limit={limit}&fmt=json", ct);
+        using var json = await GetJsonAsync(
+            $"release-group?query={Uri.EscapeDataString(query)}&limit={limit}&offset={offset}&fmt=json", ct);
         return Parse(json, "release-groups", ToExternalAlbum);
     }
 

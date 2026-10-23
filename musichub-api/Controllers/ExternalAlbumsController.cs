@@ -21,10 +21,13 @@ public record ExternalEditionTracksResponse(string Provider, ExternalEditionTrac
 [Route("api/external")]
 public class ExternalAlbumsController(IExternalAlbumSource? provider = null) : ControllerBase
 {
-    /// <summary>Searches albums (studio albums, greatest hits, compilations) by title.</summary>
+    /// <summary>Searches albums (studio albums, greatest hits, compilations) by title; <c>offset</c> pages through the results.</summary>
     [HttpGet("albums")]
     public async Task<IActionResult> Search(
-        [FromQuery] string? search, [FromQuery] int limit = ExternalResults.DefaultListLimit, CancellationToken cancellationToken = default)
+        [FromQuery] string? search,
+        [FromQuery] int limit = ExternalResults.DefaultListLimit,
+        [FromQuery] int offset = 0,
+        CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(search))
         {
@@ -33,8 +36,8 @@ public class ExternalAlbumsController(IExternalAlbumSource? provider = null) : C
                 ["search"] = ["Search text is required."],
             }));
         }
-        return this.InvalidLimit(limit) ?? await Read(
-            p => p.SearchAlbumsAsync(search.Trim(), limit, cancellationToken),
+        return this.InvalidLimit(limit) ?? this.InvalidOffset(offset) ?? await Read(
+            p => p.SearchAlbumsAsync(search.Trim(), limit, offset, cancellationToken),
             items => new ExternalAlbumListResponse(provider!.Provider, items));
     }
 

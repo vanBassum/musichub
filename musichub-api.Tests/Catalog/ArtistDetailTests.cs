@@ -111,8 +111,8 @@ public sealed class ArtistDetailTests : IDisposable
     private sealed class FakeProvider(IReadOnlyList<ExternalTrack> tracks) : IExternalMusicSearch
     {
         public string Provider => "musicbrainz";
-        public Task<IReadOnlyList<ExternalTrack>> SearchTracksAsync(string term, ExternalSearchFields fields, int limit, CancellationToken ct) => throw new NotSupportedException();
-        public Task<IReadOnlyList<ExternalArtist>> SearchArtistsAsync(string term, int limit, CancellationToken ct) => throw new NotSupportedException();
+        public Task<IReadOnlyList<ExternalTrack>> SearchTracksAsync(string term, ExternalSearchFields fields, int limit, int offset, CancellationToken ct) => throw new NotSupportedException();
+        public Task<IReadOnlyList<ExternalArtist>> SearchArtistsAsync(string term, int limit, int offset, CancellationToken ct) => throw new NotSupportedException();
         public Task<ExternalArtist?> GetArtistAsync(string externalId, CancellationToken ct) => Task.FromResult<ExternalArtist?>(null);
         public Task<IReadOnlyList<ExternalTrack>> GetArtistTracksAsync(string externalId, int limit, CancellationToken ct) => Task.FromResult(tracks);
     }

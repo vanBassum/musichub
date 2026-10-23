@@ -114,8 +114,8 @@ public sealed class ListenBrainzProviderTests : IDisposable
     private sealed class FakeIdentity(params ExternalTrack[] tracks) : IExternalMusicSearch
     {
         public string Provider => "musicbrainz";
-        public Task<IReadOnlyList<ExternalTrack>> SearchTracksAsync(string term, ExternalSearchFields fields, int limit, CancellationToken ct) => throw new NotSupportedException();
-        public Task<IReadOnlyList<ExternalArtist>> SearchArtistsAsync(string term, int limit, CancellationToken ct) => throw new NotSupportedException();
+        public Task<IReadOnlyList<ExternalTrack>> SearchTracksAsync(string term, ExternalSearchFields fields, int limit, int offset, CancellationToken ct) => throw new NotSupportedException();
+        public Task<IReadOnlyList<ExternalArtist>> SearchArtistsAsync(string term, int limit, int offset, CancellationToken ct) => throw new NotSupportedException();
         public Task<ExternalArtist?> GetArtistAsync(string externalId, CancellationToken ct) => throw new NotSupportedException();
         public Task<IReadOnlyList<ExternalTrack>> GetArtistTracksAsync(string externalId, int limit, CancellationToken ct) =>
             Task.FromResult<IReadOnlyList<ExternalTrack>>(tracks);

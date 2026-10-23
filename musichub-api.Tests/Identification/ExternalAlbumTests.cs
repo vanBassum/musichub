@@ -65,22 +65,23 @@ public class ExternalAlbumTests
               "artist-credit":[{"name":"Various Artists","artist":{"id":"va","name":"Various Artists"}}]}]}
             """));
 
-        var albums = await Search(handler).SearchAlbumsAsync("Now", 5, CancellationToken.None);
+        var albums = await Search(handler).SearchAlbumsAsync("Now", 5, 10, CancellationToken.None);
 
         Assert.Equal("Various Artists", Assert.Single(Assert.Single(albums).Artists).Name);
         Assert.Contains("query=releasegroup:\"Now\" AND primarytype:album&", handler.Urls[0]);
+        Assert.Contains("&limit=5&offset=10&", handler.Urls[0]);
     }
 
     [Fact]
     public async Task No_albums_is_an_empty_list_and_a_failing_provider_is_unavailable()
     {
         var empty = await Search(new StubHandler(_ => Json("""{"release-groups":[]}""")))
-            .SearchAlbumsAsync("nothing", 5, CancellationToken.None);
+            .SearchAlbumsAsync("nothing", 5, 0, CancellationToken.None);
 
         Assert.Empty(empty);
         await Assert.ThrowsAsync<CandidateSearchUnavailableException>(() =>
             Search(new StubHandler(_ => new HttpResponseMessage(HttpStatusCode.ServiceUnavailable)))
-                .SearchAlbumsAsync("x", 5, CancellationToken.None));
+                .SearchAlbumsAsync("x", 5, 0, CancellationToken.None));
     }
 
     [Fact]
@@ -229,11 +230,11 @@ public class ExternalAlbumTests
     {
         public string Provider => "musicbrainz";
 
-        public Task<IReadOnlyList<ExternalAlbum>> SearchAlbumsAsync(string term, int limit, CancellationToken ct) =>
+        public Task<IReadOnlyList<ExternalAlbum>> SearchAlbumsAsync(string term, int limit, int offset, CancellationToken ct) =>
             failure() is { } e ? throw e : Task.FromResult<IReadOnlyList<ExternalAlbum>>([]);
 
         public Task<IReadOnlyList<ExternalAlbum>> GetArtistAlbumsAsync(string artistExternalId, int limit, CancellationToken ct) =>
-            SearchAlbumsAsync("", limit, ct);
+            SearchAlbumsAsync("", limit, 0, ct);
 
         public Task<ExternalAlbumEditions?> GetAlbumEditionsAsync(string albumExternalId, CancellationToken ct) =>
             failure() is { } e ? throw e : Task.FromResult(album);
@@ -265,6 +266,7 @@ public class ExternalAlbumTests
 
         Assert.IsType<BadRequestObjectResult>(await controller.Search("  "));
         Assert.IsType<BadRequestObjectResult>(await controller.Search("x", 0));
+        Assert.IsType<BadRequestObjectResult>(await controller.Search("x", offset: -1));
         Assert.IsType<BadRequestObjectResult>(await controller.ArtistAlbums("not-a-uuid"));
         Assert.IsType<BadRequestObjectResult>(await controller.Editions("not-a-uuid", CancellationToken.None));
         Assert.IsType<BadRequestObjectResult>(await controller.Tracks("not-a-uuid", CancellationToken.None));
