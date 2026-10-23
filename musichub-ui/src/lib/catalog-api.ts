@@ -30,17 +30,6 @@ export interface PagedTracks {
   pageSize: number
 }
 
-export interface SearchedArtist {
-  id: number
-  name: string
-  trackCount: number
-}
-
-export interface ArtistList {
-  items: SearchedArtist[]
-  total: number
-}
-
 // The fields a track search can look in; "title" covers the title and the version.
 export interface SearchFields {
   title: boolean
@@ -90,17 +79,6 @@ export function fetchTracks(
     params.set("hasAudio", String(query.audio === "with"))
   }
   return getJson<PagedTracks>(`/api/tracks?${params}`, signal)
-}
-
-export function fetchArtists(
-  query: { search: string; pageSize: number },
-  signal: AbortSignal
-) {
-  const params = new URLSearchParams({
-    search: query.search,
-    pageSize: String(query.pageSize),
-  })
-  return getJson<ArtistList>(`/api/artists?${params}`, signal)
 }
 
 export function fetchTrack(id: number, signal: AbortSignal) {
