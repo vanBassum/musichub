@@ -30,17 +30,6 @@ export interface PagedTracks {
   pageSize: number
 }
 
-export interface SearchedArtist {
-  id: number
-  name: string
-  trackCount: number
-}
-
-export interface ArtistList {
-  items: SearchedArtist[]
-  total: number
-}
-
 // The fields a track search can look in; "title" covers the title and the version.
 export interface SearchFields {
   title: boolean
@@ -90,17 +79,6 @@ export function fetchTracks(
     params.set("hasAudio", String(query.audio === "with"))
   }
   return getJson<PagedTracks>(`/api/tracks?${params}`, signal)
-}
-
-export function fetchArtists(
-  query: { search: string; pageSize: number },
-  signal: AbortSignal
-) {
-  const params = new URLSearchParams({
-    search: query.search,
-    pageSize: String(query.pageSize),
-  })
-  return getJson<ArtistList>(`/api/artists?${params}`, signal)
 }
 
 export function fetchTrack(id: number, signal: AbortSignal) {
@@ -158,12 +136,13 @@ export async function getExternal<T>(url: string, signal: AbortSignal): Promise<
 }
 
 export function fetchExternalTracks(
-  query: { search: string; limit: number; fields: SearchFields },
+  query: { search: string; limit: number; offset: number; fields: SearchFields },
   signal: AbortSignal
 ) {
   const params = new URLSearchParams({
     search: query.search,
     limit: String(query.limit),
+    offset: String(query.offset),
     fields: fieldsParam(query.fields),
   })
   return getExternal<{ provider: string; items: ExternalTrack[] }>(
@@ -196,12 +175,13 @@ export async function addExternalTrackToLibrary(track: ExternalTrack) {
 }
 
 export function fetchExternalArtists(
-  query: { search: string; limit: number },
+  query: { search: string; limit: number; offset: number },
   signal: AbortSignal
 ) {
   const params = new URLSearchParams({
     search: query.search,
     limit: String(query.limit),
+    offset: String(query.offset),
   })
   return getExternal<{ provider: string; items: ExternalArtist[] }>(
     `/api/external/artists?${params}`,

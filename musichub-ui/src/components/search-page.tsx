@@ -1,6 +1,10 @@
-import { Search, SlidersHorizontal, UserRound } from "lucide-react"
+import { Search, SlidersHorizontal } from "lucide-react"
 import { useEffect, useRef, useState, type ReactNode } from "react"
 
+import { AlbumDetail } from "@/components/album-detail"
+import { AddToLibraryButton } from "@/components/add-to-library-button"
+import { FailureAlert, LoadingRows } from "@/components/result-states"
+import { ProviderTrackRow, SourceLink } from "@/components/provider-track-row"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -10,26 +14,26 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover"
-import { Skeleton } from "@/components/ui/skeleton"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { AddToLibraryButton } from "@/components/add-to-library-button"
-import { ProviderTrackRow, SourceLink } from "@/components/provider-track-row"
+import { albumSubtitle, type ExternalAlbum } from "@/lib/album-api"
 import { providerLabel, type ArtistRef } from "@/lib/artist"
+import { addExternalTrackToLibrary, type ExternalArtist, type ExternalTrack } from "@/lib/catalog-api"
 import {
-  addExternalTrackToLibrary,
-  artistNames,
-  catalogAvailability,
-} from "@/lib/catalog-api"
+  canShowMore,
+  categories,
+  categoryLabels,
+  limitFor,
+  type Category,
+  type ResultKind,
+} from "@/lib/search-state"
 import type { SearchStatus } from "@/lib/use-debounced-search"
 import { useExternalSearch } from "@/lib/use-external-search"
-import { useGlobalSearch } from "@/lib/use-global-search"
 import { useSearchFields } from "@/lib/use-search-fields"
 import { cn } from "@/lib/utils"
 
 interface SearchPageProps {
   query: string
   onQueryChange: (query: string) => void
-  onSelectTrack: (trackId: number) => void
   onSelectArtist: (artist: ArtistRef) => void
   // Put the cursor in the search box when the page opens (desktop; on a phone it
   // would raise the keyboard over the page).
@@ -37,132 +41,91 @@ interface SearchPageProps {
   className?: string
 }
 
-type Scope = "all" | "local" | "external"
-
-// One source (My Music or the external provider) in a group: its loading or
-// error state while it isn't ready, then its rows.
-function SourceRows({
-  source,
-  status,
-  error,
-  onRetry,
-  children,
-}: {
-  source: string
+interface Results<T> {
   status: SearchStatus
-  error?: string | null
-  onRetry: () => void
-  children: ReactNode
-}) {
-  if (status === "loading") {
-    return (
-      <div
-        role="status"
-        aria-label={`Searching ${source}`}
-        className="flex flex-col gap-1.5 p-2"
-      >
-        <Skeleton className="h-4 w-3/5" />
-        <Skeleton className="h-4 w-1/2" />
-      </div>
-    )
-  }
-  if (status === "error") {
-    return (
-      <div role="alert" className="flex items-center gap-2 p-2 text-xs">
-        <span className="flex-1">
-          {error ?? `The ${source} search failed.`}
-        </span>
-        <Button size="sm" variant="outline" onClick={onRetry}>
-          Retry
-        </Button>
-      </div>
-    )
-  }
-  if (status === "ready") return <ul>{children}</ul>
-  return null
+  error?: string
+  items: T[]
+  retry: () => void
 }
 
-function Group({
+// One kind of result: its loading or error state while it isn't ready, then its rows,
+// and a way to see more of them. Everything stays inside the page.
+function Group<T>({
   label,
-  empty,
-  children,
+  results,
+  limit,
+  pages,
+  focused,
+  onShowMore,
+  emptyHint,
+  renderRow,
 }: {
   label: string
-  // Every source that is searched answered, and none had a match.
-  empty: boolean
-  children: ReactNode
+  results: Results<T>
+  limit: number
+  // The "Show more" pages already loaded behind the first one.
+  pages: number
+  // The category is open on its own; otherwise this is a few rows of the overview.
+  focused: boolean
+  onShowMore: () => void
+  emptyHint?: string
+  renderRow: (item: T) => ReactNode
 }) {
+  const { status, error, items, retry } = results
+  let body: ReactNode = null
+  if (status === "loading") {
+    body = <LoadingRows label={`Searching ${label.toLowerCase()}`} />
+  } else if (status === "error") {
+    body = (
+      <FailureAlert
+        message={error ?? `The ${label.toLowerCase()} search failed.`}
+        onRetry={retry}
+      />
+    )
+  } else if (status === "ready" && items.length === 0) {
+    body = (
+      <p className="px-2 py-1.5 text-sm text-muted-foreground">
+        {emptyHint ?? `No ${label.toLowerCase()} match.`}
+      </p>
+    )
+  } else if (status === "ready") {
+    body = (
+      <>
+        <ul>{items.map(renderRow)}</ul>
+        {canShowMore(items.length, limit, pages) && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="self-start"
+            onClick={onShowMore}
+          >
+            {focused ? "Show more" : `Show all ${label.toLowerCase()}`}
+          </Button>
+        )}
+      </>
+    )
+  }
   return (
     <section aria-label={label} className="flex min-w-0 flex-col gap-1">
       <h2 className="px-2 text-sm font-medium">{label}</h2>
-      {children}
-      {empty && (
-        <p className="px-2 py-1.5 text-sm text-muted-foreground">
-          No {label.toLowerCase()} match.
-        </p>
-      )}
+      {body}
     </section>
   )
 }
 
-const rowClassName = "flex flex-wrap items-center gap-x-2 gap-y-1 px-2 py-1.5 text-sm"
-
-type LocalSearch = ReturnType<typeof useGlobalSearch>
-type ExternalSearch = ReturnType<typeof useExternalSearch>
-
-// A result name that opens its page.
-function RowLink({
-  onClick,
-  children,
-}: {
-  onClick: () => void
-  children: ReactNode
-}) {
-  return (
-    <Button
-      variant="link"
-      className="h-auto min-w-0 flex-1 justify-start p-0 text-left"
-      onClick={onClick}
-    >
-      <span className="truncate">{children}</span>
-    </Button>
-  )
-}
-
-function LocalArtistRow({
+function ArtistRow({
   artist,
   onSelect,
 }: {
-  artist: LocalSearch["artists"][number]
+  artist: ExternalArtist
   onSelect: (artist: ArtistRef) => void
 }) {
   return (
-    <li className={rowClassName}>
-      <Badge variant="secondary">
-        <UserRound data-icon="inline-start" />
-        My Music
-      </Badge>
-      <RowLink onClick={() => onSelect({ kind: "local", id: artist.id })}>
-        {artist.name}
-      </RowLink>
-      <span className="text-muted-foreground">
-        {artist.trackCount} {artist.trackCount === 1 ? "track" : "tracks"}
-      </span>
-    </li>
-  )
-}
-
-function ExternalArtistRow({
-  artist,
-  onSelect,
-}: {
-  artist: ExternalSearch["artists"][number]
-  onSelect: (artist: ArtistRef) => void
-}) {
-  return (
-    <li className={rowClassName}>
+    <li className="flex flex-wrap items-center gap-x-2 gap-y-1 px-2 py-1.5 text-sm">
       <Badge variant="outline">{providerLabel(artist.provider)}</Badge>
-      <RowLink
+      <Button
+        variant="link"
+        className="h-auto min-w-0 flex-1 justify-start p-0 text-left"
         onClick={() =>
           onSelect({
             kind: "external",
@@ -172,8 +135,8 @@ function ExternalArtistRow({
           })
         }
       >
-        {artist.name}
-      </RowLink>
+        <span className="truncate">{artist.name}</span>
+      </Button>
       {artist.disambiguation && (
         <span className="max-w-[40%] truncate text-muted-foreground">
           {artist.disambiguation}
@@ -187,29 +150,7 @@ function ExternalArtistRow({
   )
 }
 
-function LocalTrackRow({
-  track,
-  onSelect,
-}: {
-  track: LocalSearch["tracks"][number]
-  onSelect: (trackId: number) => void
-}) {
-  return (
-    <ProviderTrackRow
-      title={`${track.title}${track.version ? ` (${track.version})` : ""}`}
-      subtitle={artistNames(track)}
-      onSelect={() => onSelect(track.id)}
-      availability={catalogAvailability(track.hasAudio)}
-      source={{ label: "My Music" }}
-    />
-  )
-}
-
-function ExternalTrackRow({
-  track,
-}: {
-  track: ExternalSearch["tracks"][number]
-}) {
+function TrackRow({ track }: { track: ExternalTrack }) {
   return (
     <ProviderTrackRow
       title={
@@ -227,42 +168,52 @@ function ExternalTrackRow({
   )
 }
 
-// Searches the local catalog and the external provider; one page for desktop and
-// phone. Which fields it looks in is a per-browser preference. Viewing a result
-// stores nothing: only "Add to library" does.
+// External search as a full page: the box stays on top and the results below it update
+// in place, never in a popup. Albums (compilations included), Tracks and Artists show a
+// few rows each, and a category opens on its own. Which fields it looks in is a
+// per-browser preference. Viewing a result stores nothing: only adding does.
 export function SearchPage({
   query,
   onQueryChange,
-  onSelectTrack,
   onSelectArtist,
   autoFocus = false,
   className,
 }: SearchPageProps) {
-  const [scope, setScope] = useState<Scope>("all")
+  const [category, setCategory] = useState<Category>("all")
+  // How many "Show more" pages the focused category has been asked for.
+  const [pages, setPages] = useState(0)
+  const [album, setAlbum] = useState<ExternalAlbum | null>(null)
   const { fields, setField } = useSearchFields()
-  const local = useGlobalSearch(query, fields)
-  const external = useExternalSearch(query, fields)
+  const limits = {
+    albums: limitFor("albums", category),
+    tracks: limitFor("tracks", category),
+    artists: limitFor("artists", category),
+  }
+  const external = useExternalSearch(query, fields, limits, pages)
   const inputRef = useRef<HTMLInputElement>(null)
-  const showLocal = scope !== "external"
-  const showExternal = scope !== "local"
+  const focused = category !== "all"
+  const idle = query.trim() === ""
 
   useEffect(() => {
     if (autoFocus) inputRef.current?.focus()
   }, [autoFocus])
 
-  const sources = [
-    showLocal && local.status,
-    showExternal && external.status,
-  ].filter((status): status is SearchStatus => status !== false)
-  const allReady = sources.every((status) => status === "ready")
-  const artistsEmpty =
-    allReady &&
-    (!showLocal || local.artists.length === 0) &&
-    (!showExternal || external.artists.length === 0)
-  const tracksEmpty =
-    allReady &&
-    (!showLocal || local.tracks.length === 0) &&
-    (!showExternal || external.tracks.length === 0)
+  const changeQuery = (value: string) => {
+    setAlbum(null)
+    setPages(0)
+    onQueryChange(value)
+  }
+  const changeCategory = (value: Category) => {
+    setPages(0)
+    setCategory(value)
+  }
+  const changeField = (...args: Parameters<typeof setField>) => {
+    setPages(0)
+    setField(...args)
+  }
+  const showMore = (kind: ResultKind) =>
+    focused ? setPages((n) => n + 1) : changeCategory(kind)
+  const shows = (kind: ResultKind) => category === "all" || category === kind
 
   return (
     <div className={cn("flex min-h-0 flex-col gap-3", className)}>
@@ -277,9 +228,9 @@ export function SearchPage({
             ref={inputRef}
             type="search"
             value={query}
-            onChange={(event) => onQueryChange(event.target.value)}
-            placeholder="Search the catalog..."
-            aria-label="Search the catalog"
+            onChange={(event) => changeQuery(event.target.value)}
+            placeholder="Search albums, tracks and artists..."
+            aria-label="Search albums, tracks and artists"
             className="pl-7"
           />
         </div>
@@ -296,7 +247,7 @@ export function SearchPage({
             <SlidersHorizontal />
           </PopoverTrigger>
           <PopoverContent align="end" className="w-48 gap-2">
-            <p className="text-xs font-medium">Search in</p>
+            <p className="text-xs font-medium">Search tracks in</p>
             {(
               [
                 ["title", "Title"],
@@ -306,7 +257,7 @@ export function SearchPage({
               <label key={field} className="flex items-center gap-2 text-xs">
                 <Checkbox
                   checked={fields[field]}
-                  onCheckedChange={(checked) => setField(field, checked)}
+                  onCheckedChange={(checked) => changeField(field, checked)}
                 />
                 {label}
               </label>
@@ -314,89 +265,94 @@ export function SearchPage({
           </PopoverContent>
         </Popover>
       </div>
-      <Tabs value={scope} onValueChange={(value) => setScope(value as Scope)}>
-        <TabsList className="w-full">
-          <TabsTrigger value="all">All</TabsTrigger>
-          <TabsTrigger value="local">My Music</TabsTrigger>
-          <TabsTrigger value="external">External</TabsTrigger>
-        </TabsList>
-      </Tabs>
-      {local.status === "idle" ? (
-        <p className="p-2 text-sm text-muted-foreground">
-          Search your music and external sources.
-        </p>
+      {album ? (
+        <AlbumDetail album={album} onBack={() => setAlbum(null)} />
       ) : (
-        // Artists beside Tracks on a wide screen, stacked on a phone. There is no
-        // Albums group: the API has no album search.
-        <div className="grid min-h-0 flex-1 content-start gap-4 overflow-y-auto lg:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]">
-          {fields.artist && (
-            <Group label="Artists" empty={artistsEmpty}>
-              {showLocal && (
-                <SourceRows
-                  source="My Music"
-                  status={local.status}
-                  onRetry={local.retry}
-                >
-                  {local.artists.map((artist) => (
-                    <LocalArtistRow
-                      key={artist.id}
-                      artist={artist}
+        <>
+          <Tabs
+            value={category}
+            onValueChange={(value) => changeCategory(value as Category)}
+          >
+            <TabsList className="w-full">
+              {categories.map((value) => (
+                <TabsTrigger key={value} value={value}>
+                  {categoryLabels[value]}
+                </TabsTrigger>
+              ))}
+            </TabsList>
+          </Tabs>
+          {idle ? (
+            <p className="p-2 text-sm text-muted-foreground">
+              Search for albums, tracks and artists.
+            </p>
+          ) : (
+            <div
+              aria-live="polite"
+              className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto"
+            >
+              {shows("albums") && (
+                <Group
+                  label="Albums"
+                  results={external.albums}
+                  limit={limits.albums}
+                  pages={pages}
+                  focused={focused}
+                  onShowMore={() => showMore("albums")}
+                  renderRow={(item) => (
+                    <ProviderTrackRow
+                      key={`${item.provider}:${item.externalId}`}
+                      title={item.title}
+                      subtitle={albumSubtitle(item)}
+                      onSelect={() => setAlbum(item)}
+                      source={{
+                        label: providerLabel(item.provider),
+                        url: item.url,
+                      }}
+                    />
+                  )}
+                />
+              )}
+              {shows("tracks") && (
+                <Group
+                  label="Tracks"
+                  results={external.tracks}
+                  limit={limits.tracks}
+                  pages={pages}
+                  focused={focused}
+                  onShowMore={() => showMore("tracks")}
+                  renderRow={(item) => (
+                    <TrackRow
+                      key={`${item.provider}:${item.externalId}`}
+                      track={item}
+                    />
+                  )}
+                />
+              )}
+              {shows("artists") && (fields.artist || focused) && (
+                <Group
+                  label="Artists"
+                  results={external.artists}
+                  limit={limits.artists}
+                  pages={pages}
+                  focused={focused}
+                  onShowMore={() => showMore("artists")}
+                  emptyHint={
+                    fields.artist
+                      ? undefined
+                      : "Artist results are off. Turn on Artist in Search fields."
+                  }
+                  renderRow={(item) => (
+                    <ArtistRow
+                      key={`${item.provider}:${item.externalId}`}
+                      artist={item}
                       onSelect={onSelectArtist}
                     />
-                  ))}
-                </SourceRows>
+                  )}
+                />
               )}
-              {showExternal && (
-                <SourceRows
-                  source="external"
-                  status={external.status}
-                  error={external.error}
-                  onRetry={external.retry}
-                >
-                  {external.artists.map((artist) => (
-                    <ExternalArtistRow
-                      key={`${artist.provider}:${artist.externalId}`}
-                      artist={artist}
-                      onSelect={onSelectArtist}
-                    />
-                  ))}
-                </SourceRows>
-              )}
-            </Group>
+            </div>
           )}
-          <Group label="Tracks" empty={tracksEmpty}>
-            {showLocal && (
-              <SourceRows
-                source="My Music"
-                status={local.status}
-                onRetry={local.retry}
-              >
-                {local.tracks.map((track) => (
-                  <LocalTrackRow
-                    key={track.id}
-                    track={track}
-                    onSelect={onSelectTrack}
-                  />
-                ))}
-              </SourceRows>
-            )}
-            {showExternal && (
-              <SourceRows
-                source="external"
-                status={external.status}
-                error={external.error}
-                onRetry={external.retry}
-              >
-                {external.tracks.map((track) => (
-                  <ExternalTrackRow
-                    key={`${track.provider}:${track.externalId}`}
-                    track={track}
-                  />
-                ))}
-              </SourceRows>
-            )}
-          </Group>
-        </div>
+        </>
       )}
     </div>
   )

@@ -10,14 +10,8 @@ interface AddToLibraryButtonProps {
   onAdd?: () => Promise<unknown>
 }
 
-// An icon on a phone (the label stays for screen readers and as a tooltip), icon and
-// label from the sm breakpoint up.
-const compact = "max-sm:size-9 max-sm:px-0 max-sm:[&_svg]:size-4"
-const labelClass = "max-sm:sr-only"
-
-// Adds one provider track to the library when pressed. Being in the library says
-// nothing about whether audio is stored: a track without audio is Missing Music.
-export function AddToLibraryButton({ onAdd }: AddToLibraryButtonProps) {
+// The idle/saving/added/error progress of one add, shared by every add button.
+export function useAddState(onAdd?: () => Promise<unknown>) {
   const [state, setState] = useState<State>("idle")
 
   const press = async () => {
@@ -30,6 +24,18 @@ export function AddToLibraryButton({ onAdd }: AddToLibraryButtonProps) {
       setState("error")
     }
   }
+  return { state, press }
+}
+
+// An icon on a phone (the label stays for screen readers and as a tooltip), icon and
+// label from the sm breakpoint up.
+const compact = "max-sm:size-9 max-sm:px-0 max-sm:[&_svg]:size-4"
+const labelClass = "max-sm:sr-only"
+
+// Adds one provider track to the library when pressed. Being in the library says
+// nothing about whether audio is stored: a track without audio is Missing Music.
+export function AddToLibraryButton({ onAdd }: AddToLibraryButtonProps) {
+  const { state, press } = useAddState(onAdd)
 
   if (!onAdd || state === "added") {
     return (
