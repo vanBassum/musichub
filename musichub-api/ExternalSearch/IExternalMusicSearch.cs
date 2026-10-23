@@ -58,12 +58,17 @@ public interface IExternalMusicSearch
     /// provider supplies no popularity data.
     /// </summary>
     Task<IReadOnlyList<ExternalTrack>> GetArtistTracksAsync(string externalId, int limit, CancellationToken ct);
+}
 
-    /// <summary>
-    /// Popularity the provider has for the artist's recordings, by the recording's MusicBrainz identifier. Empty when
-    /// the provider has none or does not supply popularity (the default); a failure throws
-    /// <see cref="CandidateSearchUnavailableException"/> instead.
-    /// </summary>
-    Task<IReadOnlyList<ExternalTrackPopularity>> GetArtistPopularityAsync(string externalId, CancellationToken ct) =>
-        Task.FromResult<IReadOnlyList<ExternalTrackPopularity>>([]);
+/// <summary>
+/// Optional enrichment: popularity a provider has for an artist's recordings, by the recording's MusicBrainz
+/// identifier. Separate from <see cref="IExternalMusicSearch"/> because only some providers supply it. Empty when the
+/// provider has none; a failure throws <see cref="CandidateSearchUnavailableException"/> instead.
+/// </summary>
+public interface IExternalPopularitySource
+{
+    /// <summary>The provider's name; carried on every result as its provenance.</summary>
+    string Provider { get; }
+
+    Task<IReadOnlyList<ExternalTrackPopularity>> GetArtistPopularityAsync(string externalId, CancellationToken ct);
 }

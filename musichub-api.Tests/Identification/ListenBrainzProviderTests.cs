@@ -77,17 +77,6 @@ public sealed class ListenBrainzProviderTests : IDisposable
     }
 
     [Fact]
-    public async Task The_identity_methods_are_unsupported_and_answer_empty()
-    {
-        var provider = Provider(new StubHandler(Json("[]")));
-
-        Assert.Empty(await provider.SearchTracksAsync("x", new ExternalSearchFields(true, true), 5, CancellationToken.None));
-        Assert.Empty(await provider.SearchArtistsAsync("x", 5, CancellationToken.None));
-        Assert.Null(await provider.GetArtistAsync(Artist, CancellationToken.None));
-        Assert.Empty(await provider.GetArtistTracksAsync(Artist, 5, CancellationToken.None));
-    }
-
-    [Fact]
     public async Task A_transient_failure_is_retried_and_a_persistent_one_is_unavailable_not_empty()
     {
         var retried = new StubHandler(Status(HttpStatusCode.TooManyRequests), Json($"[{Entry(Rec1)}]"));
@@ -122,16 +111,6 @@ public sealed class ListenBrainzProviderTests : IDisposable
         Assert.Equal(2, handler.Urls.Count);
     }
 
-    [Fact]
-    public async Task A_provider_that_supplies_no_popularity_answers_empty_by_default()
-    {
-        var musicBrainz = new MusicBrainzCandidateSearch(
-            new HttpClient(new StubHandler(Json("{}"))) { BaseAddress = new Uri("https://mb.test/ws/2/") },
-            new MusicBrainzOptions { MinRequestIntervalMs = 0 });
-
-        Assert.Empty(await ((IExternalMusicSearch)musicBrainz).GetArtistPopularityAsync(Artist, CancellationToken.None));
-    }
-
     private sealed class FakeIdentity(params ExternalTrack[] tracks) : IExternalMusicSearch
     {
         public string Provider => "musicbrainz";
@@ -144,7 +123,7 @@ public sealed class ListenBrainzProviderTests : IDisposable
 
     private static ExternalTrack Recording(string id) => new("musicbrainz", id, id, null, "", []);
 
-    private async Task<ExternalArtistTrackListResponse> ListTracksAsync(IExternalMusicSearch popularity)
+    private async Task<ExternalArtistTrackListResponse> ListTracksAsync(IExternalPopularitySource popularity)
     {
         using var connection = new SqliteConnection("DataSource=:memory:");
         connection.Open();
@@ -202,7 +181,7 @@ public sealed class ListenBrainzProviderTests : IDisposable
 
         var keyed = new ServiceCollection()
             .AddSingleton(db)
-            .AddKeyedSingleton<IExternalMusicSearch>(ListenBrainzProvider.ProviderName, Provider(new StubHandler(Json("[]"))))
+            .AddSingleton<IExternalPopularitySource>(Provider(new StubHandler(Json("[]"))))
             .BuildServiceProvider();
         Assert.NotNull(ActivatorUtilities.CreateInstance<ExternalArtistsController>(keyed));
     }

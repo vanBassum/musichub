@@ -34,11 +34,11 @@ public sealed class ListenBrainzOptions
 }
 
 /// <summary>
-/// ListenBrainz as an external metadata provider: it supplies popularity by MusicBrainz recording identifier and
-/// nothing else, so every identity and search method answers empty. Answers are cached per artist (failures are
-/// not); a failure throws <see cref="CandidateSearchUnavailableException"/>, never an empty result.
+/// ListenBrainz as a popularity source: it supplies popularity by MusicBrainz recording identifier and nothing
+/// else. Answers are cached per artist (failures are not); a failure throws
+/// <see cref="CandidateSearchUnavailableException"/>, never an empty result.
 /// </summary>
-public sealed class ListenBrainzProvider : IExternalMusicSearch
+public sealed class ListenBrainzProvider : IExternalPopularitySource
 {
     public const string ProviderName = "listenbrainz";
 
@@ -81,19 +81,6 @@ public sealed class ListenBrainzProvider : IExternalMusicSearch
         }
         return new ListenBrainzProvider(http, options, cache);
     }
-
-    public Task<IReadOnlyList<ExternalTrack>> SearchTracksAsync(
-        string term, ExternalSearchFields fields, int limit, CancellationToken ct) =>
-        Task.FromResult<IReadOnlyList<ExternalTrack>>([]);
-
-    public Task<IReadOnlyList<ExternalArtist>> SearchArtistsAsync(string term, int limit, CancellationToken ct) =>
-        Task.FromResult<IReadOnlyList<ExternalArtist>>([]);
-
-    public Task<ExternalArtist?> GetArtistAsync(string externalId, CancellationToken ct) =>
-        Task.FromResult<ExternalArtist?>(null);
-
-    public Task<IReadOnlyList<ExternalTrack>> GetArtistTracksAsync(string externalId, int limit, CancellationToken ct) =>
-        Task.FromResult<IReadOnlyList<ExternalTrack>>([]);
 
     public async Task<IReadOnlyList<ExternalTrackPopularity>> GetArtistPopularityAsync(
         string externalId, CancellationToken ct)
@@ -155,9 +142,8 @@ public sealed class ListenBrainzProvider : IExternalMusicSearch
 public static class ListenBrainzServiceCollectionExtensions
 {
     /// <summary>
-    /// Registers <see cref="ListenBrainzProvider"/> as an <see cref="IExternalMusicSearch"/> under the key
-    /// <see cref="ListenBrainzProvider.ProviderName"/> when <c>ListenBrainz:Enabled</c> is set. It is keyed so the
-    /// identity provider stays the one unkeyed <see cref="IExternalMusicSearch"/>: popularity is optional enrichment.
+    /// Registers <see cref="ListenBrainzProvider"/> as the <see cref="IExternalPopularitySource"/> when
+    /// <c>ListenBrainz:Enabled</c> is set. Popularity is optional enrichment: nothing is registered otherwise.
     /// </summary>
     public static IServiceCollection AddListenBrainz(this IServiceCollection services, IConfiguration configuration)
     {
@@ -170,7 +156,7 @@ public static class ListenBrainzServiceCollectionExtensions
 
         services.AddMemoryCache();
         services.AddHttpClient(ListenBrainzProvider.ProviderName);
-        services.AddKeyedSingleton<IExternalMusicSearch>(ListenBrainzProvider.ProviderName, (sp, _) =>
+        services.AddSingleton<IExternalPopularitySource>(sp =>
             ListenBrainzProvider.Create(
                 sp.GetRequiredService<IOptions<ListenBrainzOptions>>().Value,
                 sp.GetRequiredService<IHttpClientFactory>(),

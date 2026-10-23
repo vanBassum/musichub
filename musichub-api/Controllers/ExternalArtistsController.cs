@@ -45,7 +45,7 @@ public record ExternalArtistTrackListResponse(
 public class ExternalArtistsController(
     MusicHubDbContext db,
     IExternalMusicSearch? provider = null,
-    [FromKeyedServices(ListenBrainzProvider.ProviderName)] IExternalMusicSearch? popularitySource = null) : ControllerBase
+    IExternalPopularitySource? popularitySource = null) : ControllerBase
 {
     public const int MaxLimit = 100;
     private const int DefaultLimit = 25;
