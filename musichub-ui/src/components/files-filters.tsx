@@ -1,48 +1,117 @@
-import { ChevronLeft, ChevronRight } from "lucide-react"
+import { ChevronLeft, ChevronRight, Search } from "lucide-react"
+import { useEffect, useRef, useState } from "react"
 
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import {
   fileStatuses,
   FILES_PAGE_SIZE,
   identificationFilters,
   identificationStates,
   type FileCounts,
+  type FileIdentificationState,
   type FilesPage,
   type FilesQuery,
+  type FileStatus,
 } from "@/lib/files-api"
 import { isFilesFiltered, noFilesFilter } from "@/lib/files-filter"
 
 // States that rarely occur for a stored file: offered only while some file is in them, or when chosen.
 const rareStates = new Set(["NoMethodRan", "Mismatch"])
 
-function FilterGroup({
+const SEARCH_DELAY_MS = 300
+
+const ALL = "all"
+
+// One dropdown filter: "All …" clears it; every other option shows its count.
+function FilterSelect({
   label,
+  allLabel,
+  value,
   options,
+  onChange,
 }: {
   label: string
-  options: { key: string; label: string; hint?: string; count: number; active: boolean; onToggle: () => void }[]
+  allLabel: string
+  value: string | null
+  options: { key: string; label: string; hint?: string; count: number }[]
+  onChange: (value: string | null) => void
 }) {
+  const items = [
+    { value: ALL, label: allLabel },
+    ...options.map((o) => ({ value: o.key, label: `${o.label} (${o.count})` })),
+  ]
   return (
-    <div role="group" aria-label={label} className="flex flex-wrap items-center gap-1.5">
-      <span className="text-muted-foreground">{label}</span>
-      {options.map((option) => (
-        <Button
-          key={option.key}
-          variant={option.active ? "secondary" : "outline"}
-          size="sm"
-          aria-pressed={option.active}
-          title={option.hint}
-          onClick={option.onToggle}
-        >
-          {option.label} ({option.count})
-        </Button>
-      ))}
+    <Select
+      value={value ?? ALL}
+      items={items}
+      onValueChange={(next) => onChange(next === null || next === ALL ? null : next)}
+    >
+      <SelectTrigger aria-label={label} className="min-w-0 flex-1 sm:flex-none">
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        <SelectItem value={ALL}>{allLabel}</SelectItem>
+        {options.map((option) => (
+          <SelectItem key={option.key} value={option.key} title={option.hint}>
+            {option.label} ({option.count})
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  )
+}
+
+// The search box keeps what is typed and applies it once typing pauses; a search changed elsewhere
+// (Clear filters, the back button) replaces what is typed.
+function FilesSearch({ filter, onChange }: { filter: FilesQuery; onChange: (filter: FilesQuery) => void }) {
+  const [draft, setDraft] = useState(filter.search)
+  const [applied, setApplied] = useState(filter.search)
+  if (applied !== filter.search) {
+    setApplied(filter.search)
+    setDraft(filter.search)
+  }
+
+  // The timer must not restart when the parent re-renders, so it reads the latest filter and callback from a ref.
+  const latest = useRef({ filter, onChange })
+  useEffect(() => {
+    latest.current = { filter, onChange }
+  })
+
+  useEffect(() => {
+    const typed = draft.trim()
+    if (typed === filter.search) return
+    const timer = setTimeout(() => {
+      const current = latest.current
+      current.onChange({ ...current.filter, search: typed, page: 1 })
+    }, SEARCH_DELAY_MS)
+    return () => clearTimeout(timer)
+  }, [draft, filter.search])
+
+  return (
+    <div className="relative min-w-48 flex-1 sm:max-w-sm">
+      <Search className="pointer-events-none absolute top-1/2 left-2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+      <Input
+        type="search"
+        value={draft}
+        onChange={(event) => setDraft(event.target.value)}
+        placeholder="Search files…"
+        aria-label="Search files"
+        className="h-8 pl-7"
+      />
     </div>
   )
 }
 
-// Filters the list by status and identification state, with the count of each. Choosing the active one clears it;
-// any change starts again at the first page.
+// One compact row: filename search, a Status dropdown and an Identification dropdown, combined. Counts follow the
+// search. Any change starts again at the first page.
 export function FilesFilters({
   filter,
   counts,
@@ -64,31 +133,38 @@ export function FilesFilters({
       label: identificationStates[state].label,
       hint: identificationStates[state].hint,
       count: counts?.identification[state] ?? 0,
-      active: filter.identification === state,
-      onToggle: () =>
-        onChange({
-          ...filter,
-          page: 1,
-          identification: filter.identification === state ? null : state,
-        }),
     }))
   const statuses = fileStatuses.map((status) => ({
     key: status,
     label: status,
     count: counts?.statuses[status] ?? 0,
-    active: filter.status === status,
-    onToggle: () =>
-      onChange({
-        ...filter,
-        page: 1,
-        status: filter.status === status ? null : status,
-      }),
   }))
 
   return (
-    <div className="flex shrink-0 flex-col gap-2 border-t px-4 py-2 text-sm">
-      <FilterGroup label="Status" options={statuses} />
-      <FilterGroup label="Identification" options={identification} />
+    <div className="flex shrink-0 flex-wrap items-center gap-2 border-t px-4 py-2 text-sm">
+      <FilesSearch filter={filter} onChange={onChange} />
+      <FilterSelect
+        label="Status"
+        allLabel="All statuses"
+        value={filter.status}
+        options={statuses}
+        onChange={(status) =>
+          onChange({ ...filter, page: 1, status: status as FileStatus | null })
+        }
+      />
+      <FilterSelect
+        label="Identification"
+        allLabel="All identification states"
+        value={filter.identification}
+        options={identification}
+        onChange={(state) =>
+          onChange({
+            ...filter,
+            page: 1,
+            identification: state as FileIdentificationState | null,
+          })
+        }
+      />
     </div>
   )
 }

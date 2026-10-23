@@ -43,12 +43,12 @@ public sealed class FileListing(MusicHubDbContext db)
     /// </summary>
     public async Task<FileListPage> ListAsync(
         FileStatus? status, FileIdentificationFilter? identification, int page, int pageSize,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken, string? search = null)
     {
         page = Math.Max(page, 1);
         pageSize = Math.Clamp(pageSize, 1, MaxPageSize);
 
-        var query = db.Files.AsNoTracking();
+        var query = FilenameContaining(db.Files.AsNoTracking(), search);
         if (status is { } chosenStatus)
             query = query.Where(f => f.Status == chosenStatus);
         if (identification is { } chosenState)
@@ -67,15 +67,17 @@ public sealed class FileListing(MusicHubDbContext db)
             files.Select(f => new FileListRow(f, info.GetValueOrDefault(f.Id))).ToList(), total, page, pageSize);
     }
 
-    public async Task<FileCounts> CountAsync(CancellationToken cancellationToken)
+    /// <summary>Counts per status and identification state; with <paramref name="search"/> only the files whose name contains it are counted.</summary>
+    public async Task<FileCounts> CountAsync(CancellationToken cancellationToken, string? search = null)
     {
-        var statuses = await db.Files.AsNoTracking()
+        var files = FilenameContaining(db.Files.AsNoTracking(), search);
+        var statuses = await files
             .GroupBy(f => f.Status)
             .Select(g => new { Status = g.Key, Count = g.Count() })
             .ToListAsync(cancellationToken);
         var identification = new Dictionary<FileIdentificationFilter, int>();
         foreach (var state in Enum.GetValues<FileIdentificationFilter>())
-            identification[state] = await db.Files.AsNoTracking().Matching(db, state).CountAsync(cancellationToken);
+            identification[state] = await files.Matching(db, state).CountAsync(cancellationToken);
         return new FileCounts(
             statuses.Sum(s => s.Count), statuses.ToDictionary(s => s.Status, s => s.Count), identification);
     }
@@ -91,6 +93,13 @@ public sealed class FileListing(MusicHubDbContext db)
             .Include(a => a.Track)
             .Where(a => a.FileId == id).OrderByDescending(a => a.Id).ToListAsync(cancellationToken);
         return new FileIdentificationHistory(attempts, applied);
+    }
+
+    // The one filename-search rule: a case-insensitive substring; blank means no narrowing.
+    private static IQueryable<FileRecord> FilenameContaining(IQueryable<FileRecord> files, string? search)
+    {
+        var term = search?.Trim().ToLowerInvariant();
+        return string.IsNullOrEmpty(term) ? files : files.Where(f => f.OriginalFilename.ToLower().Contains(term));
     }
 
     private async Task<Dictionary<int, FileIdentificationInfo>> IdentificationOfAsync(

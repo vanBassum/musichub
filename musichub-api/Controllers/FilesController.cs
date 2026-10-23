@@ -76,7 +76,8 @@ public class FilesController(
 
     /// <summary>
     /// A page of the persisted file registrations, newest first. <paramref name="status"/> and
-    /// <paramref name="identification"/> narrow it (both optional); <c>total</c> counts every match, not the page.
+    /// <paramref name="identification"/> and <paramref name="search"/> (a case-insensitive part of the filename) narrow it
+    /// (all optional, combined); <c>total</c> counts every match, not the page.
     /// </summary>
     [HttpGet]
     public async Task<IActionResult> List(
@@ -84,16 +85,20 @@ public class FilesController(
         [FromQuery] FileIdentificationFilter? identification,
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = FileListing.DefaultPageSize,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        [FromQuery] string? search = null)
     {
-        var result = await listing.ListAsync(status, identification, page, pageSize, cancellationToken);
+        var result = await listing.ListAsync(status, identification, page, pageSize, cancellationToken, search);
         return Ok(new FileListResponse(result.Items.Select(FileListItem.From).ToList(), result.Total, result.Page, result.PageSize));
     }
 
-    /// <summary>How many registrations have each status and how many Stored files are in each identification state, whatever filter a list shows.</summary>
+    /// <summary>
+    /// How many registrations have each status and how many Stored files are in each identification state, whatever status or
+    /// identification filter a list shows. <paramref name="search"/> narrows the counted files by filename, like the list.
+    /// </summary>
     [HttpGet("counts")]
-    public async Task<IActionResult> Counts(CancellationToken cancellationToken) =>
-        Ok(await listing.CountAsync(cancellationToken));
+    public async Task<IActionResult> Counts(CancellationToken cancellationToken, [FromQuery] string? search = null) =>
+        Ok(await listing.CountAsync(cancellationToken, search));
 
     /// <summary>
     /// Everything recorded about identifying one file: each attempt with its reason and what every method found, and each

@@ -49,10 +49,11 @@ public sealed class FileListingTests
     }
 
     private async Task<FileListPage> ListAsync(
-        FileStatus? status = null, FileIdentificationFilter? identification = null, int page = 1, int pageSize = 50)
+        FileStatus? status = null, FileIdentificationFilter? identification = null, int page = 1, int pageSize = 50,
+        string? search = null)
     {
         using var db = CreateDb();
-        return await new FileListing(db).ListAsync(status, identification, page, pageSize, CancellationToken.None);
+        return await new FileListing(db).ListAsync(status, identification, page, pageSize, CancellationToken.None, search);
     }
 
     private async Task<FileCounts> CountAsync()
@@ -137,6 +138,29 @@ public sealed class FileListingTests
         Assert.Null(Assert.Single(failed.Items).Identification);
         Assert.Equal(1, uncertainStored.Total);
         Assert.Equal(0, uncertainFailed.Total);
+    }
+
+    [Fact]
+    public async Task Search_MatchesFilenamesAnywhereInTheListAndNarrowsTotalAndCounts()
+    {
+        for (var i = 0; i < 4; i++)
+            await AddFileAsync($"Beatles-{i}.mp3");
+        await AddFileAsync("beatles-broken.mp3", FileStatus.Failed);
+        await AddFileAsync("other.mp3");
+
+        var second = await ListAsync(page: 2, pageSize: 2, search: "  BEATLES ");
+        var combined = await ListAsync(FileStatus.Failed, search: "beatles");
+        var blank = await ListAsync(search: "  ");
+        using var db = CreateDb();
+        var counts = await new FileListing(db).CountAsync(CancellationToken.None, "beatles");
+
+        Assert.Equal(5, second.Total);
+        Assert.Equal(2, second.Items.Count);
+        Assert.Equal("beatles-broken.mp3", Assert.Single(combined.Items).File.OriginalFilename);
+        Assert.Equal(6, blank.Total);
+        Assert.Equal(5, counts.Total);
+        Assert.Equal(1, counts.Statuses[FileStatus.Failed]);
+        Assert.Equal(4, counts.Identification[FileIdentificationFilter.NotAttempted]);
     }
 
     [Fact]
