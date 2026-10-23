@@ -85,10 +85,11 @@ public sealed class AcquisitionFailoverTests : IDisposable
     {
         var db = CreateDb();
         var options = Options.Create(_settings);
-        var history = new AcquisitionHistory(db, _time);
-        var queue = new DownloadQueueService(db, _time);
+        var activity = new TrackActivityLog(db, _time);
+        var history = new AcquisitionHistory(db, _time, activity);
+        var queue = new DownloadQueueService(db, _time, activity);
         var failover = new AcquisitionFailover(
-            db, new TrackAcquisition(db, history, _provider, options, _time), queue, options, _time,
+            db, new TrackAcquisition(db, history, activity, _provider, options, _time), queue, options, _time,
             NullLogger<AcquisitionFailover>.Instance);
         return new Scope(db, queue, failover,
             new DownloadProcessor(queue, _provider, history, failover, options, _time, NullLogger<DownloadProcessor>.Instance));

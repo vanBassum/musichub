@@ -26,6 +26,8 @@ public class MusicHubDbContext(DbContextOptions<MusicHubDbContext> options) : Db
 
     public DbSet<DownloadRequest> DownloadRequests => Set<DownloadRequest>();
 
+    public DbSet<TrackActivity> TrackActivities => Set<TrackActivity>();
+
     public DbSet<PendingResearch> PendingResearches => Set<PendingResearch>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -60,6 +62,20 @@ public class MusicHubDbContext(DbContextOptions<MusicHubDbContext> options) : Db
             request.HasIndex(r => new { r.Provider, r.Source, r.RemotePath }).IsUnique().HasFilter(active);
             request.HasIndex(r => r.Status);
             request.HasIndex(r => r.AcquisitionDownloadId);
+        });
+
+        modelBuilder.Entity<TrackActivity>(activity =>
+        {
+            activity.Property(a => a.Kind).HasConversion<string>().HasMaxLength(30);
+            activity.Property(a => a.Summary).HasMaxLength(TrackActivity.SummaryMaxLength);
+            activity.Property(a => a.Detail).HasMaxLength(TrackActivity.DetailMaxLength);
+            activity.Property(a => a.JobExecutionId).HasMaxLength(AcquisitionDownload.JobExecutionIdMaxLength);
+            // A track's timeline goes with the track; requests and attempts are only correlation ids, so they may be gone.
+            activity.HasOne(a => a.Track).WithMany()
+                .HasForeignKey(a => a.TrackId).OnDelete(DeleteBehavior.Cascade);
+            activity.HasIndex(a => new { a.TrackId, a.Id });
+            activity.HasIndex(a => a.SearchId);
+            activity.HasIndex(a => a.DownloadRequestId);
         });
 
         modelBuilder.Entity<AcquisitionDownload>(download =>

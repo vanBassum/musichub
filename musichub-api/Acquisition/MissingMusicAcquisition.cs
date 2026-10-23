@@ -95,7 +95,8 @@ public sealed class MissingMusicAcquisition(
         try
         {
             using var scope = scopes.CreateScope();
-            var discovery = await scope.ServiceProvider.GetRequiredService<TrackAcquisition>().DiscoverAsync(trackId, cancellationToken);
+            var discovery = await scope.ServiceProvider.GetRequiredService<TrackAcquisition>()
+                .DiscoverAsync(trackId, cancellationToken, executionId);
             if (discovery.Stopped is { } stopped)
                 return stopped;
 
@@ -103,7 +104,7 @@ public sealed class MissingMusicAcquisition(
             // the next run no longer offers it and enqueues the next best.
             var best = discovery.Fresh[0];
             var queue = scope.ServiceProvider.GetRequiredService<IDownloadQueueService>();
-            var enqueued = await queue.EnqueueAsync(new EnqueueDownloadCommand(trackId, best, executionId), cancellationToken);
+            var enqueued = await queue.EnqueueAsync(new EnqueueDownloadCommand(trackId, best, executionId, discovery.SearchId), cancellationToken);
             return enqueued.Outcome switch
             {
                 EnqueueOutcome.Created => discovery.Result(TrackAcquisitionOutcome.Enqueued,
@@ -116,7 +117,26 @@ public sealed class MissingMusicAcquisition(
         {
             logger.LogError(ex, "Acquiring track {TrackId} failed.", trackId);
             // Only the exception type: the message may carry paths or connection details.
-            return new TrackAcquisitionResult(trackId, "", "", TrackAcquisitionOutcome.Failed, $"Processing failed ({ex.GetType().Name}).");
+            var detail = $"Processing failed ({ex.GetType().Name}).";
+            await RecordFailureAsync(trackId, detail, executionId);
+            return new TrackAcquisitionResult(trackId, "", "", TrackAcquisitionOutcome.Failed, detail);
+        }
+    }
+
+    // In a scope of its own: the one that failed may hold a context that cannot save. A timeline that cannot be written
+    // never hides the failure it was about to report.
+    private async Task RecordFailureAsync(int trackId, string detail, string? executionId)
+    {
+        try
+        {
+            using var scope = scopes.CreateScope();
+            await scope.ServiceProvider.GetRequiredService<TrackActivityLog>().RecordAsync(
+                trackId, TrackActivityKind.SearchFailed, "The search run failed for this track.", CancellationToken.None,
+                detail, new TrackActivityLinks { JobExecutionId = executionId });
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Recording the failure of track {TrackId} in its activity failed.", trackId);
         }
     }
 }

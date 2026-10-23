@@ -23,7 +23,7 @@ public sealed class AcquisitionHistoryTests : IDisposable
     private MusicHubDbContext CreateDb() => new(
         new DbContextOptionsBuilder<MusicHubDbContext>().UseSqlite(_connection).Options);
 
-    private static AcquisitionHistory History(MusicHubDbContext db) => new(db, TimeProvider.System);
+    private static AcquisitionHistory History(MusicHubDbContext db) => new(db, TimeProvider.System, new TrackActivityLog(db, TimeProvider.System));
 
     private static AcquisitionCandidate Candidate(string path = @"Music\a\song.mp3", string source = "peer1") =>
         new("slskd", source, path, 1000);
