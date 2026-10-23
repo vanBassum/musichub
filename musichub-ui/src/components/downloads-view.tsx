@@ -1,12 +1,29 @@
-import { RefreshCw, RotateCw, X } from "lucide-react"
+import {
+  CheckCircle2,
+  ChevronRight,
+  Clock,
+  Loader2,
+  RefreshCw,
+  RotateCw,
+  X,
+  XCircle,
+  type LucideIcon,
+} from "lucide-react"
 
-import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible"
 import { Skeleton } from "@/components/ui/skeleton"
 import {
   canRemoveDownload,
   canRetryDownload,
+  downloadErrorHint,
+  downloadFileName,
   downloadStatuses,
+  isDownloadActive,
   type DownloadQueueItem,
   type DownloadQueueStatus,
   type DownloadStatusFilter,
@@ -22,24 +39,92 @@ const statusLabels: Record<DownloadQueueStatus, string> = {
   Failed: "Failed",
 }
 
-const statusClassNames: Record<DownloadQueueStatus, string> = {
-  Queued: "bg-muted text-muted-foreground",
-  Downloading: "bg-primary text-primary-foreground",
-  Downloaded: "bg-primary text-primary-foreground",
-  Completed: "bg-success text-success-foreground",
-  Failed: "bg-destructive text-white",
+const statusIcons: Record<DownloadQueueStatus, LucideIcon> = {
+  Queued: Clock,
+  Downloading: Loader2,
+  Downloaded: Loader2,
+  Completed: CheckCircle2,
+  Failed: XCircle,
+}
+
+const statusTextClassNames: Record<DownloadQueueStatus, string> = {
+  Queued: "text-muted-foreground",
+  Downloading: "text-primary",
+  Downloaded: "text-primary",
+  Completed: "text-success",
+  Failed: "text-destructive",
 }
 
 const formatTime = (iso: string) => new Date(iso).toLocaleString()
 
-function Timestamps({ item }: { item: DownloadQueueItem }) {
+// Status as icon and text, plus what is relevant for it: a short error hint for a failure, progress for an
+// active transfer. Completed and queued requests show nothing more.
+function StatusCell({ item }: { item: DownloadQueueItem }) {
+  const Icon = statusIcons[item.status]
   return (
-    <p className="mt-1 text-xs text-muted-foreground">
-      Queued {formatTime(item.createdAt)}
-      {item.finishedAt !== null
-        ? ` · Finished ${formatTime(item.finishedAt)}`
-        : ` · Updated ${formatTime(item.updatedAt)}`}
-    </p>
+    <div className="flex min-w-0 items-center gap-2 text-sm md:w-72">
+      <span
+        className={cn(
+          "flex shrink-0 items-center gap-1.5 font-medium",
+          statusTextClassNames[item.status]
+        )}
+      >
+        <Icon aria-hidden className="size-4" />
+        {statusLabels[item.status]}
+      </span>
+      {item.status === "Failed" && item.error !== null && (
+        <span className="truncate text-muted-foreground" title={item.error}>
+          {downloadErrorHint(item.error)}
+        </span>
+      )}
+      {item.status === "Downloading" && item.progressPercent !== null && (
+        <>
+          <progress
+            value={item.progressPercent}
+            max={100}
+            aria-label="Download progress"
+            className="h-1.5 w-20 shrink-0"
+          />
+          <span className="shrink-0 text-muted-foreground">
+            {Math.round(item.progressPercent)}%
+          </span>
+        </>
+      )}
+    </div>
+  )
+}
+
+// Only what the API reports; the file is shown by name, never by path.
+function DownloadDetails({ item }: { item: DownloadQueueItem }) {
+  return (
+    <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 border-t bg-muted/30 px-4 py-3 text-sm">
+      <dt className="text-muted-foreground">File</dt>
+      <dd className="break-words">{downloadFileName(item.fileName)}</dd>
+      <dt className="text-muted-foreground">Queued</dt>
+      <dd>{formatTime(item.createdAt)}</dd>
+      <dt className="text-muted-foreground">Updated</dt>
+      <dd>{formatTime(item.updatedAt)}</dd>
+      {item.finishedAt !== null && (
+        <>
+          <dt className="text-muted-foreground">Finished</dt>
+          <dd>{formatTime(item.finishedAt)}</dd>
+        </>
+      )}
+      {item.progressPercent !== null && isDownloadActive(item) && (
+        <>
+          <dt className="text-muted-foreground">Progress</dt>
+          <dd>{Math.round(item.progressPercent)}%</dd>
+        </>
+      )}
+      {item.error !== null && (
+        <>
+          <dt className="text-muted-foreground">Error</dt>
+          <dd className="break-words whitespace-pre-wrap text-destructive">
+            {item.error}
+          </dd>
+        </>
+      )}
+    </dl>
   )
 }
 
@@ -54,10 +139,11 @@ function DownloadActions({
 }) {
   const busy = state.busyIds.has(item.id)
   return (
-    <div className="flex gap-2">
+    <div className="flex shrink-0 gap-1">
       {canRetryDownload(item) && (
         <Button
           variant="outline"
+          size="sm"
           disabled={busy}
           aria-label={`Retry ${label}`}
           onClick={() => void state.retry(item.id)}
@@ -69,6 +155,7 @@ function DownloadActions({
       {canRemoveDownload(item) && (
         <Button
           variant="outline"
+          size="sm"
           disabled={busy}
           aria-label={`Remove ${label} from the queue`}
           onClick={() => void state.remove(item.id)}
@@ -81,6 +168,8 @@ function DownloadActions({
   )
 }
 
+// One compact row. The title toggles the details; the actions sit beside the toggle, not inside it, so
+// expanding never interferes with retry or remove.
 function DownloadItem({
   item,
   state,
@@ -88,42 +177,40 @@ function DownloadItem({
   item: DownloadQueueItem
   state: DownloadQueueState
 }) {
-  const title = item.trackTitle ?? item.fileName
+  const title = item.trackTitle ?? downloadFileName(item.fileName)
   const artist = item.artists.join(", ")
   const label = artist ? `${title} by ${artist}` : title
   return (
-    <li className="flex flex-wrap items-start gap-3 p-4">
-      <div className="min-w-0 flex-1 basis-64">
-        <p className="font-medium break-words">{title}</p>
-        {artist && (
-          <p className="text-sm break-words text-muted-foreground">{artist}</p>
-        )}
-        {item.progressPercent !== null && item.status === "Downloading" && (
-          <progress
-            value={item.progressPercent}
-            max={100}
-            aria-label={`Download progress of ${label}`}
-            className="mt-2 h-1.5 w-full max-w-xs"
-          />
-        )}
-        {item.error !== null && (
-          <p role="alert" className="mt-1 text-sm break-words text-destructive">
-            {item.error}
-          </p>
-        )}
-        <Timestamps item={item} />
-      </div>
-      <div className="flex items-center gap-2">
-        {item.status === "Downloading" && item.progressPercent !== null && (
-          <span className="text-sm text-muted-foreground">
-            {Math.round(item.progressPercent)}%
+    <li>
+      <Collapsible className="group/row">
+        <div className="flex min-h-12 flex-wrap items-center gap-x-3 gap-y-1 px-3 py-1.5 md:flex-nowrap">
+          <CollapsibleTrigger
+            aria-label={`Details of ${label}`}
+            className="flex min-w-0 flex-1 basis-48 items-center gap-2 rounded-md py-1 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            <ChevronRight
+              aria-hidden
+              className="size-4 shrink-0 transition-transform group-data-[open]/row:rotate-90"
+            />
+            <span className="min-w-0">
+              <span className="block truncate font-medium">{title}</span>
+              {artist && (
+                <span className="block truncate text-sm text-muted-foreground">
+                  {artist}
+                </span>
+              )}
+            </span>
+          </CollapsibleTrigger>
+          <StatusCell item={item} />
+          <span className="hidden shrink-0 text-xs text-muted-foreground xl:block xl:w-40">
+            {formatTime(item.createdAt)}
           </span>
-        )}
-        <Badge className={statusClassNames[item.status]}>
-          {statusLabels[item.status]}
-        </Badge>
-        <DownloadActions item={item} label={label} state={state} />
-      </div>
+          <DownloadActions item={item} label={label} state={state} />
+        </div>
+        <CollapsibleContent>
+          <DownloadDetails item={item} />
+        </CollapsibleContent>
+      </Collapsible>
     </li>
   )
 }

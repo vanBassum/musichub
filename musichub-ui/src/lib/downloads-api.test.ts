@@ -3,6 +3,8 @@ import { afterEach, describe, expect, it, vi } from "vitest"
 import {
   canRemoveDownload,
   canRetryDownload,
+  downloadErrorHint,
+  downloadFileName,
   formatDownloadStatus,
   isDownloadActive,
   parseDownloadStatus,
@@ -27,6 +29,20 @@ const item = (overrides: Partial<DownloadQueueItem>): DownloadQueueItem => ({
 })
 
 afterEach(() => vi.unstubAllGlobals())
+
+describe("download row details", () => {
+  it("hints at an error with its first line, shortened", () => {
+    expect(downloadErrorHint("slskd: 404\nstack trace")).toBe("slskd: 404")
+    expect(downloadErrorHint("x".repeat(100))).toHaveLength(48)
+    expect(downloadErrorHint("x".repeat(100)).endsWith("…")).toBe(true)
+  })
+
+  it("shows only the file name, never a directory", () => {
+    expect(downloadFileName("C:\\music\\user\\a.flac")).toBe("a.flac")
+    expect(downloadFileName("/home/user/a.flac")).toBe("a.flac")
+    expect(downloadFileName("a.flac")).toBe("a.flac")
+  })
+})
 
 describe("download queue api", () => {
   it("reads the newest page from the queue endpoint", async () => {
