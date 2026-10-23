@@ -1,13 +1,14 @@
 import { useEffect, useState } from "react"
 
-import { AppHeader } from "@/components/app-header"
+import { AppSidebar } from "@/components/app-sidebar"
 import { ArtistPage } from "@/components/artist-page"
 import { DownloadsView } from "@/components/downloads-view"
+import { FilesView } from "@/components/files-view"
 import { FilterSidebar } from "@/components/filter-sidebar"
+import { JobsView } from "@/components/jobs-view"
 import { MobileShell } from "@/components/mobile-shell"
 import { PlayerPanel } from "@/components/player-panel"
 import { SearchPage } from "@/components/search-page"
-import { defaultSettingsSection } from "@/components/settings-sections"
 import { SettingsView } from "@/components/settings-view"
 import { TrackDetailsSheet } from "@/components/track-details-sheet"
 import { TrackTable } from "@/components/track-table"
@@ -71,10 +72,10 @@ export function App() {
     return () => clearTimeout(timer)
   }, [location.tab, searchQuery])
 
-  // A Jobs link with a filter (#/settings/jobs?state=failed) opens History with that filter applied.
+  // A Jobs link with a filter (#/jobs?state=failed) opens History with that filter applied.
   const { setFilter: setJobsFilter, setTab: setJobsTab } = jobsState
   useEffect(() => {
-    if (location.screen !== "jobs") return
+    if (location.tab !== "jobs") return
     const filter = parseJobsFilter(window.location.hash)
     setJobsFilter(filter)
     if (filter !== "all") setJobsTab("history")
@@ -169,20 +170,20 @@ export function App() {
   const tab = location.tab === "player" ? "library" : location.tab
 
   return (
-    <div className="flex min-h-svh flex-col lg:h-svh">
-      <AppHeader
+    <div className="flex min-h-svh lg:h-svh">
+      <AppSidebar
         active={activeNav(location)}
         onNavigate={(id) => navigate(locationOf(id))}
       />
       {tab === "library" ? (
-        <main className="grid min-h-0 flex-1 gap-4 p-4 lg:grid-rows-[minmax(0,1fr)] lg:grid-cols-[15rem_minmax(0,1fr)_20rem] xl:grid-cols-[17rem_minmax(0,1fr)_24rem]">
+        <main className="grid min-h-0 min-w-0 flex-1 gap-4 p-4 lg:grid-rows-[minmax(0,1fr)] lg:grid-cols-[15rem_minmax(0,1fr)_20rem] xl:grid-cols-[17rem_minmax(0,1fr)_24rem]">
           {filters()}
           {table(true)}
           <PlayerPanel />
         </main>
       ) : (
         // The player stays docked beside every view, so playback can be controlled anywhere.
-        <main className="grid min-h-0 flex-1 gap-4 p-4 lg:grid-rows-[minmax(0,1fr)] lg:grid-cols-[minmax(0,1fr)_20rem] xl:grid-cols-[minmax(0,1fr)_24rem]">
+        <main className="grid min-h-0 min-w-0 flex-1 gap-4 p-4 lg:grid-rows-[minmax(0,1fr)] lg:grid-cols-[minmax(0,1fr)_20rem] xl:grid-cols-[minmax(0,1fr)_24rem]">
           {tab === "search" ? (
             <SearchPage
               query={searchQuery}
@@ -199,14 +200,12 @@ export function App() {
               onStatusChange={changeDownloadStatus}
               className="min-h-0"
             />
+          ) : tab === "files" ? (
+            <FilesView state={filesState} className="min-h-0" />
+          ) : tab === "jobs" ? (
+            <JobsView state={jobsState} className="min-h-0" />
           ) : tab === "settings" ? (
-            <SettingsView
-              section={location.screen ?? defaultSettingsSection}
-              onSectionChange={(id) => navigate(locationOf("settings", id))}
-              filesState={filesState}
-              jobsState={jobsState}
-              className="min-h-0"
-            />
+            <SettingsView className="min-h-0" />
           ) : (
             location.artist && (
               <ArtistPage

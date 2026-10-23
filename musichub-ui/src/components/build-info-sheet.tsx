@@ -10,12 +10,26 @@ import {
   SheetTrigger,
 } from "@/components/ui/sheet"
 import { buildInfo } from "@/lib/build-info"
+import { cn } from "@/lib/utils"
 
 const rows = [
   { label: "Commit", value: buildInfo.commit },
   { label: "Short commit", value: buildInfo.shortCommit },
   { label: "Built (UTC)", value: buildInfo.builtAt },
 ]
+
+export function BuildInfoList({ className }: { className?: string }) {
+  return (
+    <dl className={cn("flex flex-col gap-3 text-sm", className)}>
+      {rows.map(({ label, value }) => (
+        <div key={label} className="flex flex-col gap-0.5">
+          <dt className="text-muted-foreground">{label}</dt>
+          <dd className="font-mono break-all select-all">{value}</dd>
+        </div>
+      ))}
+    </dl>
+  )
+}
 
 // Where the running build came from. Values are baked in at build time.
 export function BuildInfoSheet({ className }: { className?: string }) {
@@ -40,14 +54,7 @@ export function BuildInfoSheet({ className }: { className?: string }) {
             The build this page is served from.
           </SheetDescription>
         </SheetHeader>
-        <dl className="flex flex-col gap-3 p-4 pt-0 text-sm">
-          {rows.map(({ label, value }) => (
-            <div key={label} className="flex flex-col gap-0.5">
-              <dt className="text-muted-foreground">{label}</dt>
-              <dd className="font-mono break-all select-all">{value}</dd>
-            </div>
-          ))}
-        </dl>
+        <BuildInfoList className="p-4 pt-0" />
       </SheetContent>
     </Sheet>
   )
