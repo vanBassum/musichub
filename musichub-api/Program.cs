@@ -1,5 +1,6 @@
 using MusicHub.Api.Acquisition;
 using MusicHub.Api.Catalog;
+using MusicHub.Api.ExternalSearch;
 using MusicHub.Api.Identification;
 using MusicHub.Api.Jobs;
 using MusicHub.Api.Ingestion;
@@ -35,6 +36,7 @@ builder.Services.AddDbContext<MusicHubDbContext>((sp, options) =>
 
 builder.Services.AddAudioMetadata();
 builder.Services.AddIdentification(builder.Configuration);
+builder.Services.AddListenBrainz(builder.Configuration);
 builder.Services.AddAcquisition(builder.Configuration);
 
 // Pending migrations are applied after startup by a hosted service; `--migrate` runs the same migration and exits.

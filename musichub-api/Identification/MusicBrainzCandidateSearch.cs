@@ -1,8 +1,7 @@
-using System.Diagnostics;
 using System.Globalization;
-using System.Net;
 using System.Net.Http.Headers;
 using System.Text.Json;
+using MusicHub.Api.ExternalSearch;
 
 namespace MusicHub.Api.Identification;
 
@@ -18,16 +17,15 @@ public sealed partial class MusicBrainzCandidateSearch : ICandidateSearch
 
     private const string SiteUrl = "https://musicbrainz.org/";
 
-    private readonly HttpClient http;
     private readonly MusicBrainzOptions options;
-    private readonly SemaphoreSlim gate = new(1, 1);
-    private readonly Stopwatch clock = Stopwatch.StartNew();
-    private TimeSpan? lastRequestAt;
+    private readonly RateLimitedJsonClient client;
 
     public MusicBrainzCandidateSearch(HttpClient http, MusicBrainzOptions options)
     {
-        this.http = http;
         this.options = options;
+        client = new RateLimitedJsonClient(http, new RateLimitedJsonSettings(
+            "MusicBrainz", options.TimeoutSeconds, options.MinRequestIntervalMs, options.MaxRetries,
+            options.RetryDelayMs, options.MaxRetryDelayMs));
     }
 
     public string Source => "musicbrainz";
@@ -187,91 +185,7 @@ public sealed partial class MusicBrainzCandidateSearch : ICandidateSearch
     // Inside a quoted Lucene phrase only the quote and the backslash are special.
     private static string Quote(string text) => text.Replace("\\", "\\\\").Replace("\"", "\\\"");
 
-    private async Task<JsonDocument> GetJsonAsync(string url, CancellationToken ct) =>
-        (await GetJsonCoreAsync(url, notFoundIsNull: false, ct))!;
+    private Task<JsonDocument> GetJsonAsync(string url, CancellationToken ct) => client.GetJsonAsync(url, ct);
 
-    /// <summary>Like <see cref="GetJsonAsync"/>, but a 404 (no such entity) answers null instead of failing.</summary>
-    private Task<JsonDocument?> GetJsonOrNullAsync(string url, CancellationToken ct) =>
-        GetJsonCoreAsync(url, notFoundIsNull: true, ct);
-
-    private async Task<JsonDocument?> GetJsonCoreAsync(string url, bool notFoundIsNull, CancellationToken ct)
-    {
-        for (var attempt = 0; ; attempt++)
-        {
-            string failure;
-            TimeSpan? retryAfter = null;
-            try
-            {
-                await WaitForTurnAsync(ct);
-                using var response = await http.GetAsync(url, ct);
-                if (response.IsSuccessStatusCode)
-                {
-                    return await JsonDocument.ParseAsync(await response.Content.ReadAsStreamAsync(ct), cancellationToken: ct);
-                }
-                if (notFoundIsNull && response.StatusCode == HttpStatusCode.NotFound)
-                {
-                    return null;
-                }
-                if (response.StatusCode != HttpStatusCode.TooManyRequests && (int)response.StatusCode < 500)
-                {
-                    throw new CandidateSearchUnavailableException($"MusicBrainz answered {(int)response.StatusCode}.");
-                }
-                failure = $"MusicBrainz answered {(int)response.StatusCode}.";
-                retryAfter = RetryAfter(response);
-            }
-            catch (HttpRequestException e)
-            {
-                failure = $"MusicBrainz could not be reached ({e.Message}).";
-            }
-            catch (TaskCanceledException) when (!ct.IsCancellationRequested)
-            {
-                failure = $"MusicBrainz did not answer within {options.TimeoutSeconds} s.";
-            }
-            catch (JsonException e)
-            {
-                throw new CandidateSearchUnavailableException("MusicBrainz did not answer with JSON.", e);
-            }
-
-            if (attempt >= options.MaxRetries)
-            {
-                throw new CandidateSearchUnavailableException($"{failure} Gave up after {attempt + 1} attempt(s).");
-            }
-            var delay = retryAfter ?? TimeSpan.FromMilliseconds(options.RetryDelayMs * (attempt + 1));
-            var max = TimeSpan.FromMilliseconds(options.MaxRetryDelayMs);
-            await Task.Delay(delay < TimeSpan.Zero ? TimeSpan.Zero : delay > max ? max : delay, ct);
-        }
-    }
-
-    /// <summary>Spaces request starts at least <see cref="MusicBrainzOptions.MinRequestIntervalMs"/> apart; a request may still be in flight when the next starts.</summary>
-    private async Task WaitForTurnAsync(CancellationToken ct)
-    {
-        var interval = TimeSpan.FromMilliseconds(options.MinRequestIntervalMs);
-        await gate.WaitAsync(ct);
-        try
-        {
-            if (lastRequestAt is { } last)
-            {
-                var wait = last + interval - clock.Elapsed;
-                if (wait > TimeSpan.Zero)
-                {
-                    await Task.Delay(wait, ct);
-                }
-            }
-        }
-        finally
-        {
-            lastRequestAt = clock.Elapsed;
-            gate.Release();
-        }
-    }
-
-    private static TimeSpan? RetryAfter(HttpResponseMessage response)
-    {
-        var header = response.Headers.RetryAfter;
-        if (header?.Delta is { } delta)
-        {
-            return delta;
-        }
-        return header?.Date is { } date ? date - DateTimeOffset.UtcNow : null;
-    }
+    private Task<JsonDocument?> GetJsonOrNullAsync(string url, CancellationToken ct) => client.GetJsonOrNullAsync(url, ct);
 }
