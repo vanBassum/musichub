@@ -1,5 +1,5 @@
 import { ChevronLeft, ChevronRight, Search } from "lucide-react"
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -79,15 +79,21 @@ function FilesSearch({ filter, onChange }: { filter: FilesQuery; onChange: (filt
     setDraft(filter.search)
   }
 
+  // The timer must not restart when the parent re-renders, so it reads the latest filter and callback from a ref.
+  const latest = useRef({ filter, onChange })
+  useEffect(() => {
+    latest.current = { filter, onChange }
+  })
+
   useEffect(() => {
     const typed = draft.trim()
     if (typed === filter.search) return
-    const timer = setTimeout(
-      () => onChange({ ...filter, search: typed, page: 1 }),
-      SEARCH_DELAY_MS
-    )
+    const timer = setTimeout(() => {
+      const current = latest.current
+      current.onChange({ ...current.filter, search: typed, page: 1 })
+    }, SEARCH_DELAY_MS)
     return () => clearTimeout(timer)
-  }, [draft, filter, onChange])
+  }, [draft, filter.search])
 
   return (
     <div className="relative min-w-48 flex-1 sm:max-w-sm">
