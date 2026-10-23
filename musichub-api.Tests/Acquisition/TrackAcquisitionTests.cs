@@ -101,7 +101,8 @@ public sealed class TrackAcquisitionTests : IDisposable
     private async Task<TrackDiscovery> DiscoverAsync(int trackId)
     {
         using var db = CreateDb();
-        var acquisition = new TrackAcquisition(db, new AcquisitionHistory(db, TimeProvider.System), _provider);
+        var activity = new TrackActivityLog(db, TimeProvider.System);
+        var acquisition = new TrackAcquisition(db, new AcquisitionHistory(db, TimeProvider.System, activity), activity, _provider);
         return await acquisition.DiscoverAsync(trackId, CancellationToken.None);
     }
 
@@ -157,6 +158,7 @@ public sealed class TrackAcquisitionTests : IDisposable
         services.Configure<MissingMusicOptions>(o => o.MaxConcurrentTracks = 2);
         services.AddScoped<FileIngestionService>();
         services.AddScoped<AcquisitionHandoff>();
+        services.AddScoped<TrackActivityLog>();
         services.AddScoped<AcquisitionHistory>();
         services.AddScoped<IDownloadQueueService, DownloadQueueService>();
         services.AddScoped<TrackAcquisition>();
@@ -205,7 +207,7 @@ public sealed class TrackAcquisitionTests : IDisposable
         var first = _provider.Offers[0];
         using (var db = CreateDb())
         {
-            var history = new AcquisitionHistory(db, TimeProvider.System);
+            var history = new AcquisitionHistory(db, TimeProvider.System, new TrackActivityLog(db, TimeProvider.System));
             await history.RejectedAsync(await history.BeginAsync(first, trackId, CancellationToken.None), "No.", CancellationToken.None);
         }
 

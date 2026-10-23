@@ -42,7 +42,7 @@ public sealed class DownloadQueueServiceTests : IDisposable
         new DbContextOptionsBuilder<MusicHubDbContext>().UseSqlite($"Data Source={_path};Pooling=False").Options);
 
     private static DownloadQueueService Queue(MusicHubDbContext db, TimeProvider? time = null) =>
-        new(db, time ?? TimeProvider.System);
+        new(db, time ?? TimeProvider.System, new TrackActivityLog(db, time ?? TimeProvider.System));
 
     private static AcquisitionCandidate Candidate(string path = @"Music\a\song.mp3", string source = "peer1") =>
         new("slskd", source, path, 1000, "mp3", 320);
