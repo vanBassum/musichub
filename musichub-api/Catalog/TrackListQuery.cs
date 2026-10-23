@@ -20,8 +20,8 @@ public static class TrackListQuery
         IQueryable<Track> tracks, string? search, bool? hasAudio, (bool Title, bool Artist)? fields = null)
     {
         var (inTitle, inArtist) = fields ?? (true, true);
-        var term = search?.Trim().ToLower();
-        if (!string.IsNullOrEmpty(term))
+        var term = SearchTerm.Normalize(search);
+        if (term is not null)
         {
             tracks = tracks.Where(t =>
                 (inTitle && (t.Title.ToLower().Contains(term)

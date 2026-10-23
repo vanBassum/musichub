@@ -28,10 +28,7 @@ public record AlbumListItemResponse(int Id, string Title, DateTimeOffset Created
 public static class AlbumQueries
 {
     public static IQueryable<Album> Filter(IQueryable<Album> albums, string? search)
-    {
-        var term = search?.Trim().ToLower();
-        return string.IsNullOrEmpty(term) ? albums : albums.Where(a => a.Title.ToLower().Contains(term));
-    }
+        => SearchTerm.Filter(albums, a => a.Title, search);
 
     public static IQueryable<AlbumListItemResponse> Page(IQueryable<Album> albums, int page, int pageSize) => albums
         .OrderBy(a => a.Title).ThenBy(a => a.Id)
