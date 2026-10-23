@@ -1,7 +1,7 @@
 import { ArrowLeft } from "lucide-react"
 import { useCallback, useId, useState } from "react"
 
-import { AddToLibraryButton } from "@/components/add-to-library-button"
+import { AddToLibraryButton, useAddState } from "@/components/add-to-library-button"
 import { FailureAlert, LoadingRows } from "@/components/result-states"
 import { Button } from "@/components/ui/button"
 import {
@@ -121,18 +121,7 @@ function AddAllButton({
   count: number
   onAdd: () => Promise<unknown>
 }) {
-  const [state, setState] = useState<"idle" | "saving" | "added" | "error">(
-    "idle"
-  )
-  const press = async () => {
-    setState("saving")
-    try {
-      await onAdd()
-      setState("added")
-    } catch {
-      setState("error")
-    }
-  }
+  const { state, press } = useAddState(onAdd)
   return (
     <Button
       variant="outline"
