@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using MusicHub.Api.ExternalSearch;
 
 namespace MusicHub.Api.Identification;
@@ -26,12 +27,25 @@ public sealed partial class MusicBrainzCandidateSearch : IExternalMusicSearch
         {
             return [];
         }
+        // "Artist - Title" or "Artist Title" is no phrase of either field: every word has to be found in one of them.
+        if (fields is { Title: true, Artist: true } && Words(term) is { Count: > 1 } words)
+        {
+            clauses.Add("(" + string.Join(" AND ", words.Select(w => $"(recording:\"{w}\" OR artist:\"{w}\")")) + ")");
+        }
 
         var query = string.Join(" OR ", clauses);
         using var json = await GetJsonAsync(
             $"recording?query={Uri.EscapeDataString(query)}&limit={limit}&offset={offset}&fmt=json", ct);
         return Parse(json, "recordings", ToExternalTrack);
     }
+
+    // The words of a term: runs of letters and digits, so separators such as " - " never become a word and nothing
+    // that is special to the query syntax can reach it.
+    private static List<string> Words(string term) =>
+        WordPattern().Matches(term).Select(m => m.Value).ToList();
+
+    [GeneratedRegex(@"[\p{L}\p{N}]+")]
+    private static partial Regex WordPattern();
 
     public async Task<IReadOnlyList<ExternalArtist>> SearchArtistsAsync(string term, int limit, int offset, CancellationToken ct)
     {

@@ -63,6 +63,58 @@ public class ExternalSearchTests
         Assert.Contains("query=recording:\"x\" OR artist:\"x\"&", handler.Urls[2]);
     }
 
+    [Theory]
+    [InlineData("Flobots - Handlebars")]
+    [InlineData("Flobots Handlebars")]
+    public async Task A_combined_artist_and_title_matches_every_word_in_the_title_or_the_artist(string term)
+    {
+        var handler = new StubHandler(_ => Json("""
+            {"recordings":[{"id":"rec-1","title":"Handlebars",
+              "artist-credit":[{"name":"Flobots","artist":{"id":"art-1","name":"Flobots"}}]}]}
+            """));
+
+        var tracks = await Search(handler).SearchTracksAsync(term, new ExternalSearchFields(true, true), 5, 0, CancellationToken.None);
+
+        Assert.Equal("rec-1", Assert.Single(tracks).ExternalId);
+        Assert.Contains(
+            "(recording:\"Flobots\" OR artist:\"Flobots\") AND (recording:\"Handlebars\" OR artist:\"Handlebars\")", handler.Urls[0]);
+    }
+
+    [Fact]
+    public async Task Words_are_split_only_when_both_fields_are_searched_and_never_on_a_single_word()
+    {
+        var handler = new StubHandler(_ => Json("{}"));
+        var search = Search(handler);
+
+        await search.SearchTracksAsync("Hand-Held \"x\"", new ExternalSearchFields(true, false), 5, 0, CancellationToken.None);
+        await search.SearchTracksAsync("Handlebars", new ExternalSearchFields(true, true), 5, 0, CancellationToken.None);
+        await search.SearchTracksAsync("Hand-Held", new ExternalSearchFields(true, true), 5, 0, CancellationToken.None);
+        await search.SearchTracksAsync("nothing here", new ExternalSearchFields(true, true), 5, 0, CancellationToken.None);
+
+        Assert.DoesNotContain("AND", handler.Urls[0]);
+        Assert.DoesNotContain("AND", handler.Urls[1]);
+        Assert.Contains("recording:\"Hand-Held\" OR artist:\"Hand-Held\" OR ((recording:\"Hand\" OR artist:\"Hand\") AND", handler.Urls[2]);
+    }
+
+    [Fact]
+    public async Task A_search_without_matches_is_empty()
+    {
+        var handler = new StubHandler(_ => Json("""{"recordings":[]}"""));
+
+        var tracks = await Search(handler).SearchTracksAsync("Nobody - Nothing", new ExternalSearchFields(true, true), 5, 0, CancellationToken.None);
+
+        Assert.Empty(tracks);
+    }
+
+    [Fact]
+    public async Task A_failing_provider_is_unavailable_for_a_combined_query()
+    {
+        var handler = new StubHandler(_ => new HttpResponseMessage(HttpStatusCode.BadGateway));
+
+        await Assert.ThrowsAsync<CandidateSearchUnavailableException>(
+            () => Search(handler).SearchTracksAsync("Flobots - Handlebars", new ExternalSearchFields(true, true), 5, 0, CancellationToken.None));
+    }
+
     [Fact]
     public async Task Artists_carry_provider_provenance_and_stable_ids()
     {
