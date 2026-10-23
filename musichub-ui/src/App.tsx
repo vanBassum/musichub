@@ -106,7 +106,6 @@ export function App() {
     setSelectedSource(source)
     setSelectedId(id)
   }
-  const selectSearchTrack = (id: number) => selectTrack(id, "search")
 
   const filtered = search !== "" || audio !== "all"
 
@@ -157,7 +156,6 @@ export function App() {
           onWishlistFilterChange={changeWishlistFilter}
           searchQuery={searchQuery}
           onSearchQueryChange={setSearchQuery}
-          onSelectTrack={selectSearchTrack}
         />
         {details}
       </>
@@ -186,7 +184,6 @@ export function App() {
             <SearchPage
               query={searchQuery}
               onQueryChange={setSearchQuery}
-              onSelectTrack={selectSearchTrack}
               onSelectArtist={(ref) => openArtist({ ref, source: "search" })}
               autoFocus
               className="min-h-0"

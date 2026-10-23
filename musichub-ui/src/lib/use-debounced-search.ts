@@ -19,7 +19,14 @@ export function useDebouncedSearch<T>(
   input: string,
   fields: SearchFields,
   delayMs: number,
-  fetcher: (term: string, fields: SearchFields, signal: AbortSignal) => Promise<T>
+  fetcher: (
+    term: string,
+    fields: SearchFields,
+    signal: AbortSignal,
+    limit: number
+  ) => Promise<T>,
+  // How many results to ask for; a new limit loads again (show more).
+  limit = 0
 ) {
   const [term, setTerm] = useState("")
   const [result, setResult] = useState<Result<T> | null>(null)
@@ -32,13 +39,13 @@ export function useDebouncedSearch<T>(
   }, [typed, delayMs])
 
   // `attempt` is part of the key so a retry shows the loading state again.
-  const key = `${term}|${fields.title}|${fields.artist}|${attempt}`
+  const key = `${term}|${fields.title}|${fields.artist}|${limit}|${attempt}`
 
   useEffect(() => {
     if (term === "") return
     const controller = new AbortController()
     const { signal } = controller
-    fetcher(term, fields, signal)
+    fetcher(term, fields, signal, limit)
       .then((data) => {
         if (signal.aborted) return
         setResult({ key, data })
@@ -52,7 +59,7 @@ export function useDebouncedSearch<T>(
         })
       })
     return () => controller.abort()
-  }, [term, fields, key, attempt, fetcher])
+  }, [term, fields, key, attempt, fetcher, limit])
 
   const status: SearchStatus =
     typed === ""

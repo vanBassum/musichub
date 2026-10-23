@@ -47,7 +47,6 @@ interface MobileShellProps {
   onWishlistFilterChange: (filter: WishlistFilter) => void
   searchQuery: string
   onSearchQueryChange: (query: string) => void
-  onSelectTrack: (trackId: number) => void
 }
 
 // On a tablet a page keeps a readable width, centred, instead of stretching.
@@ -124,7 +123,6 @@ export function MobileShell({
   onWishlistFilterChange,
   searchQuery,
   onSearchQueryChange,
-  onSelectTrack,
   filesState,
   jobsState,
 }: MobileShellProps) {
@@ -140,7 +138,6 @@ export function MobileShell({
         <SearchPage
           query={searchQuery}
           onQueryChange={onSearchQueryChange}
-          onSelectTrack={onSelectTrack}
           onSelectArtist={(ref) => openArtist({ ref, source: "search" })}
           className="flex-1"
         />
