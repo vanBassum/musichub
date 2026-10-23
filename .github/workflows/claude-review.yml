@@ -158,10 +158,12 @@ jobs:
     timeout-minutes: 5
     concurrency:
       group: claude-review-report-${{ github.event.pull_request.number }}
+    # The report is posted through the issues API, but on a PR that also needs
+    # pull-requests: write: with issues: write alone the POST got HTTP 403.
     permissions:
       contents: read
       checks: read
-      pull-requests: read
+      pull-requests: write
       issues: write
     steps:
       - uses: actions/checkout@v4
