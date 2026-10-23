@@ -207,6 +207,10 @@ export function SearchPage({
     setPages(0)
     setCategory(value)
   }
+  const changeField = (...args: Parameters<typeof setField>) => {
+    setPages(0)
+    setField(...args)
+  }
   const showMore = (kind: ResultKind) =>
     focused ? setPages((n) => n + 1) : changeCategory(kind)
   const shows = (kind: ResultKind) => category === "all" || category === kind
@@ -253,7 +257,7 @@ export function SearchPage({
               <label key={field} className="flex items-center gap-2 text-xs">
                 <Checkbox
                   checked={fields[field]}
-                  onCheckedChange={(checked) => setField(field, checked)}
+                  onCheckedChange={(checked) => changeField(field, checked)}
                 />
                 {label}
               </label>

@@ -52,7 +52,12 @@ export function useDebouncedSearch<T>(
     if (term === "") return
     const controller = new AbortController()
     const { signal } = controller
-    fetcher(term, fields, signal, limit, page * limit)
+    // A limit of 0 means the kind isn't shown: nothing is asked of the provider.
+    const request =
+      limit === 0
+        ? Promise.resolve<T[]>([])
+        : fetcher(term, fields, signal, limit, page * limit)
+    request
       .then((items) => {
         if (signal.aborted) return
         setResult((previous) => ({

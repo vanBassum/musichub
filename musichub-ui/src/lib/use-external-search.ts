@@ -8,17 +8,13 @@ import { useDebouncedSearch } from "@/lib/use-debounced-search"
 
 const delayMs = 400
 
-// A limit of 0 means the kind isn't shown: nothing is asked of the provider.
 const searchAlbums = async (
   term: string,
   _fields: SearchFields,
   signal: AbortSignal,
   limit: number,
   offset: number
-) =>
-  limit === 0
-    ? []
-    : (await fetchExternalAlbums({ search: term, limit, offset }, signal)).items
+) => (await fetchExternalAlbums({ search: term, limit, offset }, signal)).items
 
 const searchTracks = async (
   term: string,
@@ -27,10 +23,8 @@ const searchTracks = async (
   limit: number,
   offset: number
 ) =>
-  limit === 0
-    ? []
-    : (await fetchExternalTracks({ search: term, limit, offset, fields }, signal))
-        .items
+  (await fetchExternalTracks({ search: term, limit, offset, fields }, signal))
+    .items
 
 const searchArtists = async (
   term: string,
@@ -39,7 +33,7 @@ const searchArtists = async (
   limit: number,
   offset: number
 ) =>
-  limit === 0 || !fields.artist
+  !fields.artist
     ? []
     : (await fetchExternalArtists({ search: term, limit, offset }, signal)).items
 
