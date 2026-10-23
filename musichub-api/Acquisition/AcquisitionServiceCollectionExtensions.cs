@@ -18,6 +18,8 @@ public static class AcquisitionServiceCollectionExtensions
         services.AddScoped<IDownloadQueueService, DownloadQueueService>();
         services.Configure<MissingMusicOptions>(configuration.GetSection(MissingMusicOptions.SectionName));
         services.AddScoped<MissingMusicAcquisition>();
+        services.AddSingleton<TrackSearchRequests>();
+        services.AddScoped<WishlistService>();
         services.Configure<SlskdOptions>(configuration.GetSection(SlskdOptions.SectionName));
         if (string.IsNullOrWhiteSpace(configuration[$"{SlskdOptions.SectionName}:{nameof(SlskdOptions.BaseUrl)}"]))
         {
