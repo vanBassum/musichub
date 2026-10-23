@@ -25,6 +25,11 @@ const audioExtensions = [
   ".weba",
 ]
 
+// The cover embedded in a Stored audio file (GET /api/files/{id}/cover answers 404 when it has none).
+export function fileCoverUrl(id: string) {
+  return `/api/files/${encodeURIComponent(id)}/cover`
+}
+
 export function isAudioFilename(name: string) {
   const lower = name.toLowerCase()
   return audioExtensions.some((extension) => lower.endsWith(extension))

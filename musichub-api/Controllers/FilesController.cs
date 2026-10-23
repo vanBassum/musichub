@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
 using MusicHub.Api.Catalog;
 using MusicHub.Api.Ingestion;
+using MusicHub.Api.Metadata;
 
 namespace MusicHub.Api.Controllers;
 
@@ -202,6 +203,50 @@ public class FilesController(
             Response.Headers.ContentRange = $"bytes {range.Start}-{range.End}/{total}";
         }
         return File(content, contentType);
+    }
+
+    /// <summary>The largest audio object read to find its embedded cover: 64 MiB. A bigger file has no cover endpoint result.</summary>
+    public const long MaxCoverSourceBytes = 64L * 1024 * 1024;
+
+    /// <summary>
+    /// The cover art embedded in a Stored audio file, as a JPEG, PNG, GIF or WebP image (by its bytes, at most 5 MiB).
+    /// 404 when the file is absent, not Stored, not a known audio type, too large to inspect, has no usable cover or
+    /// its object is gone; 502 when storage cannot be read. Read-only; nothing is stored or changed.
+    /// </summary>
+    [HttpGet("{id:int}/cover")]
+    public async Task<IActionResult> Cover(int id, [FromServices] IEmbeddedCoverReader covers, CancellationToken cancellationToken)
+    {
+        var record = await ingestion.FindStoredAsync(id, cancellationToken);
+        if (record is not { SizeBytes: > 0 and <= MaxCoverSourceBytes } || AudioStreaming.ContentTypeFor(record.OriginalFilename) is null)
+            return NotFound();
+
+        // TagLib# needs a seekable stream; the bounded size makes buffering the object safe.
+        using var audio = new MemoryStream((int)record.SizeBytes.Value);
+        try
+        {
+            await using var content = await ingestion.OpenStoredRangeAsync(record, 0, record.SizeBytes.Value - 1, cancellationToken);
+            await content.CopyToAsync(audio, cancellationToken);
+        }
+        catch (FileNotFoundException)
+        {
+            return NotFound();
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            return Problem(
+                title: "File cover failed",
+                detail: "The file could not be read from storage.",
+                statusCode: StatusCodes.Status502BadGateway);
+        }
+
+        audio.Position = 0;
+        var cover = covers.Read(audio, record.OriginalFilename);
+        if (cover is null)
+            return NotFound();
+
+        Response.Headers.XContentTypeOptions = "nosniff";
+        Response.Headers.CacheControl = "private, max-age=3600";
+        return File(cover.Data, cover.ContentType);
     }
 
     /// <summary>
