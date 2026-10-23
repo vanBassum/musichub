@@ -109,8 +109,7 @@ public sealed class ListenBrainzProvider : IExternalPopularitySource
         return [.. byRecording.Values];
     }
 
-    private static string? Text(JsonElement element, string property) =>
-        element.TryGetProperty(property, out var value) && value.ValueKind == JsonValueKind.String ? value.GetString() : null;
+    private static string? Text(JsonElement element, string property) => JsonText.Read(element, property);
 
     private static long? Count(JsonElement element, string property) =>
         element.TryGetProperty(property, out var value) && value.ValueKind == JsonValueKind.Number

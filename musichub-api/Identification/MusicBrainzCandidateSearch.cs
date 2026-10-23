@@ -161,10 +161,7 @@ public sealed partial class MusicBrainzCandidateSearch : ICandidateSearch
         return (names, references);
     }
 
-    private static string? Text(JsonElement element, string property) =>
-        element.ValueKind == JsonValueKind.Object && element.TryGetProperty(property, out var value) && value.ValueKind == JsonValueKind.String
-            ? value.GetString()
-            : null;
+    private static string? Text(JsonElement element, string property) => JsonText.Read(element, property);
 
     // Inside a quoted Lucene phrase only the quote and the backslash are special.
     private static string Quote(string text) => text.Replace("\\", "\\\\").Replace("\"", "\\\"");
