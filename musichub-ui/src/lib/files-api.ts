@@ -25,6 +25,11 @@ const audioExtensions = [
   ".weba",
 ]
 
+// The cover embedded in a Stored audio file (GET /api/files/{id}/cover answers 404 when it has none).
+export function fileCoverUrl(id: string) {
+  return `/api/files/${encodeURIComponent(id)}/cover`
+}
+
 export function isAudioFilename(name: string) {
   const lower = name.toLowerCase()
   return audioExtensions.some((extension) => lower.endsWith(extension))
@@ -134,6 +139,8 @@ export interface FileCounts {
 export interface FilesQuery {
   status: FileStatus | null
   identification: FileIdentificationState | null
+  // Part of the filename, matched case-insensitively by the API; "" means no search.
+  search: string
   page: number
 }
 
@@ -189,7 +196,7 @@ export async function deleteFailedFiles() {
 }
 
 export function listFiles(
-  { status, identification, page }: FilesQuery,
+  { status, identification, search, page }: FilesQuery,
   signal?: AbortSignal
 ) {
   const params = new URLSearchParams({
@@ -198,11 +205,17 @@ export function listFiles(
   })
   if (status) params.set("status", status)
   if (identification) params.set("identification", identification)
+  if (search) params.set("search", search)
   return getJson<FilesPage>(`/api/files?${params}`, "The file list", signal)
 }
 
-export const getFileCounts = (signal?: AbortSignal) =>
-  getJson<FileCounts>("/api/files/counts", "The file counts", signal)
+// The counts follow the filename search, so an option's count is what choosing it would show.
+export const getFileCounts = (search: string, signal?: AbortSignal) =>
+  getJson<FileCounts>(
+    `/api/files/counts${search ? `?${new URLSearchParams({ search })}` : ""}`,
+    "The file counts",
+    signal
+  )
 
 export const getFileIdentification = (id: string, signal?: AbortSignal) =>
   getJson<FileIdentificationHistory>(

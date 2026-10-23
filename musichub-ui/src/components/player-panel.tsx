@@ -15,6 +15,7 @@ import {
 
 import { Button } from "@/components/ui/button"
 import { Slider } from "@/components/ui/slider"
+import { fileCoverUrl } from "@/lib/files-api"
 import { formatDuration } from "@/lib/format"
 import { isAudible, usePlayer, type PlaybackStatus } from "@/lib/use-player"
 import { cn } from "@/lib/utils"
@@ -22,6 +23,11 @@ import { cn } from "@/lib/utils"
 interface NowPlayingProps {
   // The mobile Player page: a bigger cover, and a seek slider that doesn't swipe pages.
   large?: boolean
+}
+
+interface PlayerCoverProps {
+  fileId: string
+  large: boolean
 }
 
 interface QueueListProps {
@@ -35,6 +41,40 @@ const statusLabels: Record<PlaybackStatus, string> = {
   paused: "Paused",
   ended: "Finished",
   error: "Can't play",
+}
+
+// The cover embedded in the playing file. The Music placeholder shows until the image has loaded and
+// stays when there is none or it breaks. Callers key it by file, so a new track starts unloaded and
+// never shows the previous track's cover.
+function PlayerCover({ fileId, large }: PlayerCoverProps) {
+  const [loaded, setLoaded] = useState(false)
+  const [failed, setFailed] = useState(false)
+
+  return (
+    <div
+      role="img"
+      aria-label={loaded ? "Cover art" : "No cover art"}
+      className={cn(
+        "relative flex aspect-square w-full items-center justify-center overflow-hidden rounded-md bg-muted text-muted-foreground",
+        // The docked desktop player gives the cover up first on short windows.
+        large ? "max-w-72" : "max-w-40 [@media(max-height:56rem)]:hidden"
+      )}
+    >
+      {!loaded && <Music className="size-1/4" />}
+      {!failed && (
+        <img
+          src={fileCoverUrl(fileId)}
+          alt=""
+          onLoad={() => setLoaded(true)}
+          onError={() => setFailed(true)}
+          className={cn(
+            "absolute inset-0 size-full object-cover",
+            !loaded && "invisible"
+          )}
+        />
+      )}
+    </div>
+  )
 }
 
 // The shared player: one playback state (`usePlayer`) behind every presentation. A stored
@@ -67,19 +107,7 @@ export function NowPlaying({ large = false }: NowPlayingProps) {
 
   return (
     <div className="flex flex-col items-center gap-4 p-4 pb-5">
-      <div
-        role="img"
-        aria-label="No cover art"
-        className={cn(
-          "flex aspect-square w-full items-center justify-center rounded-md bg-muted text-muted-foreground",
-          // The docked desktop player gives the cover up first on short windows.
-          large
-            ? "max-w-72"
-            : "max-w-40 [@media(max-height:56rem)]:hidden"
-        )}
-      >
-        <Music className="size-1/4" />
-      </div>
+      <PlayerCover key={source.id} fileId={source.id} large={large} />
       <div className="flex w-full flex-col items-center gap-0.5 text-center">
         <h2
           className="w-full truncate text-lg font-semibold"

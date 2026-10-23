@@ -15,8 +15,10 @@ import {
   type CatalogTrack,
 } from "@/lib/catalog-api"
 import {
+  appendEntry,
   clearExcept,
   insertAfter,
+  isQueued,
   moveEntry as moveQueueEntry,
   neighbour,
   removeEntry as removeQueueEntry,
@@ -68,6 +70,12 @@ export function isAudible(status: PlaybackStatus) {
   return status === "playing" || status === "loading"
 }
 
+// The entry an add created, and whether the same file was already queued before it.
+export interface EnqueueResult {
+  key: number
+  duplicate: boolean
+}
+
 export interface PlayerState {
   source: PlayerSource | null
   status: PlaybackStatus
@@ -82,8 +90,8 @@ export interface PlayerState {
   playFile: (file: { id: string; originalFilename: string }) => void
   // Starts the track right after the current entry; the rest of the queue stays.
   playNow: (track: PlayableTrack) => void
-  playNext: (track: PlayableTrack) => void
-  enqueue: (track: PlayableTrack) => void
+  // Appends to the end of the queue without starting playback.
+  enqueue: (track: PlayableTrack) => EnqueueResult
   playEntry: (key: number) => void
   removeEntry: (key: number) => void
   moveEntry: (key: number, offset: -1 | 1) => void
@@ -130,6 +138,15 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   const [queue, setQueue] = useState<QueueEntry[]>([])
   const [currentKey, setCurrentKey] = useState<number | null>(null)
   const nextKey = useRef(0)
+  // The queue as of the latest update, readable before React has re-rendered.
+  const queueRef = useRef<QueueEntry[]>([])
+  const updateQueue = useCallback(
+    (change: (current: QueueEntry[]) => QueueEntry[]) => {
+      queueRef.current = change(queueRef.current)
+      setQueue(queueRef.current)
+    },
+    []
+  )
   // The ended listener is registered once; it calls whatever "next" is by then.
   const advance = useRef<() => void>(() => {})
 
@@ -235,25 +252,25 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     []
   )
 
+  // Appends to the end without touching playback. Whether the file was already queued is
+  // decided on the same synchronous update, so fast repeated adds each see the previous one.
   const enqueue = useCallback(
-    (track: PlayableTrack) =>
-      setQueue((current) => [...current, newEntry(track)]),
-    [newEntry]
-  )
-
-  const playNext = useCallback(
-    (track: PlayableTrack) =>
-      setQueue((current) => insertAfter(current, currentKey, newEntry(track))),
-    [currentKey, newEntry]
+    (track: PlayableTrack): EnqueueResult => {
+      const entry = newEntry(track)
+      const duplicate = isQueued(queueRef.current, entry.source.id)
+      updateQueue((current) => appendEntry(current, entry))
+      return { key: entry.key, duplicate }
+    },
+    [newEntry, updateQueue]
   )
 
   const playNow = useCallback(
     (track: PlayableTrack) => {
       const entry = newEntry(track)
-      setQueue((current) => insertAfter(current, currentKey, entry))
+      updateQueue((current) => insertAfter(current, currentKey, entry))
       play(entry.source, entry.key)
     },
-    [currentKey, newEntry, play]
+    [currentKey, newEntry, play, updateQueue]
   )
 
   const playEntry = useCallback(
@@ -275,21 +292,21 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         if (following && isAudible(status)) play(following.source, following.key)
         else stop()
       }
-      setQueue((current) => removeQueueEntry(current, key))
+      updateQueue((current) => removeQueueEntry(current, key))
     },
-    [currentKey, following, status, play, stop]
+    [currentKey, following, status, play, stop, updateQueue]
   )
 
   const moveEntry = useCallback(
     (key: number, offset: -1 | 1) =>
-      setQueue((current) => moveQueueEntry(current, key, offset)),
-    []
+      updateQueue((current) => moveQueueEntry(current, key, offset)),
+    [updateQueue]
   )
 
   // The loaded entry stays, so clearing never cuts the audio off.
   const clearQueue = useCallback(
-    () => setQueue((current) => clearExcept(current, currentKey)),
-    [currentKey]
+    () => updateQueue((current) => clearExcept(current, currentKey)),
+    [currentKey, updateQueue]
   )
 
   const next = useCallback(() => {
@@ -338,7 +355,6 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       hasNext: following !== undefined,
       playFile,
       playNow,
-      playNext,
       enqueue,
       playEntry,
       removeEntry,
@@ -360,7 +376,6 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       following,
       playFile,
       playNow,
-      playNext,
       enqueue,
       playEntry,
       removeEntry,

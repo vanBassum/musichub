@@ -89,7 +89,12 @@ export function useFiles(): FilesState {
   const { filter, setFilter } = useFilesFilter()
   const [files, setFiles] = useState<FilesPage | null>(null)
   const [counts, setCounts] = useState<FileCounts | null>(null)
-  const [loadError, setLoadError] = useState<string | null>(null)
+  // A failure belongs to the filter it was requested for: it is shown only while that filter is current.
+  const [failure, setFailure] = useState<{
+    filter: FilesQuery
+    message: string
+  } | null>(null)
+  const loadError = failure?.filter === filter ? failure.message : null
   const [refreshing, setRefreshing] = useState(true)
   const [uploads, setUploads] = useState<Upload[]>([])
   const latest = useRef<AbortController | null>(null)
@@ -103,22 +108,24 @@ export function useFiles(): FilesState {
     latest.current?.abort()
     const controller = new AbortController()
     latest.current = controller
+    const requested = filterRef.current
     return Promise.all([
       listFiles(filterRef.current, controller.signal),
-      getFileCounts(controller.signal),
+      getFileCounts(filterRef.current.search, controller.signal),
     ])
       .then(
         ([list, totals]) => {
           if (controller.signal.aborted) return
           setFiles(list)
           setCounts(totals)
-          setLoadError(null)
+          setFailure(null)
         },
         (error: unknown) => {
           if (controller.signal.aborted) return
-          setLoadError(
-            error instanceof Error ? error.message : "Loading failed."
-          )
+          setFailure({
+            filter: requested,
+            message: error instanceof Error ? error.message : "Loading failed.",
+          })
         }
       )
       .finally(() => {

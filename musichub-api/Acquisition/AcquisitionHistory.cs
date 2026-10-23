@@ -1,5 +1,7 @@
 using Microsoft.EntityFrameworkCore;
+using MusicHub.Api.Catalog;
 using MusicHub.Api.Data;
+using MusicHub.Api.Identification;
 
 namespace MusicHub.Api.Acquisition;
 
@@ -59,15 +61,43 @@ public class AcquisitionHistory(MusicHubDbContext db, TimeProvider time, TrackAc
         return db.SaveChangesAsync(ct);
     }
 
-    /// <summary>The file was imported as <paramref name="fileId"/>, an existing canonical file record.</summary>
-    public Task AcceptedAsync(AcquisitionDownload download, int fileId, string reason, CancellationToken ct)
+    /// <summary>
+    /// The file was imported as <paramref name="fileId"/>, an existing canonical file record. The identification
+    /// <paramref name="attempt"/> that led to it is stored together with the decision.
+    /// </summary>
+    public Task AcceptedAsync(
+        AcquisitionDownload download, int fileId, string reason, CancellationToken ct, IdentificationOutcome? attempt = null)
     {
         download.FileId = fileId;
-        return DecideAsync(download, AcquisitionOutcome.Accepted, reason, ct);
+        return DecideAsync(download, AcquisitionOutcome.Accepted, reason, attempt, ct);
     }
 
-    public Task RejectedAsync(AcquisitionDownload download, string reason, CancellationToken ct) =>
-        DecideAsync(download, AcquisitionOutcome.Rejected, reason, ct);
+    /// <summary>The file stays outside the library; the identification <paramref name="attempt"/> that led to it is stored with the decision.</summary>
+    public Task RejectedAsync(
+        AcquisitionDownload download, string reason, CancellationToken ct, IdentificationOutcome? attempt = null) =>
+        DecideAsync(download, AcquisitionOutcome.Rejected, reason, attempt, ct);
+
+    /// <summary>
+    /// One identification attempt on the bytes of <paramref name="download"/>, not yet stored: it is stored by
+    /// <see cref="AcceptedAsync"/> or <see cref="RejectedAsync"/>, with the decision it led to.
+    /// </summary>
+    public IdentificationOutcome AttemptOn(
+        AcquisitionDownload download, string fileName, IdentificationDecision decision, string reason,
+        IReadOnlyList<IdentificationMethodResult> methods, int? trackId)
+    {
+        var attempt = new IdentificationOutcome
+        {
+            DownloadId = download.Id,
+            FileName = IdentificationOutcome.Truncate(fileName, IdentificationOutcome.FileNameMaxLength),
+            Decision = decision,
+            Reason = IdentificationOutcome.Truncate(reason, IdentificationOutcome.ReasonMaxLength),
+            TrackId = trackId,
+            RecordedAt = time.GetUtcNow(),
+            PipelineVersion = BuildVersion.Current,
+        };
+        attempt.SetMethods(methods);
+        return attempt;
+    }
 
     /// <summary>
     /// Whether this source was rejected before: the same provider, source and path. Checked before downloading, so a
@@ -119,8 +149,11 @@ public class AcquisitionHistory(MusicHubDbContext db, TimeProvider time, TrackAc
             && d.AudioHash == audioHash
             && d.AudioHashVersion == Mp3AudioPayload.Version, ct);
 
-    private Task DecideAsync(AcquisitionDownload download, AcquisitionOutcome outcome, string reason, CancellationToken ct)
+    private Task DecideAsync(
+        AcquisitionDownload download, AcquisitionOutcome outcome, string reason, IdentificationOutcome? attempt, CancellationToken ct)
     {
+        if (attempt is not null)
+            db.IdentificationOutcomes.Add(attempt);
         download.Outcome = outcome;
         download.Reason = Truncate(reason, AcquisitionDownload.ReasonMaxLength);
         download.DecidedAt = time.GetUtcNow();

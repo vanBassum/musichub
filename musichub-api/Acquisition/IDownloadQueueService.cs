@@ -53,6 +53,14 @@ public sealed record RetryResult(RetryOutcome Outcome, DownloadRequestView? Requ
 /// <summary>A request as a worker needs it: what to download and which attempt this is.</summary>
 public sealed record ClaimedDownload(int RequestId, int? TrackId, AcquisitionCandidate Candidate, int AttemptNumber);
 
+/// <summary>
+/// A downloaded request as the handoff needs it: which file to identify and import, for which track, and which handoff
+/// attempt this is.
+/// </summary>
+/// <param name="AcquisitionDownloadId">The permanent history record of the download; null once that record is gone.</param>
+public sealed record ClaimedHandoff(
+    int RequestId, int? TrackId, AcquisitionCandidate Candidate, int? AcquisitionDownloadId, int AttemptNumber);
+
 /// <summary>A request as the API shows it. It names the provider and the file, never the source or the remote path.</summary>
 public sealed record DownloadRequestView(
     int Id,
@@ -119,19 +127,31 @@ public interface IDownloadQueueService
     /// <summary>The bytes arrived (Downloading to Downloaded); <paramref name="attemptId"/> is the history record of the attempt.</summary>
     Task<bool> MarkDownloadedAsync(int id, int? attemptId, CancellationToken ct);
 
-    /// <summary>The handoff to identification and import is done (Downloaded to Completed).</summary>
+    /// <summary>Takes the oldest downloaded request that may be handed off now (Downloaded to Processing), or null when there is none.</summary>
+    Task<ClaimedHandoff?> ClaimNextDownloadedAsync(CancellationToken ct);
+
+    /// <summary>The file was imported as the wanted recording (Processing to Completed).</summary>
     Task<bool> MarkCompletedAsync(int id, CancellationToken ct);
+
+    /// <summary>
+    /// The handoff failed for a reason another attempt may fix; the file stays downloaded and is claimed again after
+    /// <paramref name="delay"/> (Processing to Downloaded).
+    /// </summary>
+    Task<bool> RetryHandoffLaterAsync(
+        int id, AcquisitionFailure failure, string error, TimeSpan delay, CancellationToken ct);
 
     /// <summary>The attempt failed and another will follow not before <paramref name="notBefore"/> (Downloading to Queued).</summary>
     Task<bool> RetryLaterAsync(
         int id, AcquisitionFailure failure, string error, DateTimeOffset notBefore, int? attemptId, CancellationToken ct);
 
-    /// <summary>No more attempts (Queued, Downloading or Downloaded to Failed). <paramref name="error"/> is a safe sentence.</summary>
+    /// <summary>No more attempts (Queued, Downloading, Downloaded or Processing to Failed). <paramref name="error"/> is a safe sentence.</summary>
     Task<bool> FailAsync(int id, AcquisitionFailure failure, string error, int? attemptId, CancellationToken ct);
 
     /// <summary>
-    /// Restart recovery: puts every request still Downloading back in the queue, because no worker owns it any more.
-    /// Run it once when the worker starts, before it claims. Returns how many were requeued.
+    /// Restart recovery: puts every request still Downloading back in the queue and every one still Processing back to
+    /// Downloaded, because no worker owns them any more. A request that was already Downloaded needs no recovery: it is
+    /// claimed for the handoff like any other. Run it once when the worker starts, before it claims. Returns how many
+    /// were put back.
     /// </summary>
     Task<int> RequeueInterruptedAsync(CancellationToken ct);
 }

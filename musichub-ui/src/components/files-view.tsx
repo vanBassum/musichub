@@ -1,5 +1,6 @@
 import {
   ChevronRight,
+  MoreHorizontal,
   Pause,
   Play,
   RefreshCw,
@@ -25,12 +26,17 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 import {
   isAudioFilename,
   type FileRegistration,
@@ -152,26 +158,11 @@ export function FilesView({
           Uploaded files as stored, not the music catalog
         </span>
         <div className="ml-auto flex flex-wrap items-center gap-2">
-          <Button
-            variant="outline"
-            size="lg"
-            onClick={() => void refresh()}
-            disabled={refreshing}
-          >
-            <RefreshCw data-icon="inline-start" />
-            Refresh
-          </Button>
-          <DeleteFailedControl
-            count={failedCount}
-            pending={bulkDeletion?.pending === true}
-            confirming={confirmingBulk}
-            onAsk={() => setConfirmingBulk(true)}
-            onCancel={() => setConfirmingBulk(false)}
-            onConfirm={() => {
-              setConfirmingBulk(false)
-              removeFailed()
-            }}
-          />
+          {unfinished > 0 && (
+            <Button variant="outline" size="lg" onClick={cancelAll}>
+              Cancel all uploads
+            </Button>
+          )}
           <Button size="lg" onClick={() => input.current?.click()}>
             <Upload data-icon="inline-start" />
             Upload files
@@ -184,41 +175,30 @@ export function FilesView({
             aria-label="Choose files to upload"
             onChange={(event) => onSelect(event.target.files)}
           />
+          <FilesMenu
+            refreshing={refreshing}
+            onRefresh={() => void refresh()}
+            concurrency={concurrency}
+            onConcurrency={setConcurrency}
+            failedCount={failedCount}
+            bulkPending={bulkDeletion?.pending === true}
+            onDeleteFailed={() => setConfirmingBulk(true)}
+          />
         </div>
       </div>
 
-      <div className="flex shrink-0 flex-wrap items-center gap-2 border-t px-4 py-2 text-sm">
-        <span id="concurrency-label" className="text-muted-foreground">
-          Simultaneous uploads
-        </span>
-        <Select
-          value={String(concurrency)}
-          onValueChange={(value) => setConcurrency(Number(value))}
-        >
-          <SelectTrigger aria-labelledby="concurrency-label">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {concurrencyOptions.map((n) => (
-              <SelectItem key={n} value={String(n)}>
-                {n}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        {unfinished > 0 && (
-          <Button
-            variant="outline"
-            size="sm"
-            className="ml-auto"
-            onClick={cancelAll}
-          >
-            Cancel all uploads
-          </Button>
-        )}
-      </div>
-
       <FilesFilters filter={filter} counts={counts} onChange={setFilter} />
+
+      {confirmingBulk && failedCount > 0 && !bulkDeletion?.pending && (
+        <ConfirmDeleteFailed
+          count={failedCount}
+          onCancel={() => setConfirmingBulk(false)}
+          onConfirm={() => {
+            setConfirmingBulk(false)
+            removeFailed()
+          }}
+        />
+      )}
 
       {uploads.length > 0 && (
         <ul
@@ -382,51 +362,93 @@ function PlayControl({ file }: { file: FileRegistration }) {
   )
 }
 
-// Deletes only the Failed files. The count is what the list shows now; the API decides again when it runs.
-function DeleteFailedControl({
+// The less-used controls: refresh, the simultaneous-uploads setting and the bulk delete of Failed files.
+// The count is what the list shows now; the API decides again when the delete runs.
+function FilesMenu({
+  refreshing,
+  onRefresh,
+  concurrency,
+  onConcurrency,
+  failedCount,
+  bulkPending,
+  onDeleteFailed,
+}: {
+  refreshing: boolean
+  onRefresh: () => void
+  concurrency: number
+  onConcurrency: (limit: number) => void
+  failedCount: number
+  bulkPending: boolean
+  onDeleteFailed: () => void
+}) {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        render={
+          <Button variant="outline" size="icon-lg" aria-label="More file actions" />
+        }
+      >
+        <MoreHorizontal />
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
+        <DropdownMenuItem disabled={refreshing} onClick={onRefresh}>
+          <RefreshCw />
+          Refresh
+        </DropdownMenuItem>
+        <DropdownMenuSub>
+          <DropdownMenuSubTrigger>Simultaneous uploads ({concurrency})</DropdownMenuSubTrigger>
+          <DropdownMenuSubContent>
+            <DropdownMenuRadioGroup
+              value={String(concurrency)}
+              onValueChange={(value) => onConcurrency(Number(value))}
+            >
+              {concurrencyOptions.map((n) => (
+                <DropdownMenuRadioItem key={n} value={String(n)}>
+                  {n}
+                </DropdownMenuRadioItem>
+              ))}
+            </DropdownMenuRadioGroup>
+          </DropdownMenuSubContent>
+        </DropdownMenuSub>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem
+          variant="destructive"
+          disabled={failedCount === 0 || bulkPending}
+          onClick={onDeleteFailed}
+        >
+          <Trash2 />
+          {bulkPending ? "Deleting failed files…" : "Delete all failed files"}
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  )
+}
+
+function ConfirmDeleteFailed({
   count,
-  pending,
-  confirming,
-  onAsk,
   onCancel,
   onConfirm,
 }: {
   count: number
-  pending: boolean
-  confirming: boolean
-  onAsk: () => void
   onCancel: () => void
   onConfirm: () => void
 }) {
-  if (confirming && count > 0 && !pending) {
-    return (
-      <span
-        role="group"
-        aria-label="Confirm deleting all failed files"
-        className="flex flex-wrap items-center gap-1.5"
-      >
-        <span className="text-sm">
-          Delete {count} failed {count === 1 ? "file" : "files"}? This cannot be undone.
-        </span>
-        <Button variant="destructive" size="lg" onClick={onConfirm}>
-          Delete
-        </Button>
-        <Button variant="outline" size="lg" onClick={onCancel}>
-          Keep
-        </Button>
-      </span>
-    )
-  }
   return (
-    <Button
-      variant="outline"
-      size="lg"
-      onClick={onAsk}
-      disabled={count === 0 || pending}
+    <div
+      role="group"
+      aria-label="Confirm deleting all failed files"
+      className="flex shrink-0 flex-wrap items-center gap-1.5 border-t px-4 py-2"
     >
-      <Trash2 data-icon="inline-start" />
-      {pending ? "Deleting failed files…" : "Delete all failed files"}
-    </Button>
+      <span className="text-sm">
+        Delete {count} failed {count === 1 ? "file" : "files"}? This cannot be undone.
+      </span>
+      <Button variant="destructive" size="lg" onClick={onConfirm}>
+        Delete
+      </Button>
+      <Button variant="outline" size="lg" onClick={onCancel}>
+        Keep
+      </Button>
+    </div>
   )
 }
 

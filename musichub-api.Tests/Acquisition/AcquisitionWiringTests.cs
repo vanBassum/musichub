@@ -1,11 +1,7 @@
 using System.Net;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using MusicHub.Api.Acquisition;
-using MusicHub.Api.Data;
-using MusicHub.Api.Ingestion;
-using MusicHub.Api.Tests.Ingestion;
 
 namespace MusicHub.Api.Tests.Acquisition;
 
@@ -66,42 +62,5 @@ public class AcquisitionWiringTests
         var e = Assert.Throws<InvalidOperationException>(() => services.GetRequiredService<IAcquisitionProvider>());
 
         Assert.Contains("Slskd__ApiKey", e.Message);
-    }
-
-    [Fact]
-    public async Task A_completed_download_is_stored_and_registered_with_its_provider_as_source()
-    {
-        var path = Path.GetTempFileName();
-        try
-        {
-            await File.WriteAllBytesAsync(path, [1, 2, 3]);
-            var options = new DbContextOptionsBuilder<MusicHubDbContext>().UseInMemoryDatabase(nameof(A_completed_download_is_stored_and_registered_with_its_provider_as_source)).Options;
-            await using var db = new MusicHubDbContext(options);
-            var storage = new FakeFileStorage();
-            var handoff = new AcquisitionHandoff(new FileIngestionService(db, storage, new ActiveUploadTracker()));
-
-            var record = await handoff.IngestAsync(
-                AcquisitionDownloadOutcome.Completed("slskd", new LocalAcquiredFile("01 A Title.mp3", path)), CancellationToken.None);
-
-            Assert.Equal(FileStatus.Stored, record.Status);
-            Assert.Equal("acquisition:slskd", record.Source);
-            Assert.Equal("01 A Title.mp3", record.OriginalFilename);
-            Assert.Equal(3, record.SizeBytes);
-        }
-        finally
-        {
-            File.Delete(path);
-        }
-    }
-
-    [Fact]
-    public async Task A_failed_download_cannot_be_handed_to_ingestion()
-    {
-        var options = new DbContextOptionsBuilder<MusicHubDbContext>().UseInMemoryDatabase(nameof(A_failed_download_cannot_be_handed_to_ingestion)).Options;
-        await using var db = new MusicHubDbContext(options);
-        var handoff = new AcquisitionHandoff(new FileIngestionService(db, new FakeFileStorage(), new ActiveUploadTracker()));
-
-        await Assert.ThrowsAsync<InvalidOperationException>(() => handoff.IngestAsync(
-            AcquisitionDownloadOutcome.Failed("slskd", AcquisitionFailure.Rejected, "no"), CancellationToken.None));
     }
 }

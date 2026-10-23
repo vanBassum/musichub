@@ -3,7 +3,9 @@ using MusicHub.Api.Catalog;
 
 namespace MusicHub.Api.Acquisition;
 
-/// <summary>Where a queued download stands. Queued, Downloading and Downloaded are active; Completed and Failed are final.</summary>
+/// <summary>
+/// Where a queued download stands. Queued, Downloading, Downloaded and Processing are active; Completed and Failed are final.
+/// </summary>
 [JsonConverter(typeof(JsonStringEnumConverter))]
 public enum DownloadRequestStatus
 {
@@ -13,10 +15,13 @@ public enum DownloadRequestStatus
     /// <summary>The worker claimed it and the transfer is under way.</summary>
     Downloading,
 
-    /// <summary>The bytes arrived and wait for (or are in) identification and import.</summary>
+    /// <summary>The bytes arrived and wait for a worker to identify and import them (also after a handoff attempt that will be retried).</summary>
     Downloaded,
 
-    /// <summary>The handoff to identification and import is done; the request has nothing left to do.</summary>
+    /// <summary>A worker claimed the downloaded file: it is being identified and, when it is the wanted recording, imported.</summary>
+    Processing,
+
+    /// <summary>The file was identified as the wanted recording and imported; the request has nothing left to do.</summary>
     Completed,
 
     /// <summary>No more attempts will be made; <see cref="DownloadRequest.Failure"/> and <see cref="DownloadRequest.Error"/> say why.</summary>
@@ -28,15 +33,15 @@ public static class DownloadRequestStatuses
 {
     /// <summary>The statuses in which a request owns its track and its source: at most one request per each may be in them.</summary>
     public static readonly IReadOnlyList<DownloadRequestStatus> Active =
-        [DownloadRequestStatus.Queued, DownloadRequestStatus.Downloading, DownloadRequestStatus.Downloaded];
+        [DownloadRequestStatus.Queued, DownloadRequestStatus.Downloading, DownloadRequestStatus.Downloaded, DownloadRequestStatus.Processing];
 
     /// <summary>The final statuses: only these may be removed from the queue, never a request a worker may still touch.</summary>
     public static readonly IReadOnlyList<DownloadRequestStatus> Removable =
         [DownloadRequestStatus.Completed, DownloadRequestStatus.Failed];
 
     /// <summary>
-    /// Downloading to Queued is a retry or the recovery of an interrupted transfer; Failed to Queued is the user's manual
-    /// retry. Completed never changes.
+    /// Downloading to Queued is a retry or the recovery of an interrupted transfer, and Processing to Downloaded the same
+    /// for the handoff; Failed to Queued is the user's manual retry. Completed never changes.
     /// </summary>
     public static bool CanTransition(DownloadRequestStatus from, DownloadRequestStatus to) => (from, to) switch
     {
@@ -46,8 +51,11 @@ public static class DownloadRequestStatuses
         (DownloadRequestStatus.Downloading, DownloadRequestStatus.Queued) => true,
         (DownloadRequestStatus.Downloading, DownloadRequestStatus.Downloaded) => true,
         (DownloadRequestStatus.Downloading, DownloadRequestStatus.Failed) => true,
-        (DownloadRequestStatus.Downloaded, DownloadRequestStatus.Completed) => true,
+        (DownloadRequestStatus.Downloaded, DownloadRequestStatus.Processing) => true,
         (DownloadRequestStatus.Downloaded, DownloadRequestStatus.Failed) => true,
+        (DownloadRequestStatus.Processing, DownloadRequestStatus.Downloaded) => true,
+        (DownloadRequestStatus.Processing, DownloadRequestStatus.Completed) => true,
+        (DownloadRequestStatus.Processing, DownloadRequestStatus.Failed) => true,
         _ => false,
     };
 }
@@ -84,12 +92,15 @@ public class DownloadRequest
     /// <summary>Also the concurrency token: a transition only applies to the status it was read in.</summary>
     public DownloadRequestStatus Status { get; set; }
 
-    /// <summary>How many times a worker claimed it.</summary>
+    /// <summary>How many times a worker claimed it for download.</summary>
     public int AttemptCount { get; set; }
+
+    /// <summary>How many times a worker claimed the downloaded file for identification and import.</summary>
+    public int ProcessingAttempts { get; set; }
 
     public long BytesTransferred { get; set; }
 
-    /// <summary>For a queued request, the earliest time a worker may claim it again; null means now.</summary>
+    /// <summary>For a queued or downloaded request, the earliest time a worker may claim it again; null means now.</summary>
     public DateTimeOffset? NextAttemptAt { get; set; }
 
     /// <summary>The latest failed attempt's reason, kept while the request waits to be retried and when it failed for good.</summary>

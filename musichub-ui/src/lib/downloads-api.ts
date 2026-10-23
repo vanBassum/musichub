@@ -5,6 +5,7 @@ export type DownloadQueueStatus =
   | "Queued"
   | "Downloading"
   | "Downloaded"
+  | "Processing"
   | "Completed"
   | "Failed"
 

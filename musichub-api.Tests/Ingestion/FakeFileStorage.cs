@@ -7,6 +7,9 @@ internal sealed class FakeFileStorage(Action<string>? onPut = null) : IFileStora
 {
     private readonly Dictionary<string, byte[]> _objects = [];
 
+    /// <summary>The keys of the objects stored so far.</summary>
+    public IReadOnlyCollection<string> Keys => _objects.Keys;
+
     public async Task PutAsync(string key, Stream content, string? contentType, CancellationToken ct)
     {
         var buffer = new MemoryStream();

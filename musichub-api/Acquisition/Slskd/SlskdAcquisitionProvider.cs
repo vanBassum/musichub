@@ -67,6 +67,9 @@ public sealed class SlskdAcquisitionProvider(
         AcquisitionCandidate candidate, Func<long, Task> reportProgress, CancellationToken ct) =>
         TransferAsync(candidate, resume: true, reportProgress, ct);
 
+    public Task<AcquisitionDownloadOutcome> LocateDownloadAsync(AcquisitionCandidate candidate, CancellationToken ct) =>
+        Task.FromResult(Locate(candidate));
+
     /// <summary>
     /// One download. When <paramref name="resume"/> is set, a transfer of the file that slskd already has (still under
     /// way, or finished with success) is followed instead of queueing another, and a caller's cancellation leaves every

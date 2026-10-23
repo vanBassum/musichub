@@ -6,6 +6,10 @@ using Microsoft.Extensions.Options;
 using MusicHub.Api.Acquisition;
 using MusicHub.Api.Catalog;
 using MusicHub.Api.Data;
+using MusicHub.Api.Identification;
+using MusicHub.Api.Ingestion;
+using MusicHub.Api.Storage;
+using MusicHub.Api.Tests.Ingestion;
 
 namespace MusicHub.Api.Tests.Acquisition;
 
@@ -52,12 +56,29 @@ public sealed class DownloadWorkerTests : IDisposable
         public Task<AcquisitionDownloadOutcome> DownloadAsync(AcquisitionCandidate candidate, CancellationToken ct) =>
             throw new NotSupportedException("The worker follows transfers; it never starts a plain download.");
 
+        /// <summary>By default the downloaded file is not there, which ends the handoff of a request at once.</summary>
+        public Func<AcquisitionCandidate, AcquisitionDownloadOutcome> Locate { get; set; } =
+            _ => AcquisitionDownloadOutcome.Failed("slskd", AcquisitionFailure.FileNotAccessible, "Not in the downloads folder.");
+        public int Located;
+
+        public Task<AcquisitionDownloadOutcome> LocateDownloadAsync(AcquisitionCandidate candidate, CancellationToken ct)
+        {
+            Interlocked.Increment(ref Located);
+            return Task.FromResult(Locate(candidate));
+        }
+
         public Task<AcquisitionDownloadOutcome> ResumeDownloadAsync(
             AcquisitionCandidate candidate, Func<long, Task> reportProgress, CancellationToken ct)
         {
             lock (_resumed) _resumed.Add(candidate.Path);
             return Script(candidate, reportProgress, ct);
         }
+    }
+
+    private sealed class NeverCalledIdentifier : IRecordingIdentifier
+    {
+        public Task<IdentificationResult> IdentifyAsync(Stream audio, string? fileNameHint, CancellationToken ct) =>
+            throw new InvalidOperationException("The handoff of these tests never gets as far as identifying.");
     }
 
     private sealed class Readable : IAcquiredFile
@@ -90,6 +111,13 @@ public sealed class DownloadWorkerTests : IDisposable
             .AddScoped<TrackAcquisition>()
             .AddScoped<AcquisitionFailover>()
             .AddScoped<DownloadProcessor>()
+            // The handoff after the download; these tests end it at once (the file is not located), see DownloadHandoffTests.
+            .AddSingleton<IRecordingIdentifier>(new NeverCalledIdentifier())
+            .AddSingleton<IFileStorage>(new FakeFileStorage())
+            .AddSingleton<ActiveUploadTracker>()
+            .AddScoped<FileIngestionService>()
+            .AddScoped<AcquisitionHandoff>()
+            .AddScoped<DownloadHandoffProcessor>()
             .BuildServiceProvider();
     }
 
@@ -263,11 +291,13 @@ public sealed class DownloadWorkerTests : IDisposable
 
         await worker.StartAsync(default);
         var deadline = DateTimeOffset.UtcNow.AddSeconds(30);
-        while (DateTimeOffset.UtcNow < deadline && (await StatusesAsync(ids)).Any(s => s != DownloadRequestStatus.Downloaded))
+        // Every request is downloaded once, then handed off once (which ends at once here: the file is not located).
+        while (DateTimeOffset.UtcNow < deadline && (await StatusesAsync(ids)).Any(s => s != DownloadRequestStatus.Failed))
             await Task.Delay(50);
         await worker.StopAsync(default);
 
-        Assert.All(await StatusesAsync(ids), s => Assert.Equal(DownloadRequestStatus.Downloaded, s));
+        Assert.All(await StatusesAsync(ids), s => Assert.Equal(DownloadRequestStatus.Failed, s));
+        Assert.Equal(6, _provider.Located);
         Assert.Equal(6, _provider.Resumed.Count);
         Assert.Equal(6, _provider.Resumed.Distinct().Count());
         await using var db = CreateDb();
@@ -290,12 +320,13 @@ public sealed class DownloadWorkerTests : IDisposable
 
         await worker.StartAsync(default);
         var deadline = DateTimeOffset.UtcNow.AddSeconds(30);
-        while (DateTimeOffset.UtcNow < deadline && (await ViewAsync(id)).Status != DownloadRequestStatus.Downloaded)
+        while (DateTimeOffset.UtcNow < deadline && (await ViewAsync(id)).Status != DownloadRequestStatus.Failed)
             await Task.Delay(50);
         await worker.StopAsync(default);
 
         var view = await ViewAsync(id);
-        Assert.Equal(DownloadRequestStatus.Downloaded, view.Status);
+        Assert.Equal(DownloadRequestStatus.Failed, view.Status);
+        Assert.Equal(AcquisitionFailure.FileNotAccessible, view.Failure);
         Assert.Equal(2, view.AttemptCount);
     }
 

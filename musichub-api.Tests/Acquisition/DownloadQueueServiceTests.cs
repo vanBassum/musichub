@@ -153,6 +153,9 @@ public sealed class DownloadQueueServiceTests : IDisposable
         Assert.False(await queue.MarkCompletedAsync(id, default));
         Assert.True(await queue.MarkDownloadedAsync(id, null, default));
         Assert.False(await queue.ReportProgressAsync(id, 500, default));
+        // A downloaded request completes only after a worker took it for the handoff.
+        Assert.False(await queue.MarkCompletedAsync(id, default));
+        Assert.Equal(id, (await queue.ClaimNextDownloadedAsync(default))!.RequestId);
         Assert.True(await queue.MarkCompletedAsync(id, default));
 
         var view = await queue.GetAsync(id, default);
@@ -346,6 +349,8 @@ public sealed class DownloadQueueServiceTests : IDisposable
         Assert.Equal(RetryOutcome.NotFailed, (await queue.RetryAsync(queued, default)).Outcome);
         Assert.True(await queue.MarkDownloadedAsync(queued, null, default));
         Assert.Equal(RetryOutcome.NotFailed, (await queue.RetryAsync(queued, default)).Outcome);
+        Assert.NotNull(await queue.ClaimNextDownloadedAsync(default));
+        Assert.Equal(RetryOutcome.NotFailed, (await queue.RetryAsync(queued, default)).Outcome);
         Assert.True(await queue.MarkCompletedAsync(queued, default));
         Assert.Equal(RetryOutcome.NotFailed, (await queue.RetryAsync(queued, default)).Outcome);
         Assert.Equal(RetryOutcome.NotFound, (await queue.RetryAsync(9999, default)).Outcome);
@@ -377,6 +382,7 @@ public sealed class DownloadQueueServiceTests : IDisposable
         var queue = Queue(db);
         Assert.NotNull(await queue.ClaimNextAsync(default));
         Assert.True(await queue.MarkDownloadedAsync(completed, null, default));
+        Assert.NotNull(await queue.ClaimNextDownloadedAsync(default));
         Assert.True(await queue.MarkCompletedAsync(completed, default));
 
         Assert.Equal(RemoveOutcome.Removed, await queue.RemoveAsync(failed, default));

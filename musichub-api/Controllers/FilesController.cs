@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
 using MusicHub.Api.Catalog;
 using MusicHub.Api.Ingestion;
+using MusicHub.Api.Metadata;
 
 namespace MusicHub.Api.Controllers;
 
@@ -75,7 +76,8 @@ public class FilesController(
 
     /// <summary>
     /// A page of the persisted file registrations, newest first. <paramref name="status"/> and
-    /// <paramref name="identification"/> narrow it (both optional); <c>total</c> counts every match, not the page.
+    /// <paramref name="identification"/> and <paramref name="search"/> (a case-insensitive part of the filename) narrow it
+    /// (all optional, combined); <c>total</c> counts every match, not the page.
     /// </summary>
     [HttpGet]
     public async Task<IActionResult> List(
@@ -83,16 +85,20 @@ public class FilesController(
         [FromQuery] FileIdentificationFilter? identification,
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = FileListing.DefaultPageSize,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        [FromQuery] string? search = null)
     {
-        var result = await listing.ListAsync(status, identification, page, pageSize, cancellationToken);
+        var result = await listing.ListAsync(status, identification, page, pageSize, cancellationToken, search);
         return Ok(new FileListResponse(result.Items.Select(FileListItem.From).ToList(), result.Total, result.Page, result.PageSize));
     }
 
-    /// <summary>How many registrations have each status and how many Stored files are in each identification state, whatever filter a list shows.</summary>
+    /// <summary>
+    /// How many registrations have each status and how many Stored files are in each identification state, whatever status or
+    /// identification filter a list shows. <paramref name="search"/> narrows the counted files by filename, like the list.
+    /// </summary>
     [HttpGet("counts")]
-    public async Task<IActionResult> Counts(CancellationToken cancellationToken) =>
-        Ok(await listing.CountAsync(cancellationToken));
+    public async Task<IActionResult> Counts(CancellationToken cancellationToken, [FromQuery] string? search = null) =>
+        Ok(await listing.CountAsync(cancellationToken, search));
 
     /// <summary>
     /// Everything recorded about identifying one file: each attempt with its reason and what every method found, and each
@@ -202,6 +208,50 @@ public class FilesController(
             Response.Headers.ContentRange = $"bytes {range.Start}-{range.End}/{total}";
         }
         return File(content, contentType);
+    }
+
+    /// <summary>The largest audio object read to find its embedded cover: 64 MiB. A bigger file has no cover endpoint result.</summary>
+    public const long MaxCoverSourceBytes = 64L * 1024 * 1024;
+
+    /// <summary>
+    /// The cover art embedded in a Stored audio file, as a JPEG, PNG, GIF or WebP image (by its bytes, at most 5 MiB).
+    /// 404 when the file is absent, not Stored, not a known audio type, too large to inspect, has no usable cover or
+    /// its object is gone; 502 when storage cannot be read. Read-only; nothing is stored or changed.
+    /// </summary>
+    [HttpGet("{id:int}/cover")]
+    public async Task<IActionResult> Cover(int id, [FromServices] IEmbeddedCoverReader covers, CancellationToken cancellationToken)
+    {
+        var record = await ingestion.FindStoredAsync(id, cancellationToken);
+        if (record is not { SizeBytes: > 0 and <= MaxCoverSourceBytes } || AudioStreaming.ContentTypeFor(record.OriginalFilename) is null)
+            return NotFound();
+
+        // TagLib# needs a seekable stream; the bounded size makes buffering the object safe.
+        using var audio = new MemoryStream((int)record.SizeBytes.Value);
+        try
+        {
+            await using var content = await ingestion.OpenStoredRangeAsync(record, 0, record.SizeBytes.Value - 1, cancellationToken);
+            await content.CopyToAsync(audio, cancellationToken);
+        }
+        catch (FileNotFoundException)
+        {
+            return NotFound();
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            return Problem(
+                title: "File cover failed",
+                detail: "The file could not be read from storage.",
+                statusCode: StatusCodes.Status502BadGateway);
+        }
+
+        audio.Position = 0;
+        var cover = covers.Read(audio, record.OriginalFilename);
+        if (cover is null)
+            return NotFound();
+
+        Response.Headers.XContentTypeOptions = "nosniff";
+        Response.Headers.CacheControl = "private, max-age=3600";
+        return File(cover.Data, cover.ContentType);
     }
 
     /// <summary>

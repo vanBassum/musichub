@@ -28,6 +28,7 @@ describe("download actions", () => {
     expect(eligible("Queued")).toEqual([false, false])
     expect(eligible("Downloading")).toEqual([false, false])
     expect(eligible("Downloaded")).toEqual([false, false])
+    expect(eligible("Processing")).toEqual([false, false])
     expect(eligible(null)).toEqual([false, false])
   })
 
