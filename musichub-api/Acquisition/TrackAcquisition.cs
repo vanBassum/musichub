@@ -82,12 +82,9 @@ public sealed class TrackAcquisition(
                 trackId, track.Title, string.Join(", ", wanted.Artists), outcome, detail));
 
         var searchId = Guid.NewGuid();
-        Task Record(TrackActivityKind kind, string summary, string? detail = null, int? results = null, int? plausible = null, int? eligible = null) =>
-            activity.RecordAsync(trackId, kind, summary, cancellationToken, detail, new TrackActivityLinks
-            {
-                SearchId = searchId, JobExecutionId = jobExecutionId,
-                ResultCount = results, PlausibleCount = plausible, EligibleCount = eligible,
-            });
+        Task Record(TrackActivityKind kind, string summary, string? detail = null, TrackActivityLinks? counts = null) =>
+            activity.RecordAsync(trackId, kind, summary, cancellationToken, detail,
+                (counts ?? new TrackActivityLinks()) with { SearchId = searchId, JobExecutionId = jobExecutionId });
 
         await Record(TrackActivityKind.SearchStarted, "Search started.");
         IReadOnlyList<AcquisitionCandidate> offered;
@@ -118,13 +115,15 @@ public sealed class TrackAcquisition(
         var counts = $"{offered.Count} results, {plausible.Count} plausible MP3s, {fresh.Count} eligible.";
         if (fresh.Count == 0)
         {
-            await Record(TrackActivityKind.NotFound, $"Nothing to download: {counts}", null, offered.Count, plausible.Count, 0);
+            await Record(TrackActivityKind.NotFound, $"Nothing to download: {counts}", null,
+                new TrackActivityLinks { ResultCount = offered.Count, PlausibleCount = plausible.Count, EligibleCount = 0 });
             return Ended(TrackAcquisitionOutcome.NothingFound,
                 $"{offered.Count} results, {plausible.Count} plausible MP3s, {offline} from sources offline, " +
                 $"{plausible.Count - offline - fresh.Count} rejected earlier.");
         }
 
-        await Record(TrackActivityKind.SearchCompleted, $"Search finished: {counts}", null, offered.Count, plausible.Count, fresh.Count);
+        await Record(TrackActivityKind.SearchCompleted, $"Search finished: {counts}", null,
+            new TrackActivityLinks { ResultCount = offered.Count, PlausibleCount = plausible.Count, EligibleCount = fresh.Count });
         return new TrackDiscovery(trackId, track, wanted, fresh, null, searchId);
     }
 
